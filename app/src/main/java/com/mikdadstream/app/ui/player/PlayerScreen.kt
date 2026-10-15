@@ -174,7 +174,6 @@ fun PlayerScreen(
     var streams by remember { mutableStateOf<List<MediaStream>>(emptyList()) }
     var apiSubtitles by remember { mutableStateOf<List<SubtitleTrack>>(emptyList()) }
     var selectedIndex by remember { mutableIntStateOf(0) }
-    var embedLaunchedKey by remember { mutableStateOf<String?>(null) }
     var loadingStreams by remember { mutableStateOf(true) }
     var streamError by remember { mutableStateOf<String?>(null) }
 
@@ -245,8 +244,7 @@ fun PlayerScreen(
     val lastDuration = remember { mutableLongStateOf(0L) }
 
     val selectedStream = streams.getOrNull(selectedIndex)
-    val embedActive = embedLaunchedKey != null && selectedStream?.isEmbed == true
-    val mediaReady = streamError == null && streams.isNotEmpty() && !loadingStreams && !embedActive
+    val mediaReady = streamError == null && streams.isNotEmpty() && !loadingStreams
 
     fun saveProgressNow() {
         onProgress(
@@ -384,23 +382,11 @@ fun PlayerScreen(
         }
     }
 
-    // ---- Terapkan stream terpilih ke ExoPlayer / WebView ----
+    // ---- Terapkan stream terpilih ke ExoPlayer (pemutar native) ----
     LaunchedEffect(selectedIndex, episodeId) {
         val stream = streams.getOrNull(selectedIndex) ?: return@LaunchedEffect
         val url = stream.safeUrl ?: return@LaunchedEffect
         playerError = null
-        if (stream.isEmbed) {
-            player.stop()
-            player.clearMediaItems()
-            buffering = false
-            val key = "$episodeId|$selectedIndex"
-            if (embedLaunchedKey != key) {
-                embedLaunchedKey = key
-                context.startActivity(EmbedActivity.intent(context, url, request.title))
-            }
-            return@LaunchedEffect
-        }
-        embedLaunchedKey = null
         streamHeaders.set(stream.headers.orEmpty())
         val builder = ExoMediaItem.Builder().setUri(url)
         val subs = apiSubtitles.mapNotNull { s ->
@@ -926,46 +912,6 @@ fun PlayerScreen(
                         Text("Pilih Episode Lain", style = MaterialTheme.typography.labelLarge, color = Color.White)
                     }
                 }
-            }
-        }
-
-        // ---- Overlay hoster web (stream embed) ----
-        if (!loadingStreams && streamError == null && selectedStream?.isEmbed == true) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .clickable {
-                        selectedStream.safeUrl?.let { u ->
-                            context.startActivity(EmbedActivity.intent(context, u, request.title))
-                        }
-                    },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(76.dp)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(Color.White),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        Icons.Filled.PlayArrow,
-                        contentDescription = "Putar",
-                        tint = Color.Black,
-                        modifier = Modifier.size(40.dp),
-                    )
-                }
-                Text(
-                    text = "Ketuk untuk memutar via hoster web",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
-                )
-                Text(
-                    text = selectedStream.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.7f),
-                )
             }
         }
 

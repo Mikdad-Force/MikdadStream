@@ -189,7 +189,8 @@ data class SourceData(
     @SerializedName("download_links") val downloadLinks: List<MediaStream>? = null,
     val subtitles: List<SubtitleTrack>? = null,
 ) {
-    val playableStreams: List<MediaStream> get() = streams.orEmpty().filter { !it.safeUrl.isNullOrBlank() }
+    val playableStreams: List<MediaStream>
+        get() = streams.orEmpty().filter { !it.safeUrl.isNullOrBlank() && !it.isEmbed }
     val files: List<MediaStream> get() = downloadLinks.orEmpty().filter { !it.safeUrl.isNullOrBlank() }
     val isPremium: Boolean get() = contentAccess?.contains("premium", true) == true
 }

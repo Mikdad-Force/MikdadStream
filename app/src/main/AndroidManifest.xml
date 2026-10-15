@@ -37,13 +37,5 @@
             android:supportsPictureInPicture="true"
             android:theme="@style/Theme.MikdadStream.Player"
             tools:ignore="DiscouragedApi" />
-
-        <activity
-            android:name=".ui.player.EmbedActivity"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:theme="@style/Theme.MikdadStream.Player"
-            tools:ignore="DiscouragedApi" />
     </application>
 </manifest>
