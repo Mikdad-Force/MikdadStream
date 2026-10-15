@@ -98,6 +98,12 @@ fun SettingsScreen(
     val healthResults by viewModel.healthResults.collectAsState()
     val healthProgress by viewModel.healthProgress.collectAsState()
 
+    val displaySourceName = remember(activeSourceName, allSources) {
+        allSources.firstOrNull { it.safeId.equals(activeSourceName, true) }?.safeName
+            ?: allSources.firstOrNull { it.safeName.equals(activeSourceName, true) }?.safeName
+            ?: activeSourceName.ifBlank { "Sumber" }
+    }
+
     var editName by remember { mutableStateOf(false) }
     var nameInput by remember { mutableStateOf("") }
     var confirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -255,6 +261,113 @@ fun SettingsScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+            }
+        }
+
+        // ---------- Sumber video ----------
+        SettingsSection(
+            title = "Sumber Video",
+            icon = { Icon(Icons.Filled.Movie, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenSources)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Movie,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = displaySourceName,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "Nama sumber diambil otomatis dari server",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = "Ganti",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            SettingsDivider()
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = !healthRunning) {
+                        showHealthDialog = true
+                        viewModel.checkSources()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                if (healthRunning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Icon(
+                        Icons.Filled.HealthAndSafety,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = if (healthRunning) "Menguji sumber…" else "Cek Kesehatan Sumber",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        text = healthProgress.ifBlank { "Uji kategori, video, detail, sampai stream siap putar" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = if (healthRunning) "Berjalan" else "Uji",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            val hiddenList = allSources.filter { hiddenSources.contains(it.safeId.lowercase()) }
+            if (hiddenList.isNotEmpty()) {
+                SettingsDivider()
+                Text(
+                    text = "SUMBER TERSEMBUNYI (${hiddenList.size})",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = StreamTextMuted,
+                    letterSpacing = 0.6.sp,
+                    modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
+                )
+                hiddenList.forEach { model ->
+                    HiddenSourceRow(model = model, onUnhide = { viewModel.unhideSource(model.safeId) })
+                }
+                Box(modifier = Modifier.height(4.dp))
             }
         }
 
