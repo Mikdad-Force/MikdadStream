@@ -41,6 +41,7 @@ import androidx.core.view.WindowCompat
 import com.mikdadstream.app.ui.nav.AppNavGraph
 import com.mikdadstream.app.ui.theme.MikdadStreamTheme
 import com.mikdadstream.app.ui.theme.brandBrush
+import com.mikdadstream.app.ui.tv.isTelevision
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,14 +61,14 @@ class MainActivity : ComponentActivity() {
                 controller.isAppearanceLightNavigationBars = !darkTheme
             }
             MikdadStreamTheme(darkTheme = darkTheme) {
-                AppRoot()
+                AppRoot(isTv = applicationContext.isTelevision())
             }
         }
     }
 }
 
 @Composable
-private fun AppRoot() {
+private fun AppRoot(isTv: Boolean) {
     var ready by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -76,7 +77,7 @@ private fun AppRoot() {
     }
 
     if (ready) {
-        AppNavGraph()
+        AppNavGraph(isTv = isTv)
     } else {
         SplashScreen()
     }

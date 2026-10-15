@@ -105,6 +105,8 @@ import com.mikdadstream.app.ui.kit.SearchNotFoundScreen
 import com.mikdadstream.app.ui.kit.SeasonScreen
 import com.mikdadstream.app.ui.kit.MoviePlayScreen
 import com.mikdadstream.app.ui.kit.DesignKitScreen
+import com.mikdadstream.app.ui.tv.TvHomeScreen
+import com.mikdadstream.app.ui.tv.TvTopBar
 
 private object Routes {
     const val HOME = "home"
@@ -163,7 +165,7 @@ private inline fun <reified T : ViewModel> sharedViewModel(crossinline factory: 
     viewModel(factory = viewModelFactory { initializer { factory() } })
 
 @Composable
-fun AppNavGraph() {
+fun AppNavGraph(isTv: Boolean = false) {
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -199,7 +201,16 @@ fun AppNavGraph() {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            if (showHeader) {
+            if (isTv && showBottomBar) {
+                TvTopBar(
+                    profile = profile,
+                    activeSourceName = activeSource?.safeName ?: AppGraph.prefs.activeSource.collectAsState().value,
+                    currentRoute = currentRoute,
+                    onNavigate = { route -> navController.navigateTop(route) },
+                    onSourceClick = { mainViewModel.openSheet() },
+                    onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
+                )
+            } else if (showHeader) {
                 AppHeader(
                     profile = profile,
                     activeSource = activeSource,
@@ -211,7 +222,7 @@ fun AppNavGraph() {
             }
         },
         bottomBar = {
-            if (showBottomBar) {
+            if (!isTv && showBottomBar) {
                 AppBottomBar(
                     tabs = bottomTabs,
                     currentRoute = currentRoute,
@@ -228,17 +239,27 @@ fun AppNavGraph() {
         ) {
             composable(Routes.HOME) {
                 val vm: HomeViewModel = sharedViewModel { HomeViewModel(AppGraph.repository, AppGraph.prefs) }
-                HomeScreen(
-                    viewModel = vm,
-                    contentPadding = padding,
-                    profile = profile,
-                    onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
-                    onSearchClick = { navController.navigateTop(Routes.SEARCH) },
-                    onNotificationClick = { navController.navigate(Routes.KIT) },
-                    onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
-                    onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
-                    onSeeHistory = { navController.navigateTop(Routes.HISTORY) },
-                )
+                if (isTv) {
+                    TvHomeScreen(
+                        viewModel = vm,
+                        contentPadding = padding,
+                        profile = profile,
+                        onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
+                        onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
+                    )
+                } else {
+                    HomeScreen(
+                        viewModel = vm,
+                        contentPadding = padding,
+                        profile = profile,
+                        onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
+                        onSearchClick = { navController.navigateTop(Routes.SEARCH) },
+                        onNotificationClick = { navController.navigate(Routes.KIT) },
+                        onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
+                        onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
+                        onSeeHistory = { navController.navigateTop(Routes.HISTORY) },
+                    )
+                }
             }
 
             composable(Routes.SEARCH) {
