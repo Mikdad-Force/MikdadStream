@@ -16,6 +16,8 @@ import com.mikdadstream.app.data.remote.SourceData
 import com.mikdadstream.app.data.remote.SourceModel
 import com.mikdadstream.app.data.remote.VideosData
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 
@@ -33,6 +35,8 @@ class StreamRepository(
 
     private var modelsCache: ModelsResult? = null
     private val nameIndex = mutableMapOf<String, String>()
+    private val _modelsState = MutableStateFlow<ModelsResult?>(null)
+    val modelsState: StateFlow<ModelsResult?> = _modelsState
 
     private fun mapError(e: Throwable): ApiError = when (e) {
         is ApiError -> e
@@ -82,6 +86,7 @@ class StreamRepository(
             nameIndex[normalize(model.safeId)] = model.safeId
         }
         modelsCache = result
+        _modelsState.value = result
         return result
     }
 

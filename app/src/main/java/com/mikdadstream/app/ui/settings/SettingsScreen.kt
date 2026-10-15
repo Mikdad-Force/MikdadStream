@@ -1,6 +1,7 @@
 package com.mikdadstream.app.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,24 +12,35 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -52,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.mikdadstream.app.BuildConfig
 import com.mikdadstream.app.data.local.PrefsStore
+import com.mikdadstream.app.data.remote.SourceModel
 import com.mikdadstream.app.ui.components.FilterChipPill
 import com.mikdadstream.app.ui.theme.brandBrush
 
@@ -68,10 +81,16 @@ fun SettingsScreen(
     val busy by viewModel.busy.collectAsState()
     val error by viewModel.error.collectAsState()
     val serverStatus by viewModel.serverStatus.collectAsState()
+    val allSources by viewModel.allSources.collectAsState()
+    val hiddenSources by viewModel.hiddenSources.collectAsState()
+    val healthRunning by viewModel.healthRunning.collectAsState()
+    val healthResults by viewModel.healthResults.collectAsState()
+    val healthProgress by viewModel.healthProgress.collectAsState()
 
     var editName by remember { mutableStateOf(false) }
     var nameInput by remember { mutableStateOf("") }
     var confirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var showHealthDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -240,34 +259,107 @@ fun SettingsScreen(
 
         // ---------- Sumber video ----------
         SettingsSection(title = "Sumber Video", icon = { Icon(Icons.Filled.Movie, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)) }) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable(onClick = onOpenSources)
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Icon(Icons.Filled.Movie, null, tint = MaterialTheme.colorScheme.secondary)
-                Column(modifier = Modifier.weight(1f)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable(onClick = onOpenSources)
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(Icons.Filled.Movie, null, tint = MaterialTheme.colorScheme.secondary)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = activeSourceName,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        Text(
+                            text = "Ketuk untuk mengganti sumber dari API",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Text(
-                        text = activeSourceName,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = "Ketuk untuk mengganti sumber dari API",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = "Ganti",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                Text(
-                    text = "Ganti",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f),
+                                )
+                            )
+                        )
+                        .clickable(enabled = !healthRunning) {
+                            showHealthDialog = true
+                            viewModel.checkSources()
+                        }
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surface),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (healthRunning) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(
+                                Icons.Filled.HealthAndSafety,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (healthRunning) "Menguji sumber…" else "Cek Kesehatan Sumber",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        Text(
+                            text = healthProgress.ifBlank { "Uji kategori, video, detail, sampai stream siap putar" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(
+                        text = if (healthRunning) "Berjalan" else "Uji",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+
+                val hiddenList = allSources.filter { hiddenSources.contains(it.safeId.lowercase()) }
+                if (hiddenList.isNotEmpty()) {
+                    Text(
+                        text = "Sumber tersembunyi (${hiddenList.size})",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    hiddenList.forEach { model ->
+                        HiddenSourceRow(model = model, onUnhide = { viewModel.unhideSource(model.safeId) })
+                    }
+                }
             }
         }
 
@@ -323,6 +415,73 @@ fun SettingsScreen(
         }
     }
 
+    // ---------- Dialog hasil cek kesehatan ----------
+    if (showHealthDialog) {
+        AlertDialog(
+            onDismissRequest = { showHealthDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(
+                    text = if (healthRunning) "Menguji Sumber…" else "Hasil Cek Sumber",
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (healthProgress.isNotBlank()) {
+                        Text(
+                            text = healthProgress,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (healthRunning) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    if (healthResults.isEmpty() && !healthRunning) {
+                        Text(
+                            text = "Belum ada hasil.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(healthResults, key = { it.model.safeId }) { health ->
+                            HealthResultRow(health)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showHealthDialog = false }) {
+                    Text("Tutup", color = MaterialTheme.colorScheme.primary)
+                }
+            },
+            dismissButton = {
+                if (healthRunning) {
+                    TextButton(onClick = { viewModel.cancelHealthCheck() }) {
+                        Text("Batal", color = MaterialTheme.colorScheme.error)
+                    }
+                } else if (healthResults.isNotEmpty()) {
+                    TextButton(onClick = { viewModel.clearHealthResults() }) {
+                        Text("Bersihkan", color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+            },
+        )
+    }
+
     // ---------- Dialog ubah nama ----------
     if (editName) {
         AlertDialog(
@@ -375,6 +534,114 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { confirmAction = null }) { Text("Batal") }
             },
+        )
+    }
+}
+
+@Composable
+private fun HealthStat(label: String, count: Int, color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.titleMedium,
+            color = color,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun HealthResultRow(health: SourceHealth) {
+    val (statusIcon, statusColor, statusText) = when (health.status) {
+        HealthStatus.Running -> Triple(Icons.Filled.Refresh, MaterialTheme.colorScheme.primary, "Menguji")
+        HealthStatus.Ok -> Triple(Icons.Filled.CheckCircle, MaterialTheme.colorScheme.tertiary, "Siap putar")
+        HealthStatus.Warning -> Triple(Icons.Filled.WarningAmber, MaterialTheme.colorScheme.secondary, health.message.ifBlank { "Perhatian" })
+        HealthStatus.Failed -> Triple(Icons.Filled.ErrorOutline, MaterialTheme.colorScheme.error, health.message.ifBlank { "Gagal" })
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            imageVector = statusIcon,
+            contentDescription = null,
+            tint = statusColor,
+            modifier = Modifier.size(18.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = health.model.safeName,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodySmall,
+                color = statusColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        health.latencyMs?.let { ms ->
+            Text(
+                text = "${ms}ms",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HiddenSourceRow(model: SourceModel, onUnhide: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+            .clickable(onClick = onUnhide)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            Icons.Outlined.Movie,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = model.safeName,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = "Ketuk untuk menampilkan kembali",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            Icons.Filled.Visibility,
+            contentDescription = "Tampilkan",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .size(22.dp)
+                .clickable(onClick = onUnhide),
         )
     }
 }

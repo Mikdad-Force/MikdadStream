@@ -1,20 +1,35 @@
 package com.mikdadstream.app.ui.nav
 
 import android.net.Uri
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -23,9 +38,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -63,13 +86,18 @@ private object Routes {
     const val DETAIL = "detail?modelId={modelId}&id={id}&source={source}&autoplay={autoplay}"
 }
 
-private data class BottomTab(val route: String, val label: String, val icon: ImageVector)
+private data class BottomTab(
+    val route: String,
+    val label: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector,
+)
 
 private val bottomTabs = listOf(
-    BottomTab(Routes.HOME, "Beranda", Icons.Filled.Home),
-    BottomTab(Routes.SEARCH, "Cari", Icons.Filled.Search),
-    BottomTab(Routes.LIBRARY, "Koleksi", Icons.Filled.Bookmark),
-    BottomTab(Routes.SETTINGS, "Profil", Icons.Filled.Person),
+    BottomTab(Routes.HOME, "Beranda", Icons.Filled.Home, Icons.Outlined.Home),
+    BottomTab(Routes.SEARCH, "Cari", Icons.Filled.Search, Icons.Outlined.Search),
+    BottomTab(Routes.LIBRARY, "Koleksi", Icons.Filled.Bookmark, Icons.Outlined.BookmarkBorder),
+    BottomTab(Routes.SETTINGS, "Profil", Icons.Filled.Person, Icons.Outlined.Person),
 )
 
 @Composable
@@ -90,6 +118,7 @@ fun AppNavGraph() {
     val modelsLoading by mainViewModel.modelsLoading.collectAsState()
     val modelsError by mainViewModel.modelsError.collectAsState()
     val sheetVisible by mainViewModel.sheetVisible.collectAsState()
+    val hiddenSources by AppGraph.prefs.hiddenSources.collectAsState()
 
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
@@ -124,26 +153,11 @@ fun AppNavGraph() {
         },
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 10.dp,
-                ) {
-                    bottomTabs.forEach { tab ->
-                        NavigationBarItem(
-                            selected = currentRoute == tab.route,
-                            onClick = { navController.navigateTop(tab.route) },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                            ),
-                        )
-                    }
-                }
+                AppBottomBar(
+                    tabs = bottomTabs,
+                    currentRoute = currentRoute,
+                    onSelect = { tab -> navController.navigateTop(tab.route) },
+                )
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -205,15 +219,99 @@ fun AppNavGraph() {
     }
 
     if (sheetVisible) {
+        val visibleModels = models.filter { model ->
+            !hiddenSources.contains(model.safeId.lowercase()) || model.safeId.equals(activeSourceId, true)
+        }
         SourceSheet(
-            models = models,
+            models = visibleModels,
             activeId = activeSourceId,
             loading = modelsLoading,
             error = modelsError,
             onSelect = { mainViewModel.selectSource(it) },
             onRetry = { mainViewModel.loadModels() },
             onDismiss = { mainViewModel.closeSheet() },
+            onHide = { model ->
+                AppGraph.prefs.hideSource(model.safeId)
+                if (model.safeId.equals(activeSourceId, true)) {
+                    visibleModels.firstOrNull { it.safeId != model.safeId }?.let {
+                        mainViewModel.selectSource(it)
+                    }
+                }
+            },
         )
+    }
+}
+
+@Composable
+private fun AppBottomBar(
+    tabs: List<BottomTab>,
+    currentRoute: String?,
+    onSelect: (BottomTab) -> Unit,
+) {
+    val pillBrush = Brush.horizontalGradient(
+        listOf(
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+            MaterialTheme.colorScheme.secondary.copy(alpha = 0.22f),
+        )
+    )
+    val selectedBrush = Brush.linearGradient(
+        listOf(
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.secondary,
+        )
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(22.dp))
+                .background(pillBrush)
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            tabs.forEach { tab ->
+                val selected = currentRoute == tab.route
+                val scale by animateFloatAsState(
+                    targetValue = if (selected) 1.06f else 1f,
+                    animationSpec = tween(220),
+                    label = "navScale",
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .scale(scale)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(if (selected) selectedBrush else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSelect(tab) }
+                        .padding(vertical = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Icon(
+                        imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                        contentDescription = tab.label,
+                        tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(
+                        text = tab.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONArray
 import java.util.UUID
 
 data class Profile(
@@ -39,12 +40,14 @@ class PrefsStore(context: Context) {
     private val _activeSource = MutableStateFlow(sp.getString(KEY_SOURCE, DEFAULT_SOURCE) ?: DEFAULT_SOURCE)
     private val _themeMode = MutableStateFlow(sp.getInt(KEY_THEME, THEME_SYSTEM))
     private val _serverStatus = MutableStateFlow<String?>(null)
+    private val _hiddenSources = MutableStateFlow(sp.getStringSet(KEY_HIDDEN, null)?.toSet() ?: emptySet())
 
     val accessToken: StateFlow<String?> = _accessToken
     val profile: StateFlow<Profile?> = _profile
     val activeSource: StateFlow<String> = _activeSource
     val themeMode: StateFlow<Int> = _themeMode
     val serverStatus: StateFlow<String?> = _serverStatus
+    val hiddenSources: StateFlow<Set<String>> = _hiddenSources
 
     val refreshToken: String? get() = sp.getString(KEY_REFRESH, null)
     val appInstanceId: String
@@ -117,6 +120,29 @@ class PrefsStore(context: Context) {
         _serverStatus.value = status
     }
 
+    fun setHiddenSources(ids: Set<String>) {
+        val normalized = ids.map { it.lowercase().trim() }.filter { it.isNotBlank() }.toSet()
+        sp.edit { putStringSet(KEY_HIDDEN, normalized) }
+        _hiddenSources.value = normalized
+    }
+
+    fun hideSource(id: String) {
+        val key = id.lowercase().trim()
+        if (key.isBlank()) return
+        val next = _hiddenSources.value + key
+        sp.edit { putStringSet(KEY_HIDDEN, next) }
+        _hiddenSources.value = next
+    }
+
+    fun unhideSource(id: String) {
+        val key = id.lowercase().trim()
+        val next = _hiddenSources.value - key
+        sp.edit { putStringSet(KEY_HIDDEN, next) }
+        _hiddenSources.value = next
+    }
+
+    fun isSourceHidden(id: String): Boolean = _hiddenSources.value.contains(id.lowercase().trim())
+
     companion object {
         const val DEFAULT_SOURCE = "moviebox"
         const val THEME_SYSTEM = 0
@@ -134,5 +160,6 @@ class PrefsStore(context: Context) {
         private const val KEY_PREMIUM = "premium"
         private const val KEY_SOURCE = "active_source"
         private const val KEY_THEME = "theme_mode"
+        private const val KEY_HIDDEN = "hidden_sources"
     }
 }

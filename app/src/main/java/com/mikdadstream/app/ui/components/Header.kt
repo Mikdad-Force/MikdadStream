@@ -28,7 +28,9 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -220,6 +222,7 @@ fun SourceSheet(
     onSelect: (SourceModel) -> Unit,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
+    onHide: ((SourceModel) -> Unit)? = null,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -291,6 +294,7 @@ fun SourceSheet(
                             model = model,
                             selected = model.safeId.equals(activeId, true),
                             onClick = { onSelect(model) },
+                            onHide = if (onHide == null) null else ({ onHide(model) }),
                         )
                     }
                 }
@@ -304,6 +308,7 @@ private fun SourceRow(
     model: SourceModel,
     selected: Boolean,
     onClick: () -> Unit,
+    onHide: (() -> Unit)? = null,
 ) {
     val border = if (selected) MaterialTheme.colorScheme.primary
     else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
