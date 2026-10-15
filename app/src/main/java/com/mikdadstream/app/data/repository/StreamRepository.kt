@@ -1,0 +1,164 @@
+package com.mikdadstream.app.data.repository
+
+import com.mikdadstream.app.data.local.HistoryDao
+import com.mikdadstream.app.data.local.SearchHistoryDao
+import com.mikdadstream.app.data.local.WatchlistDao
+import com.mikdadstream.app.data.remote.AccountData
+import com.mikdadstream.app.data.remote.ApiError
+import com.mikdadstream.app.data.remote.CategoriesData
+import com.mikdadstream.app.data.remote.DetailData
+import com.mikdadstream.app.data.remote.Envelope
+import com.mikdadstream.app.data.remote.MediaItem
+import com.mikdadstream.app.data.remote.MikdadApi
+import com.mikdadstream.app.data.remote.ModelsEnvelope
+import com.mikdadstream.app.data.remote.SearchBody
+import com.mikdadstream.app.data.remote.SourceData
+import com.mikdadstream.app.data.remote.SourceModel
+import com.mikdadstream.app.data.remote.VideosData
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import retrofit2.HttpException
+
+data class ModelsResult(
+    val models: List<SourceModel>,
+    val searchAllMovie: Boolean,
+)
+
+class StreamRepository(
+    private val api: MikdadApi,
+    val watchlistDao: WatchlistDao,
+    val historyDao: HistoryDao,
+    val searchHistoryDao: SearchHistoryDao,
+) {
+
+    private var modelsCache: ModelsResult? = null
+    private val nameIndex = mutableMapOf<String, String>()
+
+    private fun mapError(e: Throwable): ApiError = when (e) {
+        is ApiError -> e
+        is HttpException -> when (e.code()) {
+            401 -> ApiError("Sesi berakhir. Silakan coba lagi.", 401, authRequired = true)
+            404 -> ApiError("Konten tidak ditemukan.", 404)
+            in 500..599 -> ApiError("Server sedang bermasalah. Coba lagi nanti.", e.code())
+            else -> ApiError("Permintaan gagal (${e.code()}).", e.code(), e.code() == 401)
+        }
+        else -> ApiError(
+            e.message?.takeIf { it.isNotBlank() } ?: "Tidak bisa terhubung ke server. Periksa internet Anda.",
+        )
+    }
+
+    private suspend fun <T> call(block: suspend () -> T): T = try {
+        withContext(Dispatchers.IO) { block() }
+    } catch (e: Exception) {
+        throw mapError(e)
+    }
+
+    private fun <T> unwrap(envelope: Envelope<T>?, fallbackMessage: String): T {
+        if (envelope == null || envelope.status == "error" || envelope.code?.let { it !in 200..299 } == true) {
+            val message = envelope?.message?.takeIf { it.isNotBlank() }?.let(::friendlyMessage) ?: fallbackMessage
+            throw ApiError(message, envelope?.code ?: 0)
+        }
+        return envelope.data ?: throw ApiError(fallbackMessage, envelope.code ?: 0)
+    }
+
+    private fun friendlyMessage(raw: String): String = when (raw) {
+        "access_token_required" -> "Sesi berakhir. Masuk ulang untuk melanjutkan."
+        "invalid_refresh_token" -> "Sesi kedaluwarsa. Masuk ulang untuk melanjutkan."
+        else -> raw
+    }
+
+    // ---------- Sumber video (models) ----------
+
+    suspend fun models(force: Boolean = false): ModelsResult {
+        modelsCache?.let { if (!force) return it }
+        val envelope: ModelsEnvelope = call { api.models() }
+        if (envelope.status == "error" || envelope.data == null) {
+            throw ApiError("Gagal memuat daftar sumber video.")
+        }
+        val result = ModelsResult(envelope.data.filter { !it.safeId.isBlank() }, envelope.searchAllMovie ?: true)
+        nameIndex.clear()
+        result.models.forEach { model ->
+            nameIndex[normalize(model.safeName)] = model.safeId
+            nameIndex[normalize(model.safeId)] = model.safeId
+        }
+        modelsCache = result
+        return result
+    }
+
+    private fun normalize(value: String): String =
+        value.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+    /** Petakan nama sumber (dari hasil pencarian) ke model_id. */
+    fun modelIdForSourceName(sourceName: String?): String? {
+        if (sourceName.isNullOrBlank()) return null
+        val key = normalize(sourceName)
+        nameIndex[key]?.let { return it }
+        nameIndex.entries.firstOrNull { key.startsWith(it.key) || it.key.startsWith(key) }?.let { return it.value }
+        return null
+    }
+
+    // ---------- Kategori & daftar video ----------
+
+    suspend fun categories(modelId: String): List<CategoryBundle> {
+        val envelope: Envelope<CategoriesData> = call { api.categories(modelId) }
+        val data = unwrap(envelope, "Gagal memuat kategori.")
+        return data.data.orEmpty()
+            .filter { !it.safeId.isBlank() }
+            .map { CategoryBundle(it.safeId, it.safeName) }
+    }
+
+    suspend fun videos(modelId: String, categoryId: String, page: Int = 1): VideosData =
+        unwrap(call { api.videos(modelId, categoryId, page) }, "Gagal memuat daftar video.")
+
+    suspend fun search(query: String, page: Int = 1): List<MediaItem> {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return emptyList()
+        val envelope = call {
+            api.search(SearchBody(query = trimmed, q = trimmed, page = page))
+        }
+        return unwrap(envelope, "Pencarian gagal.").items.orEmpty()
+    }
+
+    // ---------- Detail ----------
+
+    suspend fun detail(modelId: String, id: String): DetailData =
+        unwrap(call { api.detail(modelId, id) }, "Detail tidak ditemukan.")
+
+    /**
+     * Detail dengan pemetaan model otomatis: bila modelId tidak diketahui
+     * (mis. hasil pencarian lintas sumber), coba kandidat berdasarkan nama
+     * sumber lalu probing ke model aktif lainnya.
+     */
+    suspend fun detailResolve(id: String, modelId: String?, sourceName: String?): DetailData {
+        val candidates = linkedSetOf<String>()
+        modelId?.takeIf { it.isNotBlank() }?.let(candidates::add)
+        modelIdForSourceName(sourceName)?.let(candidates::add)
+        models().models.filter { it.isActive }.forEach { candidates.add(it.safeId) }
+
+        var lastError: Exception? = null
+        for (candidate in candidates) {
+            try {
+                return detail(candidate, id)
+            } catch (e: ApiError) {
+                if (e.code == 401) throw e
+                lastError = e
+            }
+        }
+        throw lastError ?: ApiError("Konten tidak ditemukan di semua sumber.")
+    }
+
+    // ---------- Sumber pemutaran ----------
+
+    suspend fun source(modelId: String, episodeId: String, id: String): SourceData =
+        unwrap(call { api.source(modelId, episodeId, id) }, "Sumber video tidak tersedia.")
+
+    suspend fun download(modelId: String, episodeId: String, id: String): SourceData =
+        unwrap(call { api.download(modelId, episodeId, id) }, "Tautan unduhan tidak tersedia.")
+
+    // ---------- Akun ----------
+
+    suspend fun accountStatus(): AccountData =
+        unwrap(call { api.accountStatus() }, "Gagal memuat status akun.")
+}
+
+data class CategoryBundle(val id: String, val name: String)

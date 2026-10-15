@@ -1,0 +1,29 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+dist/
+
+# Signing — JANGAN di-commit ke publik
+*.keystore
+*.jks
+
+# Cache
+captures/
+.externalNativeBuild/
+.cxx/
+
+# OS
+.DS_Store
+Thumbs.db
