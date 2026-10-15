@@ -185,7 +185,7 @@ fun AppHeader(
                     modifier = Modifier.size(17.dp),
                 )
                 Text(
-                    text = activeSource?.safeName?.take(10) ?: "Sumber",
+                    text = friendlySourceName(activeSource?.safeName),
                     style = MaterialTheme.typography.labelLarge,
                     color = Color.White,
                     maxLines = 1,
@@ -237,7 +237,7 @@ fun SourceSheet(
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
-                    text = "Dipilih langsung dari api.mkd-gudang.biz.id",
+                    text = "Dipilih langsung dari server",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -408,4 +408,14 @@ private fun StatusPill(status: String?) {
             maxLines = 1,
         )
     }
+}
+
+/** Nama sumber ramah tampilan: jangan tampilkan alamat/domain API. */
+private fun friendlySourceName(raw: String?): String {
+    val v = raw?.trim().orEmpty()
+    if (v.isBlank()) return "Sumber"
+    val looksLikeAddress = v.contains("://") ||
+        v.contains("www.") ||
+        Regex("^[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(/.*)?$").matches(v)
+    return if (looksLikeAddress) "Server Utama" else v.take(14)
 }

@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -97,26 +98,68 @@ private fun BrandMark() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(brandBrush()),
+            modifier = Modifier.size(78.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                Icons.Filled.PlayArrow,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(34.dp),
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(23.dp))
+                    .background(brandBrush())
+                    .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(23.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "M",
+                    fontFamily = PlusJakarta,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 40.sp,
+                    color = Color.White,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.background)
+                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Mikdad",
+                fontFamily = PlusJakarta,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 28.sp,
+                letterSpacing = (-0.5).sp,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = "Streaming",
+                style = TextStyle(
+                    brush = brandBrush(),
+                    fontFamily = PlusJakarta,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 28.sp,
+                    letterSpacing = (-0.5).sp,
+                ),
             )
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
-            text = "Streamview",
-            fontFamily = PlusJakarta,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 28.sp,
-            color = MaterialTheme.colorScheme.onBackground,
+            text = "Nonton film & serial tanpa batas",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

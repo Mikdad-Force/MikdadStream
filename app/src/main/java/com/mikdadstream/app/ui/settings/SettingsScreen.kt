@@ -99,9 +99,17 @@ fun SettingsScreen(
     val healthProgress by viewModel.healthProgress.collectAsState()
 
     val displaySourceName = remember(activeSourceName, allSources) {
-        allSources.firstOrNull { it.safeId.equals(activeSourceName, true) }?.safeName
+        val resolved = allSources.firstOrNull { it.safeId.equals(activeSourceName, true) }?.safeName
             ?: allSources.firstOrNull { it.safeName.equals(activeSourceName, true) }?.safeName
-            ?: activeSourceName.ifBlank { "Sumber" }
+            ?: activeSourceName
+        val v = resolved.trim()
+        val looksLikeAddress = v.contains("://") || v.contains("www.") ||
+            Regex("^[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(/.*)?$").matches(v)
+        when {
+            v.isBlank() -> "Sumber"
+            looksLikeAddress -> "Server Utama"
+            else -> v
+        }
     }
 
     var editName by remember { mutableStateOf(false) }
