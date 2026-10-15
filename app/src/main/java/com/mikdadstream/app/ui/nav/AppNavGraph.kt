@@ -256,7 +256,7 @@ fun AppNavGraph(isTv: Boolean = false) {
                         profile = profile,
                         onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
                         onSearchClick = { navController.navigateTop(Routes.SEARCH) },
-                        onNotificationClick = { navController.navigate(Routes.KIT) },
+                        onNotificationClick = { navController.navigate(Routes.NOTIFICATIONS) },
                         onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
                         onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
                         onSeeHistory = { navController.navigateTop(Routes.HISTORY) },
@@ -293,6 +293,7 @@ fun AppNavGraph(isTv: Boolean = false) {
                         ?: AppGraph.prefs.activeSource.value,
                     onOpenSources = { mainViewModel.openSheet() },
                     onPairDevice = { navController.navigate(Routes.PAIR_DEVICE) },
+                    onOpenDesignKit = { navController.navigate(Routes.KIT) },
                 )
             }
 

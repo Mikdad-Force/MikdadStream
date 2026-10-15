@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -83,6 +84,7 @@ fun SettingsScreen(
     activeSourceName: String,
     onOpenSources: () -> Unit,
     onPairDevice: () -> Unit = {},
+    onOpenDesignKit: () -> Unit = {},
 ) {
     val profile by viewModel.profile.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
@@ -256,113 +258,6 @@ fun SettingsScreen(
             }
         }
 
-        // ---------- Sumber video ----------
-        SettingsSection(
-            title = "Sumber Video",
-            icon = { Icon(Icons.Filled.Movie, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenSources)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Icon(
-                    Icons.Filled.Movie,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                )
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = activeSourceName,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "Ketuk untuk mengganti sumber dari API",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Text(
-                    text = "Ganti",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-
-            SettingsDivider()
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = !healthRunning) {
-                        showHealthDialog = true
-                        viewModel.checkSources()
-                    }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                if (healthRunning) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                } else {
-                    Icon(
-                        Icons.Filled.HealthAndSafety,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = if (healthRunning) "Menguji sumber…" else "Cek Kesehatan Sumber",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = healthProgress.ifBlank { "Uji kategori, video, detail, sampai stream siap putar" },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Text(
-                    text = if (healthRunning) "Berjalan" else "Uji",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-
-            val hiddenList = allSources.filter { hiddenSources.contains(it.safeId.lowercase()) }
-            if (hiddenList.isNotEmpty()) {
-                SettingsDivider()
-                Text(
-                    text = "SUMBER TERSEMBUNYI (${hiddenList.size})",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = StreamTextMuted,
-                    letterSpacing = 0.6.sp,
-                    modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
-                )
-                hiddenList.forEach { model ->
-                    HiddenSourceRow(model = model, onUnhide = { viewModel.unhideSource(model.safeId) })
-                }
-                Box(modifier = Modifier.height(4.dp))
-            }
-        }
-
         // ---------- Perangkat ----------
         SettingsSection(
             title = "Perangkat",
@@ -404,6 +299,48 @@ fun SettingsScreen(
             }
         }
 
+        // ---------- Lainnya ----------
+        SettingsSection(
+            title = "Lainnya",
+            icon = { Icon(Icons.Filled.Movie, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenDesignKit)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.Widgets,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Semua Layar",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        text = "Jelajahi seluruh fitur & halaman aplikasi",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Icon(
+                    Icons.Outlined.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+
         // ---------- Data ----------
         SettingsSection(
             title = "Data & Penyimpanan",
@@ -427,12 +364,6 @@ fun SettingsScreen(
             title = "Informasi",
             icon = { Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
         ) {
-            InfoRow("Endpoint API", BuildConfig.API_BASE_URL)
-            SettingsDivider()
-            InfoRow("Status server", serverStatus ?: account?.serverTime ?: "Belum diketahui")
-            SettingsDivider()
-            InfoRow("Cache", "${account?.cacheTtlSeconds ?: "-"} detik")
-            SettingsDivider()
             InfoRow("Versi aplikasi", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         }
 
@@ -447,15 +378,14 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = "Mikdad Stream — aplikasi streaming native Android yang terhubung langsung ke Mikdad API. " +
+                    text = "Mikdad Stream — aplikasi streaming native Android. " +
                         "Nonton film, serial TV, anime, donghua, drama pendek, dan TV langsung dari satu tempat.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = "Versi pemutar: pemutar lengkap dengan kecepatan, rasio layar, subtitle, " +
-                        "gestur kecerahan/volume, Picture-in-Picture, dan timer tidur. " +
-                        "Sumber berformat hoster (embed) diputar lewat WebView.",
+                    text = "Pemutar lengkap dengan kecepatan, rasio layar, subtitle, " +
+                        "gestur kecerahan/volume, Picture-in-Picture, dan timer tidur.",
                     style = MaterialTheme.typography.bodySmall,
                     color = StreamTextMuted,
                 )
