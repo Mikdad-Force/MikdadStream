@@ -6,3 +6,9 @@
 -dontwarn okhttp3.**
 -dontwarn retrofit2.**
 -dontwarn org.conscrypt.**
+
+# ZXing (QR generate + scan)
+-keep class com.google.zxing.** { *; }
+-keep class com.journeyapps.barcodescanner.** { *; }
+-dontwarn com.google.zxing.**
+-dontwarn com.journeyapps.barcodescanner.**

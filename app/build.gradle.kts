@@ -12,6 +12,8 @@ val apiBaseUrl: String = (findProperty("STREAM_API_URL") as String?) ?: "https:/
 val googleClientId: String = (findProperty("GOOGLE_CLIENT_ID") as String?)
     ?: "350158650454-osksv8riv4q7dfpr4ff2o509l6git6ot.apps.googleusercontent.com"
 
+val forceTv: Boolean = (findProperty("FORCE_TV") as String?)?.toBoolean() ?: false
+
 val keystoreFile = rootProject.file("mikdadstream.keystore")
 val releaseStorePassword: String = (findProperty("STREAM_STORE_PASSWORD") as String?) ?: "mikdadstream"
 val releaseKeyPassword: String = (findProperty("STREAM_KEY_PASSWORD") as String?) ?: "mikdadstream"
@@ -36,10 +38,11 @@ android {
         applicationId = "com.mikdadstream.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.6.0"
+        versionCode = 8
+        versionName = "1.7.0"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
+        buildConfigField("Boolean", "FORCE_TV", "$forceTv")
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -113,4 +116,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }

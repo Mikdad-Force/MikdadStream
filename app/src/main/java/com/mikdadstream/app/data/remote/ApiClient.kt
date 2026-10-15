@@ -51,6 +51,15 @@ class AuthGateway(
         }
     }
 
+    private fun get(path: String, token: String? = null): JsonObject? {
+        val builder = Request.Builder().url(ApiConfig.baseUrl + path).get()
+        if (!token.isNullOrBlank()) builder.header("Authorization", "Bearer $token")
+        return client.newCall(builder.build()).execute().use { resp ->
+            val body = resp.body?.string() ?: return null
+            runCatching { gson.fromJson(body, JsonObject::class.java) }.getOrNull()
+        }
+    }
+
     private fun status(root: JsonObject?): String? =
         root?.get("status")?.takeIf { it.isJsonPrimitive }?.asString
 
@@ -154,6 +163,83 @@ class AuthGateway(
 
     suspend fun loginWithEmailAsync(email: String, displayName: String? = null): Boolean =
         withContext(Dispatchers.IO) { loginWithEmail(email, displayName) }
+
+    // ---- Pairing perangkat TV (device authorization grant) ----
+
+    /** Mulai sesi pairing TV. Mengembalikan kode untuk ditampilkan di layar TV. */
+    fun startPairingBlocking(): PairingData? {
+        val root = post("api/app/auth/device/pairing", JsonObject().apply {
+            addProperty("app_instance_id", prefs.appInstanceId)
+            addProperty("device_type", "android_tv")
+            addProperty("ui_mode", "tv")
+        }) ?: return null
+        val data = data(root) ?: return null
+        return runCatching { gson.fromJson(data, PairingData::class.java) }.getOrNull()
+    }
+
+    /** Cek status persetujuan pairing. */
+    fun pairingStatusBlocking(deviceCode: String): DeviceStatusData? {
+        val root = get(
+            "api/app/auth/device/status?device_code=${enc(deviceCode)}" +
+                "&app_instance_id=${enc(prefs.appInstanceId)}",
+        ) ?: return null
+        val data = data(root) ?: return null
+        return runCatching { gson.fromJson(data, DeviceStatusData::class.java) }.getOrNull()
+    }
+
+    /** Tukar device_code yang sudah disetujui menjadi token sesi. */
+    fun exchangePairingBlocking(deviceCode: String): Boolean = synchronized(lock) {
+        val root = post("api/app/auth/device/exchange", JsonObject().apply {
+            addProperty("device_code", deviceCode)
+            addProperty("app_instance_id", prefs.appInstanceId)
+        }) ?: return false
+        val data = data(root) ?: return false
+        val access = data.get("access_token")?.takeIf { it.isJsonPrimitive }?.asString ?: return false
+        val refresh = data.get("refresh_token")?.takeIf { it.isJsonPrimitive }?.asString
+        val expires = data.get("expires_in")?.takeIf { it.isJsonPrimitive }?.asInt
+        prefs.saveTokens(access, refresh, expires)
+        fetchProfileBlocking()
+        true
+    }
+
+    /** Setujui pairing dari perangkat yang sudah login (ponsel). */
+    fun approveDeviceBlocking(userCode: String): Boolean {
+        val token = prefs.accessTokenValue() ?: return false
+        val root = post("api/app/auth/device/approve", JsonObject().apply {
+            addProperty("user_code", userCode.trim().uppercase())
+            addProperty("device_code", userCode.trim().uppercase())
+        }, token = token) ?: return false
+        return status(root) == "success"
+    }
+
+    /** Ambil profil pengguna aktif lalu simpan ke preferensi. */
+    fun fetchProfileBlocking(): Boolean {
+        val token = prefs.accessTokenValue() ?: return false
+        val root = get("api/app/account/status", token = token) ?: return false
+        val user = data(root)?.get("user")?.takeIf { it.isJsonObject }?.asJsonObject ?: return false
+        val name = user.get("display_name")?.takeIf { it.isJsonPrimitive }?.asString
+        val avatar = user.get("avatar_url")?.takeIf { it.isJsonPrimitive }?.asString
+        val email = user.get("email")?.takeIf { it.isJsonPrimitive }?.asString
+        val number = user.get("user_number")?.takeIf { it.isJsonPrimitive }?.asInt
+        email?.let { prefs.saveEmail(it) }
+        prefs.saveProfile(name, avatar, number, null)
+        return true
+    }
+
+    private fun enc(s: String): String =
+        java.net.URLEncoder.encode(s, "UTF-8")
+
+    suspend fun startDevicePairingAsync(): PairingData? =
+        withContext(Dispatchers.IO) { startPairingBlocking() }
+
+    suspend fun pollDevicePairingAsync(deviceCode: String): DeviceStatusData? =
+        withContext(Dispatchers.IO) { pairingStatusBlocking(deviceCode) }
+
+    suspend fun exchangeDevicePairingAsync(deviceCode: String): Boolean =
+        withContext(Dispatchers.IO) { exchangePairingBlocking(deviceCode) }
+
+    suspend fun approveDeviceAsync(userCode: String): Boolean =
+        withContext(Dispatchers.IO) { approveDeviceBlocking(userCode) }
 
     /** Paksa login baru (dipakai bila sesi rusak). */
     suspend fun forceLogin(displayName: String? = null): Boolean =

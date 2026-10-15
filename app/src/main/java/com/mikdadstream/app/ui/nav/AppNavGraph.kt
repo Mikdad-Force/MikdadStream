@@ -105,6 +105,7 @@ import com.mikdadstream.app.ui.kit.SearchNotFoundScreen
 import com.mikdadstream.app.ui.kit.SeasonScreen
 import com.mikdadstream.app.ui.kit.MoviePlayScreen
 import com.mikdadstream.app.ui.kit.DesignKitScreen
+import com.mikdadstream.app.ui.account.PairDeviceScreen
 import com.mikdadstream.app.ui.tv.TvHomeScreen
 import com.mikdadstream.app.ui.tv.TvTopBar
 
@@ -144,6 +145,7 @@ private object Routes {
     const val KIT_NOTFOUND = "kit_notfound"
     const val KIT_SEASON = "kit_season"
     const val KIT_PLAY = "kit_play"
+    const val PAIR_DEVICE = "pair_device"
 }
 
 private data class BottomTab(
@@ -290,6 +292,7 @@ fun AppNavGraph(isTv: Boolean = false) {
                     activeSourceName = activeSource?.safeName
                         ?: AppGraph.prefs.activeSource.value,
                     onOpenSources = { mainViewModel.openSheet() },
+                    onPairDevice = { navController.navigate(Routes.PAIR_DEVICE) },
                 )
             }
 
@@ -332,6 +335,7 @@ fun AppNavGraph(isTv: Boolean = false) {
             composable(Routes.KIT_NOTFOUND) { SearchNotFoundScreen(back) }
             composable(Routes.KIT_SEASON) { SeasonScreen(back) { } }
             composable(Routes.KIT_PLAY) { MoviePlayScreen(back, title = "Film Pilihan") }
+            composable(Routes.PAIR_DEVICE) { PairDeviceScreen(back) }
             composable(Routes.KIT) {
                 DesignKitScreen(
                     onBack = back,

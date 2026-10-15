@@ -55,6 +55,7 @@ import com.mikdadstream.app.ui.nav.AppNavGraph
 import com.mikdadstream.app.ui.onboarding.OnboardingScreen
 import com.mikdadstream.app.ui.theme.MikdadStreamTheme
 import com.mikdadstream.app.ui.theme.brandBrush
+import com.mikdadstream.app.ui.tv.TvPairingScreen
 import com.mikdadstream.app.ui.tv.isTelevision
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -102,7 +103,7 @@ private fun AppRoot(isTv: Boolean) {
     }
 }
 
-private enum class AuthStep { Onboarding, SignIn, SignUp, Forgot, Otp, NewPass }
+private enum class AuthStep { Onboarding, SignIn, SignUp, Forgot, Otp, NewPass, TvPairing }
 
 @Composable
 private fun AuthFlow(isTv: Boolean) {
@@ -115,6 +116,14 @@ private fun AuthFlow(isTv: Boolean) {
 
     fun finishLogin() {
         prefs.setLoggedIn(true)
+    }
+
+    if (isTv) {
+        when (step) {
+            AuthStep.TvPairing -> TvPairingScreen(onPaired = { finishLogin() })
+            else -> OnboardingScreen(onFinish = { step = AuthStep.TvPairing })
+        }
+        return
     }
 
     fun deviceLogin(email: String = "") {
@@ -184,6 +193,7 @@ private fun AuthFlow(isTv: Boolean) {
             onBack = { step = AuthStep.Otp },
             onDone = { deviceLogin() },
         )
+        AuthStep.TvPairing -> Unit
     }
 }
 

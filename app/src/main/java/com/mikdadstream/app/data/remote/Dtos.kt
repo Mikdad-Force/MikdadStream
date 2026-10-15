@@ -251,3 +251,36 @@ data class TokenData(
     @SerializedName("user_id") val userId: String? = null,
     val provider: String? = null,
 )
+
+// ---------- Pairing perangkat (TV) ----------
+data class PairingBody(
+    @SerializedName("app_instance_id") val appInstanceId: String,
+    @SerializedName("device_type") val deviceType: String = "android_tv",
+    @SerializedName("ui_mode") val uiMode: String = "tv",
+)
+
+data class ApproveBody(
+    @SerializedName("device_code") val deviceCode: String? = null,
+    @SerializedName("user_code") val userCode: String? = null,
+)
+
+data class ExchangeBody(
+    @SerializedName("device_code") val deviceCode: String,
+    @SerializedName("app_instance_id") val appInstanceId: String,
+)
+
+data class PairingData(
+    @SerializedName("device_code") val deviceCode: String? = null,
+    @SerializedName("user_code") val userCode: String? = null,
+    @SerializedName("verification_uri") val verificationUri: String? = null,
+    @SerializedName("verification_uri_complete") val verificationUriComplete: String? = null,
+    @SerializedName("expires_in") val expiresIn: Int? = null,
+    val interval: Int? = null,
+)
+
+data class DeviceStatusData(
+    val status: String? = null,
+    @SerializedName("is_authenticated") val isAuthenticated: Boolean? = null,
+    @SerializedName("user_code") val userCode: String? = null,
+    @SerializedName("expires_in") val expiresIn: Int? = null,
+)

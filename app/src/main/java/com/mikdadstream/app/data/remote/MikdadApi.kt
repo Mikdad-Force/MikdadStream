@@ -54,4 +54,19 @@ interface MikdadApi {
 
     @POST("api/app/auth/refresh-token")
     suspend fun refresh(@Body body: RefreshBody): Envelope<TokenData>
+
+    @POST("api/app/auth/device/pairing")
+    suspend fun devicePairing(@Body body: PairingBody): Envelope<PairingData>
+
+    @GET("api/app/auth/device/status")
+    suspend fun deviceStatus(
+        @Query("device_code") deviceCode: String,
+        @Query("app_instance_id") appInstanceId: String,
+    ): Envelope<DeviceStatusData>
+
+    @POST("api/app/auth/device/approve")
+    suspend fun deviceApprove(@Body body: ApproveBody): Envelope<Any>
+
+    @POST("api/app/auth/device/exchange")
+    suspend fun deviceExchange(@Body body: ExchangeBody): Envelope<TokenData>
 }
