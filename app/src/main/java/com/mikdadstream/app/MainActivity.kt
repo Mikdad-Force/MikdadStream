@@ -1,8 +1,11 @@
 package com.mikdadstream.app
 
 import android.os.Bundle
+import android.util.Base64
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -28,6 +31,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,13 +39,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.mikdadstream.app.ui.auth.CreateNewPasswordScreen
+import com.mikdadstream.app.ui.auth.ForgotPasswordScreen
+import com.mikdadstream.app.ui.auth.OtpVerificationScreen
+import com.mikdadstream.app.ui.auth.SignInScreen
+import com.mikdadstream.app.ui.auth.SignUpScreen
 import com.mikdadstream.app.ui.nav.AppNavGraph
+import com.mikdadstream.app.ui.onboarding.OnboardingScreen
 import com.mikdadstream.app.ui.theme.MikdadStreamTheme
 import com.mikdadstream.app.ui.theme.brandBrush
 import com.mikdadstream.app.ui.tv.isTelevision
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,18 +85,120 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun AppRoot(isTv: Boolean) {
-    var ready by remember { mutableStateOf(false) }
+    val loggedIn by AppGraph.prefs.loggedIn.collectAsState()
+    var booting by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
-        runCatching { AppGraph.apiClient.auth.ensureSession() }
-        ready = true
+        if (AppGraph.prefs.loggedIn.value) {
+            runCatching { AppGraph.apiClient.auth.ensureSession() }
+        }
+        booting = false
     }
 
-    if (ready) {
-        AppNavGraph(isTv = isTv)
-    } else {
-        SplashScreen()
+    when {
+        booting -> SplashScreen()
+        !loggedIn -> AuthFlow(isTv = isTv)
+        else -> AppNavGraph(isTv = isTv)
     }
+}
+
+private enum class AuthStep { Onboarding, SignIn, SignUp, Forgot, Otp, NewPass }
+
+@Composable
+private fun AuthFlow(isTv: Boolean) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val prefs = AppGraph.prefs
+    var step by remember {
+        mutableStateOf(if (prefs.loggedIn.value) AuthStep.SignIn else AuthStep.Onboarding)
+    }
+
+    fun finishLogin() {
+        prefs.setLoggedIn(true)
+    }
+
+    fun deviceLogin(email: String = "") {
+        scope.launch {
+            val ok = runCatching {
+                AppGraph.apiClient.auth.loginWithEmailAsync(email)
+            }.getOrDefault(false)
+            if (ok || email.isBlank()) finishLogin()
+        }
+    }
+
+    val googleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account = task.getResult(ApiException::class.java)
+            val claims = parseGoogleIdToken(account.idToken)
+            val email = claims["email"] ?: account.email ?: ""
+            val name = claims["name"] ?: account.displayName
+            val avatar = claims["picture"]
+            val sub = claims["sub"]
+            scope.launch {
+                val ok = runCatching {
+                    AppGraph.apiClient.auth.loginWithGoogleAsync(email, name, avatar, sub)
+                }.getOrDefault(false)
+                if (ok) finishLogin() else deviceLogin(email)
+            }
+        } catch (e: ApiException) {
+            deviceLogin()
+        }
+    }
+
+    fun launchGoogleSignIn() {
+        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+            .requestEmail()
+            .build()
+        val client = GoogleSignIn.getClient(context, options)
+        googleLauncher.launch(client.signInIntent)
+    }
+
+    when (step) {
+        AuthStep.Onboarding -> OnboardingScreen(onFinish = { step = AuthStep.SignIn })
+        AuthStep.SignIn -> SignInScreen(
+            onBack = { step = AuthStep.Onboarding },
+            onSignIn = { email, _ -> deviceLogin(email) },
+            onSignUp = { step = AuthStep.SignUp },
+            onForgot = { step = AuthStep.Forgot },
+            onGoogleSignIn = { launchGoogleSignIn() },
+        )
+        AuthStep.SignUp -> SignUpScreen(
+            onBack = { step = AuthStep.SignIn },
+            onSignUp = { deviceLogin() },
+            onSignIn = { step = AuthStep.SignIn },
+        )
+        AuthStep.Forgot -> ForgotPasswordScreen(
+            onBack = { step = AuthStep.SignIn },
+            onSend = { step = AuthStep.Otp },
+            onSignIn = { step = AuthStep.SignIn },
+        )
+        AuthStep.Otp -> OtpVerificationScreen(
+            onBack = { step = AuthStep.Forgot },
+            onVerify = { step = AuthStep.NewPass },
+        )
+        AuthStep.NewPass -> CreateNewPasswordScreen(
+            onBack = { step = AuthStep.Otp },
+            onDone = { deviceLogin() },
+        )
+    }
+}
+
+private fun parseGoogleIdToken(idToken: String?): Map<String, String> {
+    if (idToken.isNullOrBlank()) return emptyMap()
+    return runCatching {
+        val payload = idToken.split(".").getOrNull(1) ?: return emptyMap()
+        val decoded = String(Base64.decode(payload, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING))
+        val json = JSONObject(decoded)
+        val map = mutableMapOf<String, String>()
+        listOf("email", "name", "picture", "sub").forEach { key ->
+            if (json.has(key) && !json.isNull(key)) map[key] = json.getString(key)
+        }
+        map
+    }.getOrDefault(emptyMap())
 }
 
 @Composable

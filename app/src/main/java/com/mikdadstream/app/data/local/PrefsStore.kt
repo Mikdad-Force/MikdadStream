@@ -41,6 +41,7 @@ class PrefsStore(context: Context) {
     private val _themeMode = MutableStateFlow(sp.getInt(KEY_THEME, THEME_SYSTEM))
     private val _serverStatus = MutableStateFlow<String?>(null)
     private val _hiddenSources = MutableStateFlow(sp.getStringSet(KEY_HIDDEN, null)?.toSet() ?: emptySet())
+    private val _loggedIn = MutableStateFlow(sp.getBoolean(KEY_LOGGED_IN, false))
 
     val accessToken: StateFlow<String?> = _accessToken
     val profile: StateFlow<Profile?> = _profile
@@ -48,6 +49,7 @@ class PrefsStore(context: Context) {
     val themeMode: StateFlow<Int> = _themeMode
     val serverStatus: StateFlow<String?> = _serverStatus
     val hiddenSources: StateFlow<Set<String>> = _hiddenSources
+    val loggedIn: StateFlow<Boolean> = _loggedIn
 
     val refreshToken: String? get() = sp.getString(KEY_REFRESH, null)
     val appInstanceId: String
@@ -120,6 +122,11 @@ class PrefsStore(context: Context) {
         _serverStatus.value = status
     }
 
+    fun setLoggedIn(value: Boolean) {
+        sp.edit { putBoolean(KEY_LOGGED_IN, value) }
+        _loggedIn.value = value
+    }
+
     fun setHiddenSources(ids: Set<String>) {
         val normalized = ids.map { it.lowercase().trim() }.filter { it.isNotBlank() }.toSet()
         sp.edit { putStringSet(KEY_HIDDEN, normalized) }
@@ -161,5 +168,6 @@ class PrefsStore(context: Context) {
         private const val KEY_SOURCE = "active_source"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_HIDDEN = "hidden_sources"
+        private const val KEY_LOGGED_IN = "logged_in"
     }
 }

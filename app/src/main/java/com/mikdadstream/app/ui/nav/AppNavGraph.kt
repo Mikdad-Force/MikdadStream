@@ -302,7 +302,7 @@ fun AppNavGraph(isTv: Boolean = false) {
 
             val back: () -> Unit = { navController.popBackStack() }
             composable(Routes.ONBOARDING) { OnboardingScreen(onFinish = { navController.navigateTop(Routes.HOME) }) }
-            composable(Routes.SIGNIN) { SignInScreen(back, onSignIn = { navController.navigateTop(Routes.HOME) }, onSignUp = { navController.navigate(Routes.SIGNUP) }, onForgot = { navController.navigate(Routes.FORGOT) }) }
+            composable(Routes.SIGNIN) { SignInScreen(back, onSignIn = { _, _ -> navController.navigateTop(Routes.HOME) }, onSignUp = { navController.navigate(Routes.SIGNUP) }, onForgot = { navController.navigate(Routes.FORGOT) }) }
             composable(Routes.SIGNUP) { SignUpScreen(back, onSignUp = { navController.navigateTop(Routes.HOME) }, onSignIn = back) }
             composable(Routes.FORGOT) { ForgotPasswordScreen(back, onSend = { navController.navigate(Routes.OTP) }, onSignIn = back) }
             composable(Routes.OTP) { OtpVerificationScreen(back, onVerify = { navController.navigate(Routes.NEWPASS) }) }
@@ -316,7 +316,10 @@ fun AppNavGraph(isTv: Boolean = false) {
             composable(Routes.SECURITY) { SecurityScreen(back) }
             composable(Routes.HELP) { HelpSupportScreen(back) }
             composable(Routes.LEGAL) { LegalPoliciesScreen(back) }
-            composable(Routes.LOGOUT) { LogoutScreen(back, onConfirm = { navController.navigateTop(Routes.HOME) }) }
+            composable(Routes.LOGOUT) { LogoutScreen(back, onConfirm = {
+                AppGraph.prefs.clearTokens()
+                AppGraph.prefs.setLoggedIn(false)
+            }) }
             composable(Routes.FAVE) { FaveCategoriesScreen(back) }
             composable(Routes.FAMILY) { FamilySharingScreen(back) }
             composable(Routes.SUBSCRIPTION) { SubscriptionScreen(back, onSubscribe = { navController.navigate(Routes.ADD_CARD) }) }

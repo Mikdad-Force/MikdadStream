@@ -230,9 +230,10 @@ private fun RememberRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, on
 @Composable
 fun SignInScreen(
     onBack: () -> Unit,
-    onSignIn: () -> Unit,
+    onSignIn: (email: String, password: String) -> Unit,
     onSignUp: () -> Unit,
     onForgot: () -> Unit,
+    onGoogleSignIn: () -> Unit = { onSignIn("", "") },
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -262,21 +263,61 @@ fun SignInScreen(
             isPassword = true,
             passwordVisible = showPassword,
             imeAction = ImeAction.Done,
-            onDone = onSignIn,
+            onDone = { onSignIn(email, password) },
         )
         Spacer(Modifier.height(4.dp))
         RememberRow(rememberMe, { rememberMe = it }, onForgot)
         Spacer(Modifier.height(18.dp))
-        StreamPrimaryButton(text = "Masuk", onClick = onSignIn)
+        StreamPrimaryButton(text = "Masuk", onClick = { onSignIn(email, password) })
         Spacer(Modifier.height(20.dp))
         OrDivider()
         Spacer(Modifier.height(20.dp))
-        StreamOutlineButton(text = "Masuk dengan Google", onClick = onSignIn)
-        Spacer(Modifier.height(12.dp))
-        StreamOutlineButton(text = "Masuk dengan Facebook", onClick = onSignIn)
+        GoogleSignInButton(onClick = onGoogleSignIn)
         Spacer(Modifier.height(28.dp))
         BottomSwitch("Belum punya akun?", "Daftar", onSignUp)
         Spacer(Modifier.height(32.dp))
+    }
+}
+
+@Composable
+private fun GoogleSignInButton(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White)
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GoogleGlyph()
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = "Masuk dengan Google",
+            style = MaterialTheme.typography.labelLarge,
+            color = Color(0xFF1F1F1F),
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun GoogleGlyph() {
+    Box(
+        modifier = Modifier
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(Color(0xFF4285F4)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "G",
+            fontFamily = PlusJakarta,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 13.sp,
+            color = Color.White,
+        )
     }
 }
 

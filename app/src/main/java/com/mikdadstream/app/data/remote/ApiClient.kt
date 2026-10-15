@@ -80,22 +80,32 @@ class AuthGateway(
     }
 
     /** Login baru dengan identitas perangkat (email tersimpan / dibuat). */
-    fun loginBlocking(displayName: String? = null): Boolean = synchronized(lock) {
+    fun loginBlocking(
+        displayName: String? = null,
+        emailOverride: String? = null,
+        avatarUrl: String? = null,
+        googleSub: String? = null,
+        deviceType: String = "android_mobile",
+    ): Boolean = synchronized(lock) {
         val instanceId = prefs.appInstanceId
         val nonceRoot = post("api/app/auth/nonce", JsonObject().apply {
             addProperty("app_instance_id", instanceId)
-            addProperty("device_type", "android_mobile")
+            addProperty("device_type", deviceType)
         })
         val nonce = data(nonceRoot)?.get("nonce")?.takeIf { it.isJsonPrimitive }?.asString
             ?: return false
 
-        val email = prefs.email ?: "stream_${instanceId.replace("-", "").take(12)}@mikdad.stream"
+        val email = emailOverride?.takeIf { it.isNotBlank() }
+            ?: prefs.email
+            ?: "stream_${instanceId.replace("-", "").take(12)}@mikdad.stream"
         val name = displayName ?: prefs.profile.value?.displayName ?: "Pengguna Mikdad"
         val loginRoot = post("api/app/auth/login/google-account", JsonObject().apply {
             addProperty("email", email)
             addProperty("display_name", name)
+            avatarUrl?.let { addProperty("avatar_url", it) }
+            googleSub?.let { addProperty("google_sub", it) }
             addProperty("app_instance_id", instanceId)
-            addProperty("device_type", "android_mobile")
+            addProperty("device_type", deviceType)
             addProperty("nonce", nonce)
         })
         val data = data(loginRoot)
@@ -104,9 +114,26 @@ class AuthGateway(
         val expires = data.get("expires_in")?.takeIf { it.isJsonPrimitive }?.asInt
         prefs.saveEmail(email)
         prefs.saveTokens(access, refresh, expires)
-        prefs.saveProfile(name, null, null, null)
+        prefs.saveProfile(name, avatarUrl, null, null)
         true
     }
+
+    /** Login dengan email/sandi sederhana (dipakai form masuk). */
+    fun loginWithEmail(email: String, displayName: String? = null): Boolean =
+        loginBlocking(displayName = displayName, emailOverride = email)
+
+    /** Login memakai identitas akun Google (email + sub dari ID token). */
+    fun loginWithGoogle(
+        email: String,
+        displayName: String?,
+        avatarUrl: String?,
+        googleSub: String?,
+    ): Boolean = loginBlocking(
+        displayName = displayName,
+        emailOverride = email,
+        avatarUrl = avatarUrl,
+        googleSub = googleSub,
+    )
 
     /** Pastikan ada sesi valid (token aktif / refresh / login baru). */
     suspend fun ensureSession(): Boolean = withContext(Dispatchers.IO) {
@@ -115,6 +142,18 @@ class AuthGateway(
         if (prefs.refreshToken != null && refreshBlocking()) return@withContext true
         loginBlocking()
     }
+
+    suspend fun loginWithGoogleAsync(
+        email: String,
+        displayName: String?,
+        avatarUrl: String?,
+        googleSub: String?,
+    ): Boolean = withContext(Dispatchers.IO) {
+        loginWithGoogle(email, displayName, avatarUrl, googleSub)
+    }
+
+    suspend fun loginWithEmailAsync(email: String, displayName: String? = null): Boolean =
+        withContext(Dispatchers.IO) { loginWithEmail(email, displayName) }
 
     /** Paksa login baru (dipakai bila sesi rusak). */
     suspend fun forceLogin(displayName: String? = null): Boolean =
