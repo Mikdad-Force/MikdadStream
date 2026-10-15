@@ -108,11 +108,12 @@ class AuthGateway(
             ?: prefs.email
             ?: "stream_${instanceId.replace("-", "").take(12)}@mikdad.stream"
         val name = displayName ?: prefs.profile.value?.displayName ?: "Pengguna Mikdad"
+        val effectiveSub = googleSub ?: prefs.googleSub
         val loginRoot = post("api/app/auth/login/google-account", JsonObject().apply {
             addProperty("email", email)
             addProperty("display_name", name)
             avatarUrl?.let { addProperty("avatar_url", it) }
-            googleSub?.let { addProperty("google_sub", it) }
+            effectiveSub?.let { addProperty("google_sub", it) }
             addProperty("app_instance_id", instanceId)
             addProperty("device_type", deviceType)
             addProperty("nonce", nonce)
@@ -122,6 +123,7 @@ class AuthGateway(
         val refresh = data.get("refresh_token")?.takeIf { it.isJsonPrimitive }?.asString
         val expires = data.get("expires_in")?.takeIf { it.isJsonPrimitive }?.asInt
         prefs.saveEmail(email)
+        prefs.saveGoogleSub(effectiveSub)
         prefs.saveTokens(access, refresh, expires)
         prefs.saveProfile(name, avatarUrl, null, null)
         true

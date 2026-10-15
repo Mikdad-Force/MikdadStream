@@ -57,6 +57,7 @@ class PrefsStore(context: Context) {
             sp.edit { putString(KEY_INSTANCE, it) }
         }
     val email: String? get() = sp.getString(KEY_EMAIL, null)
+    val googleSub: String? get() = sp.getString(KEY_GOOGLE_SUB, null)
 
     fun accessTokenValue(): String? = _accessToken.value
     fun tokenExpired(skewMs: Long = 45_000L): Boolean {
@@ -82,6 +83,10 @@ class PrefsStore(context: Context) {
         _profile.value = _profile.value?.copy(email = email) ?: Profile(email = email)
     }
 
+    fun saveGoogleSub(sub: String?) {
+        if (!sub.isNullOrBlank()) sp.edit { putString(KEY_GOOGLE_SUB, sub) }
+    }
+
     fun saveProfile(displayName: String?, avatarUrl: String?, userNumber: Int?, premium: Boolean?) {
         sp.edit {
             displayName?.let { putString(KEY_NAME, it) }
@@ -103,6 +108,7 @@ class PrefsStore(context: Context) {
             remove(KEY_ACCESS)
             remove(KEY_REFRESH)
             remove(KEY_ACCESS_EXP)
+            remove(KEY_GOOGLE_SUB)
         }
         _accessToken.value = null
         _tokenExpiresAt.value = 0L
@@ -161,6 +167,7 @@ class PrefsStore(context: Context) {
         private const val KEY_ACCESS_EXP = "access_exp"
         private const val KEY_INSTANCE = "app_instance_id"
         private const val KEY_EMAIL = "email"
+        private const val KEY_GOOGLE_SUB = "google_sub"
         private const val KEY_NAME = "display_name"
         private const val KEY_AVATAR = "avatar_url"
         private const val KEY_NUMBER = "user_number"

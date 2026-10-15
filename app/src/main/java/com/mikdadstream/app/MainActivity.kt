@@ -144,7 +144,7 @@ private fun AuthFlow(isTv: Boolean) {
             val claims = parseGoogleIdToken(account.idToken)
             val email = claims["email"] ?: account.email ?: ""
             val name = claims["name"] ?: account.displayName
-            val avatar = claims["picture"]
+            val avatar = claims["picture"] ?: account.photoUrl?.toString()
             val sub = claims["sub"]
             scope.launch {
                 val ok = runCatching {
