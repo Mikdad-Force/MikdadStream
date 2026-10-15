@@ -63,26 +63,13 @@ fun AppHeader(
     onSourceClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val hairlineStart = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-    val hairlineMid = MaterialTheme.colorScheme.secondary.copy(alpha = 0.35f)
-
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surface,
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                    )
-                )
-            )
             .drawBehind {
                 val strokeWidth = 1.dp.toPx()
                 drawLine(
-                    brush = Brush.horizontalGradient(
-                        listOf(hairlineStart, hairlineMid, Color.Transparent)
-                    ),
+                    color = androidx.compose.ui.graphics.Color(0xFF1B1D26),
                     start = androidx.compose.ui.geometry.Offset(0f, size.height - strokeWidth),
                     end = androidx.compose.ui.geometry.Offset(size.width, size.height - strokeWidth),
                     strokeWidth = strokeWidth,
@@ -147,12 +134,12 @@ fun AppHeader(
             modifier = Modifier
                 .weight(1f)
                 .height(44.dp)
-                .shadow(6.dp, RoundedCornerShape(999.dp), ambientColor = Color.Black.copy(alpha = 0.35f))
+                .shadow(4.dp, RoundedCornerShape(999.dp), ambientColor = Color.Black.copy(alpha = 0.35f))
                 .clip(RoundedCornerShape(999.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .border(
                     1.dp,
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.28f),
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
                     RoundedCornerShape(999.dp),
                 )
                 .clickable(onClick = onSearchClick)
@@ -180,29 +167,27 @@ fun AppHeader(
             modifier = Modifier
                 .height(44.dp)
                 .clip(RoundedCornerShape(999.dp))
-                .background(brandBrush())
-                .padding(2.dp),
+                .background(MaterialTheme.colorScheme.primary),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.background)
                     .clickable(onClick = onSourceClick)
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(
                     Icons.Filled.Movie,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = Color.White,
                     modifier = Modifier.size(17.dp),
                 )
                 Text(
                     text = activeSource?.safeName?.take(10) ?: "Sumber",
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

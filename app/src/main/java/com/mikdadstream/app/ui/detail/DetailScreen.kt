@@ -5,17 +5,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,15 +23,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.BookmarkAdded
-import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SmartDisplay
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.LocalOffer
+import androidx.compose.material.icons.outlined.OndemandVideo
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,20 +48,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mikdadstream.app.data.remote.EpisodeData
 import com.mikdadstream.app.ui.components.FullScreenState
 import com.mikdadstream.app.ui.components.PosterImage
 import com.mikdadstream.app.ui.components.SectionHeader
 import com.mikdadstream.app.ui.components.ShimmerBox
-import com.mikdadstream.app.ui.components.softShadow
-import com.mikdadstream.app.ui.theme.brandBrush
+import com.mikdadstream.app.ui.theme.StreamBg
+import com.mikdadstream.app.ui.theme.StreamPrimarySoft
 
 @Composable
 fun DetailScreen(
@@ -73,9 +77,18 @@ fun DetailScreen(
         state.loading -> DetailSkeleton(onBack = onBack, contentPadding = contentPadding)
 
         state.error != null || state.detail == null -> Column(
-            modifier = Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding()),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(top = contentPadding.calculateTopPadding()),
         ) {
-            BackButton(onBack = onBack)
+            Box(modifier = Modifier.statusBarsPadding().padding(start = 16.dp, top = 12.dp)) {
+                ScrimIcon(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Kembali",
+                    onClick = onBack,
+                )
+            }
             FullScreenState(
                 icon = Icons.Filled.ErrorOutline,
                 title = "Tidak bisa memuat detail",
@@ -109,18 +122,21 @@ private fun DetailContent(
 ) {
     val detail = state.detail ?: return
     var descriptionExpanded by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableStateOf(0) }
+    val tabs = listOf("Episode", "Rekomendasi", "Tentang", "Ulasan")
+
+    val playLabel = state.history?.let { h ->
+        if (h.episodeNumber != null && h.positionMs > 0L) "Lanjutkan • EP ${h.episodeNumber}"
+        else "Putar"
+    } ?: "Putar"
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 32.dp),
     ) {
-        // ---------- Backdrop ----------
+        // ---------- Backdrop + aksi atas ----------
         item {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(330.dp),
-            ) {
+            Box(modifier = Modifier.fillMaxWidth().height(360.dp)) {
                 PosterImage(
                     url = detail.cover,
                     modifier = Modifier.fillMaxSize(),
@@ -128,139 +144,53 @@ private fun DetailContent(
                 )
                 Box(
                     modifier = Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color(0x6604060F),
-                                Color.Transparent,
-                                Color(0xF2070A13),
-                            )
-                        )
+                        Brush.verticalGradient(listOf(Color.Transparent, StreamBg))
                     )
                 )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
-                        .padding(start = 10.dp, end = 16.dp, top = 12.dp),
-                    verticalAlignment = Alignment.Top,
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    BackButton(onBack = onBack)
-                }
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(horizontal = 16.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        detail.category?.takeIf { it.isNotBlank() }?.let { category ->
-                            Badge(text = category, background = MaterialTheme.colorScheme.primary)
-                        }
-                        val count = detail.episodeList.size
-                        if (count > 1) {
-                            Badge(text = "$count Episode", background = MaterialTheme.colorScheme.secondary)
-                        } else if (count == 1) {
-                            Badge(text = "Film", background = MaterialTheme.colorScheme.tertiary)
-                        }
-                    }
-                    Text(
-                        text = detail.safeTitle,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
+                    ScrimIcon(
+                        icon = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Kembali",
+                        onClick = onBack,
+                    )
+                    ScrimIcon(
+                        icon = if (state.inWatchlist) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                        contentDescription = if (state.inWatchlist) "Hapus dari daftar" else "Tambah ke daftar",
+                        onClick = onToggleWatchlist,
                     )
                 }
             }
         }
 
-        // ---------- Aksi ----------
+        // ---------- Judul ----------
         item {
-            Row(
+            Text(
+                text = detail.safeTitle,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                val historyLabel = state.history?.let { h ->
-                    if (h.episodeNumber != null && h.positionMs > 0L) "Lanjutkan • EP ${h.episodeNumber}"
-                    else "Putar Sekarang"
-                } ?: "Putar Sekarang"
-
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp)
-                        .shadow(12.dp, RoundedCornerShape(16.dp), ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(brandBrush())
-                        .clickable {
-                            val request = state.history?.let { resumePlayRequest(state) } ?: null
-                            onPlay(request ?: firstPlayRequest(state) ?: return@clickable)
-                        },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    Icon(
-                        Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(26.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = historyLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Color.White,
-                    )
-                }
-
-                ActionCircle(
-                    icon = if (state.inWatchlist) Icons.Filled.BookmarkAdded else Icons.Filled.BookmarkBorder,
-                    tint = if (state.inWatchlist) MaterialTheme.colorScheme.tertiary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    onClick = onToggleWatchlist,
-                )
-                ActionCircle(
-                    icon = Icons.Filled.Download,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    onClick = {
-                        val target = state.history?.episodeId
-                            ?.let { id -> detail.episodeList.firstOrNull { it.safeId == id } }
-                            ?: detail.episodeList.firstOrNull()
-                        if (target != null) onDownload(target)
-                    },
-                )
-            }
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 4.dp, bottom = 10.dp),
+            )
         }
 
-        // ---------- Info & sinopsis ----------
+        // ---------- Sinopsis ----------
         item {
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                state.history?.takeIf { it.positionMs > 0 }?.let { h ->
-                    Text(
-                        text = buildString {
-                            append("Terakhir ditonton")
-                            h.episodeNumber?.let { append(" • Episode $it") }
-                            if (h.durationMs > 0) {
-                                append(" • ")
-                                append(formatTime(h.positionMs))
-                                append(" / ")
-                                append(formatTime(h.durationMs))
-                            }
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
+            Column(modifier = Modifier.padding(horizontal = 20.dp)) {
                 if (!detail.description.isNullOrBlank()) {
                     Text(
                         text = detail.description,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = if (descriptionExpanded) Int.MAX_VALUE else 4,
                         overflow = TextOverflow.Ellipsis,
@@ -273,42 +203,172 @@ private fun DetailContent(
                             text = if (descriptionExpanded) "Lebih sedikit" else "Selengkapnya",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable { descriptionExpanded = !descriptionExpanded },
+                            modifier = Modifier
+                                .padding(top = 6.dp)
+                                .clickable { descriptionExpanded = !descriptionExpanded },
                         )
                     }
                 }
             }
         }
 
-        // ---------- Daftar episode ----------
+        // ---------- Meta ----------
         item {
-            SectionHeader(
-                title = if (detail.episodeList.size > 1) "Daftar Episode" else "Putaran",
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
+            val count = detail.episodeList.size
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (count > 1) {
+                    MetaItem(Icons.Outlined.OndemandVideo, "$count Episode")
+                } else if (count == 1) {
+                    MetaItem(Icons.Outlined.OndemandVideo, "Film")
+                }
+                detail.category?.takeIf { it.isNotBlank() }?.let { category ->
+                    MetaItem(Icons.Outlined.LocalOffer, category)
+                }
+                detail.durationSeconds?.takeIf { it > 0 }?.let { seconds ->
+                    MetaItem(Icons.Outlined.Schedule, "${seconds / 60} menit")
+                }
+            }
         }
 
-        if (detail.episodeList.isEmpty()) {
-            item {
-                Text(
-                    text = "Belum ada daftar episode untuk konten ini.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        // ---------- Baris aksi ----------
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .height(50.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable {
+                            val request = state.history?.let { resumePlayRequest(state) }
+                            onPlay(request ?: firstPlayRequest(state) ?: return@clickable)
+                        }
+                        .padding(horizontal = 22.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(
+                        text = playLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White,
+                        maxLines = 1,
+                    )
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                CircleAction(
+                    icon = if (state.inWatchlist) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    contentDescription = if (state.inWatchlist) "Hapus dari daftar" else "Tambah ke daftar",
+                    background = StreamPrimarySoft,
+                    tint = Color(0xFF1A1633),
+                    onClick = onToggleWatchlist,
+                )
+                CircleAction(
+                    icon = Icons.Filled.Download,
+                    contentDescription = "Unduh",
+                    background = MaterialTheme.colorScheme.surfaceVariant,
+                    tint = Color.White,
+                    onClick = {
+                        val target = state.history?.episodeId
+                            ?.let { id -> detail.episodeList.firstOrNull { it.safeId == id } }
+                            ?: detail.episodeList.firstOrNull()
+                        if (target != null) onDownload(target)
+                    },
                 )
             }
         }
 
-        items(detail.episodeList, key = { it.safeId }) { episode ->
-            EpisodeRow(
-                episode = episode,
-                active = episode.safeId == state.history?.episodeId,
-                onClick = {
-                    val request = playRequestFor(state, episode)
-                    if (request != null) onPlay(request)
-                },
-                onDownload = { onDownload(episode) },
-            )
+        // ---------- Tab ----------
+        item {
+            TabsRow(tabs = tabs, selected = selectedTab, onSelect = { selectedTab = it })
+        }
+
+        when (selectedTab) {
+            0 -> {
+                item {
+                    SectionHeader(
+                        title = if (detail.episodeList.size > 1) "Daftar Episode" else "Putaran",
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    )
+                }
+
+                if (detail.episodeList.isEmpty()) {
+                    item {
+                        Text(
+                            text = "Belum ada daftar episode untuk konten ini.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        )
+                    }
+                }
+
+                items(detail.episodeList, key = { it.safeId }) { episode ->
+                    EpisodeRow(
+                        episode = episode,
+                        active = episode.safeId == state.history?.episodeId,
+                        onClick = {
+                            val request = playRequestFor(state, episode)
+                            if (request != null) onPlay(request)
+                        },
+                        onDownload = { onDownload(episode) },
+                    )
+                }
+            }
+
+            2 -> item {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    SectionHeader(title = "Tentang")
+                    if (!detail.description.isNullOrBlank()) {
+                        Text(
+                            text = detail.description,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    val count = detail.episodeList.size
+                    if (count > 0) {
+                        Text(
+                            text = if (count > 1) "$count episode tersedia" else "1 episode tersedia",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            else -> item {
+                FullScreenState(
+                    icon = if (selectedTab == 1) Icons.Filled.SmartDisplay else Icons.Filled.Star,
+                    title = if (selectedTab == 1) "Belum ada rekomendasi" else "Belum ada ulasan",
+                    subtitle = if (selectedTab == 1) {
+                        "Rekomendasi serupa akan muncul di sini."
+                    } else {
+                        "Ulasan penonton akan muncul di sini."
+                    },
+                )
+            }
         }
     }
 
@@ -430,65 +490,116 @@ private fun playRequestFor(state: DetailUiState, episode: EpisodeData): PlayRequ
     )
 }
 
-private fun formatTime(ms: Long): String {
-    val totalSeconds = ms / 1000
-    val h = totalSeconds / 3600
-    val m = (totalSeconds % 3600) / 60
-    val s = totalSeconds % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
-}
-
 @Composable
-private fun BackButton(onBack: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(Color(0x9905060F))
-            .clickable(onClick = onBack),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = "Kembali",
-            tint = Color.White,
-            modifier = Modifier.size(20.dp),
-        )
-    }
-}
-
-@Composable
-private fun Badge(text: String, background: androidx.compose.ui.graphics.Color) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(background.copy(alpha = 0.92f))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-@Composable
-private fun ActionCircle(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: androidx.compose.ui.graphics.Color,
+private fun ScrimIcon(
+    icon: ImageVector,
+    contentDescription: String?,
     onClick: () -> Unit,
 ) {
     Box(
         modifier = Modifier
-            .size(52.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(Color(0x8002050F))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(23.dp))
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = Color.White,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+@Composable
+private fun CircleAction(
+    icon: ImageVector,
+    contentDescription: String?,
+    background: Color,
+    tint: Color,
+    onClick: () -> Unit,
+    size: Dp = 48.dp,
+    iconSize: Dp = 22.dp,
+) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(background)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(iconSize),
+        )
+    }
+}
+
+@Composable
+private fun MetaItem(icon: ImageVector, text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(15.dp),
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun TabsRow(
+    tabs: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        tabs.forEachIndexed { index, title ->
+            val active = index == selected
+            Column(
+                modifier = Modifier
+                    .width(IntrinsicSize.Min)
+                    .clickable { onSelect(index) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (active) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent),
+                )
+            }
+        }
     }
 }
 
@@ -502,23 +613,23 @@ private fun EpisodeRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .softShadow(6.dp, RoundedCornerShape(16.dp))
-            .clip(RoundedCornerShape(16.dp))
+            .padding(horizontal = 16.dp, vertical = 5.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(
-                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                else Color.Transparent
             )
             .clickable(onClick = onClick)
-            .padding(10.dp),
+            .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(
             modifier = Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surface),
+                .width(120.dp)
+                .height(72.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
             if (!episode.thumbnailUrl.isNullOrBlank()) {
@@ -532,12 +643,12 @@ private fun EpisodeRow(
                     Icons.Filled.SmartDisplay,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(26.dp),
                 )
             }
         }
 
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -546,6 +657,8 @@ private fun EpisodeRow(
                     text = if (episode.safeNumber > 0) "Episode ${episode.safeNumber}" else "Putar",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 val badge = episode.badgeLabel?.takeIf { it.isNotBlank() }
                 if (badge != null) {
@@ -573,58 +686,74 @@ private fun EpisodeRow(
                     episode.durationSeconds?.takeIf { it > 0 }?.let { "${it / 60} menit" },
                     episode.lockedReason?.takeIf { it.isNotBlank() },
                 ).joinToString(" • ").ifBlank { "Ketuk untuk memutar" },
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
 
-        Text(
-            text = "Unduh",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .clickable(onClick = onDownload)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-        )
-
-        Icon(
-            Icons.Filled.PlayArrow,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(22.dp),
+        CircleAction(
+            icon = Icons.Filled.Download,
+            contentDescription = "Unduh",
+            background = MaterialTheme.colorScheme.surfaceVariant,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            onClick = onDownload,
+            size = 36.dp,
+            iconSize = 18.dp,
         )
     }
 }
 
 @Composable
 private fun DetailSkeleton(onBack: () -> Unit, contentPadding: PaddingValues) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Box(modifier = Modifier.fillMaxWidth().height(340.dp)) {
             ShimmerBox(modifier = Modifier.fillMaxSize(), shape = RoundedCornerShape(0.dp))
             Box(
                 modifier = Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(listOf(Color.Transparent, Color(0xF2070A13)))
+                    Brush.verticalGradient(listOf(Color.Transparent, StreamBg))
                 )
             )
-            Row(modifier = Modifier.fillMaxWidth().padding(start = 10.dp, top = 12.dp)) {
-                BackButton(onBack = onBack)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ScrimIcon(
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Kembali",
+                    onClick = onBack,
+                )
+                ShimmerBox(modifier = Modifier.size(40.dp), shape = CircleShape)
             }
         }
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ShimmerBox(modifier = Modifier.fillMaxWidth(0.7f).height(26.dp), shape = RoundedCornerShape(8.dp))
-            ShimmerBox(modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp))
+            ShimmerBox(modifier = Modifier.fillMaxWidth(0.65f).height(24.dp), shape = RoundedCornerShape(8.dp))
             repeat(3) {
-                ShimmerBox(modifier = Modifier.fillMaxWidth().height(14.dp), shape = RoundedCornerShape(6.dp))
+                ShimmerBox(modifier = Modifier.fillMaxWidth().height(12.dp), shape = RoundedCornerShape(6.dp))
             }
-            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ShimmerBox(
+                    modifier = Modifier.width(150.dp).height(50.dp),
+                    shape = RoundedCornerShape(999.dp),
+                )
+                Spacer(Modifier.weight(1f))
+                ShimmerBox(modifier = Modifier.size(48.dp), shape = CircleShape)
+                ShimmerBox(modifier = Modifier.size(48.dp), shape = CircleShape)
+            }
+            Spacer(Modifier.height(4.dp))
             repeat(3) {
-                ShimmerBox(modifier = Modifier.fillMaxWidth().height(66.dp), shape = RoundedCornerShape(16.dp))
+                ShimmerBox(modifier = Modifier.fillMaxWidth().height(72.dp), shape = RoundedCornerShape(10.dp))
             }
         }
         Spacer(Modifier.navigationBarsPadding().height(1.dp))

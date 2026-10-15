@@ -76,6 +76,35 @@ import com.mikdadstream.app.ui.search.SearchScreen
 import com.mikdadstream.app.ui.search.SearchViewModel
 import com.mikdadstream.app.ui.settings.SettingsScreen
 import com.mikdadstream.app.ui.settings.SettingsViewModel
+import com.mikdadstream.app.ui.auth.SignInScreen
+import com.mikdadstream.app.ui.auth.SignUpScreen
+import com.mikdadstream.app.ui.auth.ForgotPasswordScreen
+import com.mikdadstream.app.ui.auth.OtpVerificationScreen
+import com.mikdadstream.app.ui.auth.CreateNewPasswordScreen
+import com.mikdadstream.app.ui.auth.CreatePinScreen
+import com.mikdadstream.app.ui.auth.CreateProfileScreen
+import com.mikdadstream.app.ui.onboarding.OnboardingScreen
+import com.mikdadstream.app.ui.account.EditProfileScreen
+import com.mikdadstream.app.ui.account.ChangePasswordScreen
+import com.mikdadstream.app.ui.account.LanguageScreen
+import com.mikdadstream.app.ui.account.NotificationsScreen
+import com.mikdadstream.app.ui.account.SecurityScreen
+import com.mikdadstream.app.ui.account.HelpSupportScreen
+import com.mikdadstream.app.ui.account.LegalPoliciesScreen
+import com.mikdadstream.app.ui.account.LogoutScreen
+import com.mikdadstream.app.ui.account.FaveCategoriesScreen
+import com.mikdadstream.app.ui.account.FamilySharingScreen
+import com.mikdadstream.app.ui.subscription.SubscriptionScreen
+import com.mikdadstream.app.ui.subscription.AddCardScreen
+import com.mikdadstream.app.ui.subscription.PaymentSuccessScreen
+import com.mikdadstream.app.ui.kit.LikedMoviesScreen
+import com.mikdadstream.app.ui.kit.WatchOnDeviceScreen
+import com.mikdadstream.app.ui.kit.DownloadEmptyScreen
+import com.mikdadstream.app.ui.kit.TopSearchesScreen
+import com.mikdadstream.app.ui.kit.SearchNotFoundScreen
+import com.mikdadstream.app.ui.kit.SeasonScreen
+import com.mikdadstream.app.ui.kit.MoviePlayScreen
+import com.mikdadstream.app.ui.kit.DesignKitScreen
 
 private object Routes {
     const val HOME = "home"
@@ -84,6 +113,35 @@ private object Routes {
     const val HISTORY = "history"
     const val SETTINGS = "settings"
     const val DETAIL = "detail?modelId={modelId}&id={id}&source={source}&autoplay={autoplay}"
+    const val KIT = "kit"
+    const val ONBOARDING = "onboarding"
+    const val SIGNIN = "signin"
+    const val SIGNUP = "signup"
+    const val FORGOT = "forgot"
+    const val OTP = "otp"
+    const val NEWPASS = "newpass"
+    const val PIN = "pin"
+    const val CREATEPROFILE = "createprofile"
+    const val EDIT_PROFILE = "edit_profile"
+    const val CHANGE_PASSWORD = "change_password"
+    const val LANGUAGE = "language"
+    const val NOTIFICATIONS = "notifications"
+    const val SECURITY = "security"
+    const val HELP = "help"
+    const val LEGAL = "legal"
+    const val LOGOUT = "logout"
+    const val FAVE = "fave"
+    const val FAMILY = "family"
+    const val SUBSCRIPTION = "subscription"
+    const val ADD_CARD = "add_card"
+    const val PAYMENT_SUCCESS = "payment_success"
+    const val KIT_LIKED = "kit_liked"
+    const val KIT_WATCH = "kit_watch"
+    const val KIT_DOWNLOAD = "kit_download"
+    const val KIT_TOP = "kit_top"
+    const val KIT_NOTFOUND = "kit_notfound"
+    const val KIT_SEASON = "kit_season"
+    const val KIT_PLAY = "kit_play"
 }
 
 private data class BottomTab(
@@ -122,8 +180,9 @@ fun AppNavGraph() {
 
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
-    val showHeader = currentRoute == Routes.HOME || currentRoute == Routes.LIBRARY || currentRoute == Routes.SETTINGS
-    val showBottomBar = showHeader || currentRoute == Routes.SEARCH
+    val showHeader = false
+    val showBottomBar = currentRoute == Routes.HOME || currentRoute == Routes.LIBRARY ||
+        currentRoute == Routes.SETTINGS || currentRoute == Routes.SEARCH
 
     fun openDetail(modelId: String?, id: String, source: String?, autoplay: Boolean = false) {
         val route = "detail?modelId=${Uri.encode(modelId.orEmpty())}" +
@@ -172,6 +231,10 @@ fun AppNavGraph() {
                 HomeScreen(
                     viewModel = vm,
                     contentPadding = padding,
+                    profile = profile,
+                    onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
+                    onSearchClick = { navController.navigateTop(Routes.SEARCH) },
+                    onNotificationClick = { navController.navigate(Routes.KIT) },
                     onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
                     onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
                     onSeeHistory = { navController.navigateTop(Routes.HISTORY) },
@@ -215,6 +278,71 @@ fun AppNavGraph() {
                 onPlay = ::playRequest,
                 snackbarHostState = snackbarHostState,
             )
+
+            val back: () -> Unit = { navController.popBackStack() }
+            composable(Routes.ONBOARDING) { OnboardingScreen(onFinish = { navController.navigateTop(Routes.HOME) }) }
+            composable(Routes.SIGNIN) { SignInScreen(back, onSignIn = { navController.navigateTop(Routes.HOME) }, onSignUp = { navController.navigate(Routes.SIGNUP) }, onForgot = { navController.navigate(Routes.FORGOT) }) }
+            composable(Routes.SIGNUP) { SignUpScreen(back, onSignUp = { navController.navigateTop(Routes.HOME) }, onSignIn = back) }
+            composable(Routes.FORGOT) { ForgotPasswordScreen(back, onSend = { navController.navigate(Routes.OTP) }, onSignIn = back) }
+            composable(Routes.OTP) { OtpVerificationScreen(back, onVerify = { navController.navigate(Routes.NEWPASS) }) }
+            composable(Routes.NEWPASS) { CreateNewPasswordScreen(back, onDone = { navController.navigateTop(Routes.HOME) }) }
+            composable(Routes.PIN) { CreatePinScreen(back, onDone = { navController.navigateTop(Routes.HOME) }) }
+            composable(Routes.CREATEPROFILE) { CreateProfileScreen(back, onDone = { navController.navigateTop(Routes.HOME) }) }
+            composable(Routes.EDIT_PROFILE) { EditProfileScreen(back) }
+            composable(Routes.CHANGE_PASSWORD) { ChangePasswordScreen(back) }
+            composable(Routes.LANGUAGE) { LanguageScreen(back) }
+            composable(Routes.NOTIFICATIONS) { NotificationsScreen(back) }
+            composable(Routes.SECURITY) { SecurityScreen(back) }
+            composable(Routes.HELP) { HelpSupportScreen(back) }
+            composable(Routes.LEGAL) { LegalPoliciesScreen(back) }
+            composable(Routes.LOGOUT) { LogoutScreen(back, onConfirm = { navController.navigateTop(Routes.HOME) }) }
+            composable(Routes.FAVE) { FaveCategoriesScreen(back) }
+            composable(Routes.FAMILY) { FamilySharingScreen(back) }
+            composable(Routes.SUBSCRIPTION) { SubscriptionScreen(back, onSubscribe = { navController.navigate(Routes.ADD_CARD) }) }
+            composable(Routes.ADD_CARD) { AddCardScreen(back, onPay = { navController.navigate(Routes.PAYMENT_SUCCESS) }) }
+            composable(Routes.PAYMENT_SUCCESS) { PaymentSuccessScreen(onBack = { navController.navigateTop(Routes.SUBSCRIPTION) }, onHome = { navController.navigateTop(Routes.HOME) }) }
+            composable(Routes.KIT_LIKED) { LikedMoviesScreen(back) { } }
+            composable(Routes.KIT_WATCH) { WatchOnDeviceScreen(back) }
+            composable(Routes.KIT_DOWNLOAD) { DownloadEmptyScreen(back) }
+            composable(Routes.KIT_TOP) { TopSearchesScreen(back) { } }
+            composable(Routes.KIT_NOTFOUND) { SearchNotFoundScreen(back) }
+            composable(Routes.KIT_SEASON) { SeasonScreen(back) { } }
+            composable(Routes.KIT_PLAY) { MoviePlayScreen(back, title = "Film Pilihan") }
+            composable(Routes.KIT) {
+                DesignKitScreen(
+                    onBack = back,
+                    onOpen = { name ->
+                        val route = when (name) {
+                            "Onboarding" -> Routes.ONBOARDING
+                            "Masuk" -> Routes.SIGNIN
+                            "Daftar" -> Routes.SIGNUP
+                            "OTP" -> Routes.OTP
+                            "Lupa Sandi" -> Routes.FORGOT
+                            "Langganan" -> Routes.SUBSCRIPTION
+                            "Tambah Kartu" -> Routes.ADD_CARD
+                            "Pembayaran" -> Routes.PAYMENT_SUCCESS
+                            "Film Disukai" -> Routes.KIT_LIKED
+                            "Pencarian Populer" -> Routes.KIT_TOP
+                            "Unduhan" -> Routes.KIT_DOWNLOAD
+                            "Musim" -> Routes.KIT_SEASON
+                            "Watch on Device" -> Routes.KIT_WATCH
+                            "Ubah Profil" -> Routes.EDIT_PROFILE
+                            "Ubah Sandi" -> Routes.CHANGE_PASSWORD
+                            "Bahasa" -> Routes.LANGUAGE
+                            "Notifikasi" -> Routes.NOTIFICATIONS
+                            "Keamanan" -> Routes.SECURITY
+                            "Bantuan" -> Routes.HELP
+                            "Legal" -> Routes.LEGAL
+                            "Keluar" -> Routes.LOGOUT
+                            "Kategori Favorit" -> Routes.FAVE
+                            "Berbagi Keluarga" -> Routes.FAMILY
+                            "Putar Film" -> Routes.KIT_PLAY
+                            else -> Routes.KIT
+                        }
+                        navController.navigate(route)
+                    },
+                )
+            }
         }
     }
 
@@ -248,66 +376,58 @@ private fun AppBottomBar(
     currentRoute: String?,
     onSelect: (BottomTab) -> Unit,
 ) {
-    val pillBrush = Brush.horizontalGradient(
-        listOf(
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
-            MaterialTheme.colorScheme.secondary.copy(alpha = 0.22f),
-        )
-    )
-    val selectedBrush = Brush.linearGradient(
-        listOf(
-            MaterialTheme.colorScheme.primary,
-            MaterialTheme.colorScheme.secondary,
-        )
-    )
-    Box(
+    val primary = MaterialTheme.colorScheme.primary
+    val inactive = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .background(MaterialTheme.colorScheme.background)
+            .navigationBarsPadding(),
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Color(0xFF1B1D26)),
+        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(pillBrush)
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                .padding(horizontal = 8.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             tabs.forEach { tab ->
                 val selected = currentRoute == tab.route
                 val scale by animateFloatAsState(
-                    targetValue = if (selected) 1.06f else 1f,
-                    animationSpec = tween(220),
+                    targetValue = if (selected) 1.04f else 1f,
+                    animationSpec = tween(200),
                     label = "navScale",
                 )
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .scale(scale)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(if (selected) selectedBrush else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
+                        .clip(RoundedCornerShape(14.dp))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                         ) { onSelect(tab) }
-                        .padding(vertical = 10.dp),
+                        .padding(vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Icon(
                         imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
                         contentDescription = tab.label,
-                        tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp),
+                        tint = if (selected) primary else inactive,
+                        modifier = Modifier.size(23.dp),
                     )
                     Text(
                         text = tab.label,
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (selected) primary else inactive,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                     )
                 }
             }

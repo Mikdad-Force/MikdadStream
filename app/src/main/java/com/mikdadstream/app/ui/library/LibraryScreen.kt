@@ -1,5 +1,7 @@
 package com.mikdadstream.app.ui.library
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,12 +10,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -24,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
@@ -33,7 +34,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +55,7 @@ import com.mikdadstream.app.data.remote.MediaItem
 import com.mikdadstream.app.data.repository.StreamRepository
 import com.mikdadstream.app.ui.components.FullScreenState
 import com.mikdadstream.app.ui.components.PosterImage
+import com.mikdadstream.app.ui.components.SectionHeader
 import com.mikdadstream.app.ui.components.VideoCard
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -95,12 +98,33 @@ fun LibraryScreen(
     val history by viewModel.history.collectAsState()
     var tab by remember { mutableStateOf(initialTab) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding())) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
+    ) {
+        // ---- Streamview header ----
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = if (tab == 0) "Koleksi" else "Riwayat",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        // ---- Segmented pill (Koleksi / Riwayat) ----
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(4.dp),
         ) {
@@ -118,6 +142,8 @@ fun LibraryScreen(
             ) { tab = 1 }
         }
 
+        Spacer(Modifier.height(12.dp))
+
         when (tab) {
             0 -> if (watchlist.isEmpty()) {
                 FullScreenState(
@@ -129,13 +155,13 @@ fun LibraryScreen(
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 118.dp),
                     contentPadding = PaddingValues(
-                        start = 16.dp,
-                        end = 16.dp,
+                        start = 20.dp,
+                        end = 20.dp,
                         top = 4.dp,
                         bottom = contentPadding.calculateBottomPadding() + 24.dp,
                     ),
-                    horizontalArrangement = Arrangement.spacedBy(13.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     items(watchlist, key = { it.key }) { entry ->
                         Box {
@@ -156,12 +182,12 @@ fun LibraryScreen(
                                     .padding(4.dp)
                                     .size(28.dp)
                                     .clip(RoundedCornerShape(999.dp))
-                                    .background(androidx.compose.ui.graphics.Color(0x9905060F)),
+                                    .background(Color(0x9902050F)),
                             ) {
                                 Icon(
                                     Icons.Filled.Close,
                                     contentDescription = "Hapus",
-                                    tint = androidx.compose.ui.graphics.Color.White,
+                                    tint = Color.White,
                                     modifier = Modifier.size(15.dp),
                                 )
                             }
@@ -179,45 +205,19 @@ fun LibraryScreen(
             } else {
                 LazyColumn(
                     contentPadding = PaddingValues(
-                        start = 16.dp,
-                        end = 16.dp,
+                        start = 20.dp,
+                        end = 20.dp,
                         top = 4.dp,
                         bottom = contentPadding.calculateBottomPadding() + 24.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = "Terakhir ditonton",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onBackground,
-                            )
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { viewModel.clearHistory() }
-                                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            ) {
-                                Icon(
-                                    Icons.Filled.DeleteSweep,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Text(
-                                    text = "Bersihkan",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.secondary,
-                                )
-                            }
-                        }
+                        SectionHeader(
+                            title = "Terakhir ditonton",
+                            actionLabel = "Bersihkan",
+                            onAction = { viewModel.clearHistory() },
+                        )
                     }
                     items(history, key = { it.contentId }) { entry ->
                         HistoryRow(
@@ -240,19 +240,19 @@ private fun TabButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val bg by androidx.compose.animation.animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent,
-        animationSpec = androidx.compose.animation.core.tween(220),
+    val bg by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(220),
         label = "tabBg",
     )
-    val fg by androidx.compose.animation.animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = androidx.compose.animation.core.tween(220),
+    val fg by animateColorAsState(
+        targetValue = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(220),
         label = "tabFg",
     )
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(11.dp))
+            .clip(RoundedCornerShape(9.dp))
             .background(bg)
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp),
@@ -262,6 +262,7 @@ private fun TabButton(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 color = fg,
             )
             if (count > 0) {
@@ -284,28 +285,26 @@ private fun HistoryRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-            .clickable(onClick = onResume)
-            .padding(10.dp),
+            .clickable(onClick = onResume),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Box(
             modifier = Modifier
-                .width(64.dp)
-                .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(12.dp)),
+                .width(120.dp)
+                .height(72.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             PosterImage(url = entry.cover, modifier = Modifier.fillMaxSize())
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
-                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                        Brush.verticalGradient(
                             listOf(
-                                androidx.compose.ui.graphics.Color.Transparent,
-                                androidx.compose.ui.graphics.Color(0xCC04060F),
+                                Color.Transparent,
+                                Color(0x9902050F),
                             )
                         )
                     )
@@ -313,8 +312,8 @@ private fun HistoryRow(
             Icon(
                 Icons.Filled.PlayArrow,
                 contentDescription = null,
-                tint = androidx.compose.ui.graphics.Color.White,
-                modifier = Modifier.align(Alignment.Center).size(24.dp),
+                tint = Color.White,
+                modifier = Modifier.align(Alignment.Center).size(22.dp),
             )
         }
 
@@ -331,14 +330,17 @@ private fun HistoryRow(
                     entry.episodeNumber?.let { "Episode $it" },
                     if (entry.durationMs > 0) formatProgress(entry) else null,
                 ).joinToString(" • "),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             LinearProgressIndicator(
                 progress = { entry.progress },
-                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(999.dp)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(999.dp)),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.outline,
             )
