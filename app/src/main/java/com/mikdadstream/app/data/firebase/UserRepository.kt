@@ -153,27 +153,59 @@ class UserRepository {
         return state
     }
 
-    /** Aktifkan premium (pembelian Rp 10.000). */
+    /** Aktifkan premium (pembelian Rp 10.000). Developer tetap berlabel Developers. */
     suspend fun activatePremium() {
         val uid = currentUid
+        val keepDevelopers = _account.value?.accountType == AccountType.DEVELOPERS
         if (uid == null) {
-            _account.value = _account.value?.copy(accountType = AccountType.PREMIUM, premium = true)
+            _account.value = _account.value?.copy(
+                accountType = if (keepDevelopers) AccountType.DEVELOPERS else AccountType.PREMIUM,
+                premium = true,
+            )
+            return
+        }
+        val payload = mutableMapOf<String, Any?>(
+            "premium" to true,
+            "premiumSince" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp(),
+        )
+        if (!keepDevelopers) payload["accountType"] = AccountType.PREMIUM.key
+
+        val writeError = runCatching {
+            firestore?.collection(COLLECTION)?.document(uid)?.set(payload, SetOptions.merge())?.await()
+        }.exceptionOrNull()
+        if (writeError != null) fail("Gagal menyimpan premium: ${writeError.message}")
+        else _lastError.value = null
+        _account.value = _account.value?.copy(
+            accountType = if (keepDevelopers) AccountType.DEVELOPERS else AccountType.PREMIUM,
+            premium = true,
+        )
+    }
+
+    /** Ubah tipe akun dan simpan ke Firestore (`users/{uid}.accountType`). */
+    suspend fun setAccountType(type: AccountType) {
+        val premium = type != AccountType.NORMAL
+        val uid = currentUid
+        if (uid == null) {
+            _account.value = _account.value?.copy(accountType = type, premium = premium)
             return
         }
         val writeError = runCatching {
             firestore?.collection(COLLECTION)?.document(uid)?.set(
                 mapOf(
-                    "premium" to true,
-                    "accountType" to AccountType.PREMIUM.key,
-                    "premiumSince" to FieldValue.serverTimestamp(),
+                    "accountType" to type.key,
+                    "premium" to premium,
                     "updatedAt" to FieldValue.serverTimestamp(),
                 ),
                 SetOptions.merge(),
             )?.await()
         }.exceptionOrNull()
-        if (writeError != null) fail("Gagal menyimpan premium: ${writeError.message}")
-        else _lastError.value = null
-        _account.value = _account.value?.copy(accountType = AccountType.PREMIUM, premium = true)
+        if (writeError != null) fail("Gagal menyimpan tipe akun: ${writeError.message}")
+        else {
+            Log.i(TAG, "Tipe akun users/$uid diubah ke ${type.key}")
+            _lastError.value = null
+        }
+        _account.value = _account.value?.copy(accountType = type, premium = premium)
     }
 
     private fun attachListener(user: FirebaseUser) {

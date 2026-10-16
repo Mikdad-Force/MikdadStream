@@ -53,6 +53,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -344,6 +345,47 @@ fun SettingsScreen(
                             .clip(RoundedCornerShape(8.dp))
                             .clickable { firebaseScope.launch { com.mikdadstream.app.AppGraph.users.syncNow() } }
                             .padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+
+            if (firebaseAccount != null) {
+                SettingsDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Icon(
+                        Icons.Filled.Star,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "Mode Developers",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        Text(
+                            text = "Tandai akun ini sebagai Developers (tag Developers, bukan Premium)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = firebaseAccount?.accountType == com.mikdadstream.app.data.firebase.AccountType.DEVELOPERS,
+                        onCheckedChange = { enabled ->
+                            firebaseScope.launch {
+                                com.mikdadstream.app.AppGraph.users.setAccountType(
+                                    if (enabled) com.mikdadstream.app.data.firebase.AccountType.DEVELOPERS
+                                    else com.mikdadstream.app.data.firebase.AccountType.NORMAL
+                                )
+                            }
+                        },
                     )
                 }
             }
