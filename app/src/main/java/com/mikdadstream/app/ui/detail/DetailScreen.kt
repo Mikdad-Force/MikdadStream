@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mikdadstream.app.data.remote.EpisodeData
+import com.mikdadstream.app.data.remote.MediaStream
 import com.mikdadstream.app.ui.components.FullScreenState
 import com.mikdadstream.app.ui.components.PosterImage
 import com.mikdadstream.app.ui.components.SectionHeader
@@ -69,6 +70,7 @@ fun DetailScreen(
     viewModel: DetailViewModel,
     contentPadding: PaddingValues,
     onBack: () -> Unit,
+    onOpenPremium: () -> Unit = {},
     onPlay: (PlayRequest) -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
@@ -105,7 +107,28 @@ fun DetailScreen(
             onPlay = { request -> onPlay(request) },
             onToggleWatchlist = { viewModel.toggleWatchlist() },
             onDownload = { episode -> viewModel.openDownloads(episode) },
+            onDownloadFile = { file -> viewModel.startDownload(file) },
             onCloseDownloads = { viewModel.closeDownloads() },
+        )
+    }
+
+    if (state.downloadLocked) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissDownloadLock() },
+            title = { Text("Butuh Premium") },
+            text = {
+                Text("Fitur unduh video hanya untuk pengguna Premium. Buka sekarang dengan Rp 10.000 sekali bayar.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissDownloadLock()
+                    viewModel.closeDownloads()
+                    onOpenPremium()
+                }) { Text("Beli Premium") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissDownloadLock() }) { Text("Nanti") }
+            },
         )
     }
 }
@@ -118,6 +141,7 @@ private fun DetailContent(
     onPlay: (PlayRequest) -> Unit,
     onToggleWatchlist: () -> Unit,
     onDownload: (EpisodeData) -> Unit,
+    onDownloadFile: (MediaStream) -> Unit,
     onCloseDownloads: () -> Unit,
 ) {
     val detail = state.detail ?: return
@@ -399,12 +423,18 @@ private fun DetailContent(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        Text(
+                            text = "Pilih kualitas untuk mulai mengunduh:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         state.downloads.forEach { file ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { onDownloadFile(file) }
                                     .padding(10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -427,6 +457,12 @@ private fun DetailContent(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
+                                Icon(
+                                    Icons.Filled.Download,
+                                    contentDescription = "Unduh",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
                             }
                         }
                     }

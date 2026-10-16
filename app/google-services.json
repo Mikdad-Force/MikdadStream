@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "350158650454",
+    "project_id": "mikdad-a7a8a",
+    "storage_bucket": "mikdad-a7a8a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:350158650454:android:363c3f0f2ad29c215e0ff7",
+        "android_client_info": {
+          "package_name": "com.mikdadstream.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "350158650454-h82139noud47hki2tmcdqhfuo9n8n35g.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCZKVJvjlLk5OTNPKg60glxveoen9RBeUY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "350158650454-h82139noud47hki2tmcdqhfuo9n8n35g.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -147,6 +147,7 @@ private fun AuthFlow(isTv: Boolean) {
             val avatar = claims["picture"] ?: account.photoUrl?.toString()
             val sub = claims["sub"]
             scope.launch {
+                runCatching { AppGraph.users.signInWithGoogle(account.idToken.orEmpty()) }
                 val ok = runCatching {
                     AppGraph.apiClient.auth.loginWithGoogleAsync(email, name, avatar, sub)
                 }.getOrDefault(false)
@@ -170,9 +171,6 @@ private fun AuthFlow(isTv: Boolean) {
         AuthStep.Onboarding -> OnboardingScreen(onFinish = { step = AuthStep.SignIn })
         AuthStep.SignIn -> SignInScreen(
             onBack = { step = AuthStep.Onboarding },
-            onSignIn = { email, _ -> deviceLogin(email) },
-            onSignUp = { step = AuthStep.SignUp },
-            onForgot = { step = AuthStep.Forgot },
             onGoogleSignIn = { launchGoogleSignIn() },
         )
         AuthStep.SignUp -> SignUpScreen(

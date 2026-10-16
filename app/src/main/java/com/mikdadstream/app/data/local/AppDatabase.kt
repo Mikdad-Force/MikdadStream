@@ -44,6 +44,27 @@ data class SearchHistoryEntity(
     val at: Long,
 )
 
+@Entity(tableName = "downloads")
+data class DownloadEntity(
+    @PrimaryKey val key: String,
+    @ColumnInfo(name = "content_id") val contentId: String,
+    @ColumnInfo(name = "model_id") val modelId: String,
+    val title: String,
+    val cover: String?,
+    @ColumnInfo(name = "episode_id") val episodeId: String?,
+    @ColumnInfo(name = "episode_number") val episodeNumber: Int?,
+    val quality: String?,
+    val format: String?,
+    val url: String,
+    @ColumnInfo(name = "headers_json") val headersJson: String?,
+    @ColumnInfo(name = "file_path") val filePath: String?,
+    @ColumnInfo(name = "bytes_total") val bytesTotal: Long,
+    @ColumnInfo(name = "bytes_done") val bytesDone: Long,
+    val status: String,
+    val progress: Float,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+)
+
 @Dao
 interface WatchlistDao {
     @Query("SELECT * FROM watchlist ORDER BY added_at DESC")
@@ -95,13 +116,38 @@ interface SearchHistoryDao {
     suspend fun clear()
 }
 
+@Dao
+interface DownloadDao {
+    @Query("SELECT * FROM downloads ORDER BY created_at DESC")
+    fun observeAll(): Flow<List<DownloadEntity>>
+
+    @Query("SELECT * FROM downloads WHERE key = :key LIMIT 1")
+    suspend fun find(key: String): DownloadEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: DownloadEntity)
+
+    @Query(
+        "UPDATE downloads SET bytes_done = :done, bytes_total = :total, " +
+            "progress = :progress, status = :status WHERE key = :key"
+    )
+    suspend fun updateProgress(key: String, done: Long, total: Long, progress: Float, status: String)
+
+    @Query("DELETE FROM downloads WHERE key = :key")
+    suspend fun delete(key: String)
+
+    @Query("DELETE FROM downloads")
+    suspend fun clear()
+}
+
 @Database(
-    entities = [WatchlistEntity::class, HistoryEntity::class, SearchHistoryEntity::class],
-    version = 1,
+    entities = [WatchlistEntity::class, HistoryEntity::class, SearchHistoryEntity::class, DownloadEntity::class],
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun watchlistDao(): WatchlistDao
     abstract fun historyDao(): HistoryDao
     abstract fun searchHistoryDao(): SearchHistoryDao
+    abstract fun downloadDao(): DownloadDao
 }

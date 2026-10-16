@@ -20,11 +20,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.BookmarkBorder
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -35,6 +37,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,12 +63,17 @@ import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.flow.first
 import androidx.navigation.navArgument
 import com.mikdadstream.app.AppGraph
+import com.mikdadstream.app.data.firebase.AccountType
 import com.mikdadstream.app.ui.components.AppHeader
 import com.mikdadstream.app.ui.components.FloatingBottomNavBar
 import com.mikdadstream.app.ui.components.FloatingNavItem
 import com.mikdadstream.app.ui.components.SourceSheet
 import com.mikdadstream.app.ui.detail.DetailScreen
 import com.mikdadstream.app.ui.detail.DetailViewModel
+import com.mikdadstream.app.ui.detail.PlayRequest
+import com.mikdadstream.app.data.remote.EpisodeData
+import com.mikdadstream.app.ui.downloads.DownloadsScreen
+import com.mikdadstream.app.ui.downloads.DownloadsViewModel
 import com.mikdadstream.app.ui.home.HomeScreen
 import com.mikdadstream.app.ui.home.HomeViewModel
 import com.mikdadstream.app.ui.library.LibraryScreen
@@ -112,6 +121,7 @@ private object Routes {
     const val SEARCH = "search"
     const val LIBRARY = "library"
     const val HISTORY = "history"
+    const val DOWNLOADS = "downloads"
     const val SETTINGS = "settings"
     const val DETAIL = "detail?modelId={modelId}&id={id}&source={source}&autoplay={autoplay}"
     const val KIT = "kit"
@@ -146,21 +156,20 @@ private object Routes {
     const val PAIR_DEVICE = "pair_device"
 }
 
-private const val NAV_ADD = "nav_add"
-
 private val floatingNavItems = listOf(
-    FloatingNavItem(Routes.HOME, Icons.Rounded.Home, "Beranda", selectedIcon = Icons.Rounded.Home),
     FloatingNavItem(Routes.SEARCH, Icons.Rounded.Search, "Cari", selectedIcon = Icons.Rounded.Search),
-    FloatingNavItem(NAV_ADD, Icons.Rounded.Add, "Tambah"),
-    FloatingNavItem(Routes.NOTIFICATIONS, Icons.Rounded.NotificationsNone, "Notifikasi", selectedIcon = Icons.Rounded.NotificationsNone),
-    FloatingNavItem(Routes.SETTINGS, Icons.Rounded.Menu, "Profil", selectedIcon = Icons.Rounded.Menu),
+    FloatingNavItem(Routes.LIBRARY, Icons.Rounded.BookmarkBorder, "Koleksi", selectedIcon = Icons.Rounded.Bookmark),
+    FloatingNavItem(Routes.HOME, Icons.Rounded.Home, "Beranda", selectedIcon = Icons.Rounded.Home),
+    FloatingNavItem(Routes.DOWNLOADS, Icons.Rounded.Download, "Unduh", selectedIcon = Icons.Rounded.Download),
+    FloatingNavItem(Routes.SETTINGS, Icons.Rounded.Settings, "Pengaturan", selectedIcon = Icons.Rounded.Settings),
 )
 
 private fun floatingNavIndex(route: String?): Int = when (route) {
-    Routes.SEARCH -> 1
-    Routes.NOTIFICATIONS -> 3
+    Routes.SEARCH -> 0
+    Routes.LIBRARY, Routes.HISTORY -> 1
+    Routes.DOWNLOADS -> 3
     Routes.SETTINGS -> 4
-    else -> 0
+    else -> 2
 }
 
 @Composable
@@ -172,6 +181,7 @@ fun AppNavGraph(isTv: Boolean = false) {
     val navController = rememberNavController()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val premiumScope = rememberCoroutineScope()
 
     val mainViewModel: MainViewModel = sharedViewModel { MainViewModel(AppGraph.repository, AppGraph.prefs) }
     val profile by mainViewModel.profile.collectAsState()
@@ -182,12 +192,22 @@ fun AppNavGraph(isTv: Boolean = false) {
     val modelsError by mainViewModel.modelsError.collectAsState()
     val sheetVisible by mainViewModel.sheetVisible.collectAsState()
     val hiddenSources by AppGraph.prefs.hiddenSources.collectAsState()
+    val firebaseAccount by AppGraph.users.account.collectAsState()
+    val premiumUnlocked by AppGraph.prefs.premiumUnlocked.collectAsState()
+    val isPremium = firebaseAccount?.premium == true ||
+        premiumUnlocked ||
+        firebaseAccount?.accountType == AccountType.DEVELOPERS
+    val accountBadge = when {
+        firebaseAccount?.accountType == AccountType.DEVELOPERS -> "Developers"
+        isPremium -> "Premium"
+        else -> "Normal"
+    }
 
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val showHeader = false
     val showBottomBar = currentRoute == Routes.HOME || currentRoute == Routes.LIBRARY ||
-        currentRoute == Routes.SETTINGS || currentRoute == Routes.SEARCH || currentRoute == Routes.NOTIFICATIONS
+        currentRoute == Routes.SETTINGS || currentRoute == Routes.SEARCH || currentRoute == Routes.DOWNLOADS
 
     fun openDetail(modelId: String?, id: String, source: String?, autoplay: Boolean = false) {
         val route = "detail?modelId=${Uri.encode(modelId.orEmpty())}" +
@@ -229,15 +249,7 @@ fun AppNavGraph(isTv: Boolean = false) {
                 FloatingBottomNavBar(
                     items = floatingNavItems,
                     selectedIndex = floatingNavIndex(currentRoute),
-                    onSelect = { index ->
-                        when (floatingNavItems[index].id) {
-                            NAV_ADD -> mainViewModel.openSheet()
-                            Routes.NOTIFICATIONS -> navController.navigateTop(Routes.NOTIFICATIONS)
-                            Routes.SEARCH -> navController.navigateTop(Routes.SEARCH)
-                            Routes.SETTINGS -> navController.navigateTop(Routes.SETTINGS)
-                            else -> navController.navigateTop(Routes.HOME)
-                        }
-                    },
+                    onSelect = { index -> navController.navigateTop(floatingNavItems[index].id) },
                 )
             }
         },
@@ -263,10 +275,11 @@ fun AppNavGraph(isTv: Boolean = false) {
                         viewModel = vm,
                         contentPadding = padding,
                         profile = profile,
+                        accountBadge = accountBadge,
+                        isPremium = isPremium,
                         onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
                         onSearchClick = { navController.navigateTop(Routes.SEARCH) },
                         onNotificationClick = { navController.navigate(Routes.NOTIFICATIONS) },
-                        onLibraryClick = { navController.navigateTop(Routes.LIBRARY) },
                         onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
                         onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
                         onSeeHistory = { navController.navigateTop(Routes.HISTORY) },
@@ -292,6 +305,43 @@ fun AppNavGraph(isTv: Boolean = false) {
                 LibraryRoute(initialTab = 1, padding = padding, navController = navController)
             }
 
+            composable(Routes.DOWNLOADS) {
+                val vm: DownloadsViewModel = sharedViewModel { DownloadsViewModel(AppGraph.downloads) }
+                DownloadsScreen(
+                    viewModel = vm,
+                    contentPadding = padding,
+                    isPremium = isPremium,
+                    onBack = { navController.navigateTop(Routes.HOME) },
+                    onOpenPremium = { navController.navigate(Routes.SUBSCRIPTION) },
+                    onPlay = { dl ->
+                        val path = dl.filePath
+                        if (!path.isNullOrBlank()) {
+                            val url = Uri.fromFile(java.io.File(path)).toString()
+                            val episode = EpisodeData(
+                                episodeId = dl.episodeId.orEmpty(),
+                                episodeNumber = dl.episodeNumber ?: 1,
+                                thumbnailUrl = dl.cover,
+                            )
+                            context.startActivity(
+                                PlayerActivity.intent(
+                                    context,
+                                    PlayRequest(
+                                        modelId = dl.modelId,
+                                        contentId = dl.contentId,
+                                        episodeId = dl.episodeId.orEmpty(),
+                                        episodeNumber = dl.episodeNumber ?: 1,
+                                        title = dl.title,
+                                        cover = dl.cover,
+                                        episodes = listOf(episode),
+                                        localUrl = url,
+                                    ),
+                                )
+                            )
+                        }
+                    },
+                )
+            }
+
             composable(Routes.SETTINGS) {
                 val vm: SettingsViewModel = sharedViewModel {
                     SettingsViewModel(AppGraph.repository, AppGraph.prefs, AppGraph.apiClient)
@@ -301,7 +351,10 @@ fun AppNavGraph(isTv: Boolean = false) {
                     contentPadding = padding,
                     activeSourceName = activeSource?.safeName
                         ?: AppGraph.prefs.activeSource.value,
+                    isPremium = isPremium,
                     onOpenSources = { mainViewModel.openSheet() },
+                    onOpenLanguage = { navController.navigate(Routes.LANGUAGE) },
+                    onOpenPremium = { navController.navigate(Routes.SUBSCRIPTION) },
                     onPairDevice = { navController.navigate(Routes.PAIR_DEVICE) },
                     onOpenDesignKit = { navController.navigate(Routes.KIT) },
                 )
@@ -311,12 +364,13 @@ fun AppNavGraph(isTv: Boolean = false) {
                 padding = padding,
                 onBack = { navController.popBackStack() },
                 onPlay = ::playRequest,
+                onOpenPremium = { navController.navigate(Routes.SUBSCRIPTION) },
                 snackbarHostState = snackbarHostState,
             )
 
             val back: () -> Unit = { navController.popBackStack() }
             composable(Routes.ONBOARDING) { OnboardingScreen(onFinish = { navController.navigateTop(Routes.HOME) }) }
-            composable(Routes.SIGNIN) { SignInScreen(back, onSignIn = { _, _ -> navController.navigateTop(Routes.HOME) }, onSignUp = { navController.navigate(Routes.SIGNUP) }, onForgot = { navController.navigate(Routes.FORGOT) }) }
+            composable(Routes.SIGNIN) { SignInScreen(onBack = back, onGoogleSignIn = { navController.navigateTop(Routes.HOME) }) }
             composable(Routes.SIGNUP) { SignUpScreen(back, onSignUp = { navController.navigateTop(Routes.HOME) }, onSignIn = back) }
             composable(Routes.FORGOT) { ForgotPasswordScreen(back, onSend = { navController.navigate(Routes.OTP) }, onSignIn = back) }
             composable(Routes.OTP) { OtpVerificationScreen(back, onVerify = { navController.navigate(Routes.NEWPASS) }) }
@@ -333,11 +387,17 @@ fun AppNavGraph(isTv: Boolean = false) {
             composable(Routes.LOGOUT) { LogoutScreen(back, onConfirm = {
                 AppGraph.prefs.clearTokens()
                 AppGraph.prefs.setLoggedIn(false)
+                AppGraph.prefs.setPremiumUnlocked(false)
+                premiumScope.launch { AppGraph.users.signOut() }
             }) }
             composable(Routes.FAVE) { FaveCategoriesScreen(back) }
             composable(Routes.FAMILY) { FamilySharingScreen(back) }
-            composable(Routes.SUBSCRIPTION) { SubscriptionScreen(back, onSubscribe = { navController.navigate(Routes.ADD_CARD) }) }
-            composable(Routes.ADD_CARD) { AddCardScreen(back, onPay = { navController.navigate(Routes.PAYMENT_SUCCESS) }) }
+            composable(Routes.SUBSCRIPTION) { SubscriptionScreen(back, onSubscribe = { navController.navigate(Routes.ADD_CARD) }, alreadyPremium = isPremium) }
+            composable(Routes.ADD_CARD) { AddCardScreen(back, onPay = {
+                AppGraph.prefs.setPremiumUnlocked(true)
+                premiumScope.launch { AppGraph.users.activatePremium() }
+                navController.navigate(Routes.PAYMENT_SUCCESS)
+            }) }
             composable(Routes.PAYMENT_SUCCESS) { PaymentSuccessScreen(onBack = { navController.navigateTop(Routes.SUBSCRIPTION) }, onHome = { navController.navigateTop(Routes.HOME) }) }
             composable(Routes.KIT_LIKED) { LikedMoviesScreen(back) { } }
             composable(Routes.KIT_WATCH) { WatchOnDeviceScreen(back) }
@@ -450,6 +510,7 @@ private fun NavGraphBuilder.detailDestination(
     padding: androidx.compose.foundation.layout.PaddingValues,
     onBack: () -> Unit,
     onPlay: (com.mikdadstream.app.ui.detail.PlayRequest) -> Unit,
+    onOpenPremium: () -> Unit,
     snackbarHostState: SnackbarHostState,
 ) {
     composable(
@@ -484,6 +545,7 @@ private fun NavGraphBuilder.detailDestination(
             viewModel = vm,
             contentPadding = padding,
             onBack = onBack,
+            onOpenPremium = onOpenPremium,
             onPlay = onPlay,
         )
     }

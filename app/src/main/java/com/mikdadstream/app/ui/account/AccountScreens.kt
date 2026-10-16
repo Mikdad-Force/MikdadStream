@@ -44,6 +44,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,10 +53,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import android.content.Context
+import android.content.res.Configuration
+import java.util.Locale
+import com.mikdadstream.app.AppGraph
+import com.mikdadstream.app.data.local.PrefsStore
 import com.mikdadstream.app.ui.components.FilterChipPill
 import com.mikdadstream.app.ui.components.StreamCard
 import com.mikdadstream.app.ui.components.StreamDivider
@@ -202,28 +209,37 @@ fun ChangePasswordScreen(onBack: () -> Unit) {
 
 @Composable
 fun LanguageScreen(onBack: () -> Unit) {
-    val languages = listOf("Indonesia", "English", "Bahasa Melayu", "Español", "日本語", "العربية")
-    var selected by remember { mutableStateOf("Indonesia") }
+    val options = listOf(
+        PrefsStore.LANG_ID to "Bahasa Indonesia",
+        PrefsStore.LANG_EN to "Bahasa Inggris",
+        PrefsStore.LANG_SU to "Bahasa Sunda",
+    )
+    val prefs = AppGraph.prefs
+    val current by prefs.language.collectAsState()
+    val context = LocalContext.current
 
     AccountScaffold(title = "Bahasa", onBack = onBack) {
         StreamCard {
             Column {
-                languages.forEachIndexed { index, language ->
+                options.forEachIndexed { index, (code, label) ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { selected = language }
+                            .clickable {
+                                prefs.setLanguage(code)
+                                applyAppLanguage(context, code)
+                            }
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Text(
-                            text = language,
+                            text = label,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onBackground,
                             modifier = Modifier.weight(1f),
                         )
-                        if (selected == language) {
+                        if (current == code) {
                             Icon(
                                 Icons.Filled.Check,
                                 contentDescription = null,
@@ -232,11 +248,20 @@ fun LanguageScreen(onBack: () -> Unit) {
                             )
                         }
                     }
-                    if (index != languages.lastIndex) StreamDivider()
+                    if (index != options.lastIndex) StreamDivider()
                 }
             }
         }
     }
+}
+
+@Suppress("DEPRECATION")
+private fun applyAppLanguage(context: Context, code: String) {
+    val locale = Locale.forLanguageTag(code)
+    Locale.setDefault(locale)
+    val config = Configuration(context.resources.configuration)
+    config.setLocale(locale)
+    context.resources.updateConfiguration(config, context.resources.displayMetrics)
 }
 
 @Composable

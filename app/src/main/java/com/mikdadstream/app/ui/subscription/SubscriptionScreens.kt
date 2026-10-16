@@ -132,25 +132,31 @@ private fun PlanOptionRow(
 }
 
 @Composable
-fun SubscriptionScreen(onBack: () -> Unit, onSubscribe: () -> Unit) {
-    var plan by remember { mutableStateOf("Bulanan") }
+fun SubscriptionScreen(
+    onBack: () -> Unit,
+    onSubscribe: () -> Unit,
+    alreadyPremium: Boolean = false,
+) {
     val features = listOf(
+        "Buka fitur Unduh Video",
+        "Simpan film untuk ditonton offline",
         "Tonton tanpa iklan",
         "Kualitas hingga 4K HDR",
-        "Unduh untuk ditonton offline",
-        "Streaming di 4 perangkat",
-        "Akses semua konten eksklusif",
     )
 
-    SubscriptionScaffold(title = "Langganan", onBack = onBack) {
+    SubscriptionScaffold(title = "Paket Premium", onBack = onBack) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = "Nikmati Tanpa Batas",
+                text = if (alreadyPremium) "Premium Aktif" else "Buka Unduh Video",
                 style = MaterialTheme.typography.displaySmall,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                text = "Buka semua film, serial, dan anime favorit Anda dalam kualitas terbaik.",
+                text = if (alreadyPremium) {
+                    "Terima kasih! Fitur unduh video sudah terbuka di akun Anda."
+                } else {
+                    "Sekali bayar Rp 10.000 untuk membuka fitur unduh video tanpa batas."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -186,7 +192,7 @@ fun SubscriptionScreen(onBack: () -> Unit, onSubscribe: () -> Unit) {
                                 .padding(horizontal = 10.dp, vertical = 4.dp),
                         ) {
                             Text(
-                                text = "POPULER",
+                                text = "SEKALI BAYAR",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
@@ -198,12 +204,12 @@ fun SubscriptionScreen(onBack: () -> Unit, onSubscribe: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            text = "$10.00",
+                            text = "Rp 10.000",
                             style = MaterialTheme.typography.headlineMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = "/bulan",
+                            text = "/sekali bayar",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -232,27 +238,13 @@ fun SubscriptionScreen(onBack: () -> Unit, onSubscribe: () -> Unit) {
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            PlanOptionRow(
-                title = "Bulanan",
-                subtitle = "Ditagih setiap bulan",
-                price = "$10.00",
-                selected = plan == "Bulanan",
-                onClick = { plan = "Bulanan" },
-            )
-            PlanOptionRow(
-                title = "Tahunan",
-                subtitle = "Hemat 20%",
-                price = "$96.00",
-                selected = plan == "Tahunan",
-                onClick = { plan = "Tahunan" },
-            )
-        }
-
-        StreamPrimaryButton(text = "Langganan Sekarang", onClick = onSubscribe)
+        StreamPrimaryButton(
+            text = if (alreadyPremium) "Premium Aktif" else "Bayar Rp 10.000",
+            onClick = onSubscribe,
+        )
 
         Text(
-            text = "Langganan diperpanjang otomatis. Batalkan kapan saja melalui pengaturan akun.",
+            text = "Pembelian sekali bayar. Fitur unduh aktif permanen pada akun ini.",
             style = MaterialTheme.typography.labelSmall,
             color = StreamTextMuted,
             textAlign = TextAlign.Center,
@@ -271,7 +263,7 @@ fun AddCardScreen(onBack: () -> Unit, onPay: () -> Unit) {
     val digits = number.filter { it.isDigit() }.takeLast(4)
     val masked = "•••• •••• •••• " + digits.padStart(4, '•')
 
-    SubscriptionScaffold(title = "Tambah Kartu", onBack = onBack) {
+    SubscriptionScaffold(title = "Pembayaran Premium", onBack = onBack) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -359,14 +351,14 @@ fun AddCardScreen(onBack: () -> Unit, onPay: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = "$10.00",
+                    text = "Rp 10.000",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
         }
 
-        StreamPrimaryButton(text = "Bayar Sekarang", onClick = onPay)
+        StreamPrimaryButton(text = "Bayar Rp 10.000", onClick = onPay)
     }
 }
 
@@ -402,7 +394,7 @@ fun PaymentSuccessScreen(onBack: () -> Unit, onHome: () -> Unit) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Terima kasih! Langganan Premium Anda kini aktif dan siap digunakan.",
+                text = "Terima kasih! Paket Premium aktif — fitur Unduh Video kini terbuka.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

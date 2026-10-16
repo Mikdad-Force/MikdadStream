@@ -24,6 +24,7 @@ data class DetailUiState(
     val downloads: List<MediaStream> = emptyList(),
     val loadingDownloads: Boolean = false,
     val downloadError: String? = null,
+    val downloadLocked: Boolean = false,
 )
 
 /** Permintaan pemutaran yang diteruskan ke PlayerActivity. */
@@ -36,6 +37,7 @@ data class PlayRequest(
     val cover: String?,
     val episodes: List<EpisodeData>,
     val startPositionMs: Long = 0L,
+    val localUrl: String? = null,
 )
 
 class DetailViewModel(
@@ -168,6 +170,52 @@ class DetailViewModel(
 
     fun closeDownloads() {
         _state.value = _state.value.copy(downloadEpisode = null, downloads = emptyList(), downloadError = null)
+    }
+
+    fun dismissDownloadLock() {
+        _state.value = _state.value.copy(downloadLocked = false)
+    }
+
+    private fun isPremium(): Boolean =
+        com.mikdadstream.app.AppGraph.prefs.premiumUnlocked.value ||
+            com.mikdadstream.app.AppGraph.users.account.value?.premium == true
+
+    fun startDownload(file: MediaStream) {
+        val s = _state.value
+        val detail = s.detail ?: return
+        val episode = s.downloadEpisode ?: return
+        if (!isPremium()) {
+            _state.value = s.copy(downloadLocked = true)
+            return
+        }
+        val url = file.safeUrl ?: return
+        val quality = file.quality
+        val headersJson = file.headers
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { com.google.gson.Gson().toJson(it) }
+        val key = "dl:${contentId}:${episode.safeId}:${quality ?: "auto"}"
+        com.mikdadstream.app.AppGraph.downloads.enqueue(
+            com.mikdadstream.app.data.local.DownloadEntity(
+                key = key,
+                contentId = contentId,
+                modelId = s.modelId.orEmpty(),
+                title = detail.safeTitle,
+                cover = detail.cover,
+                episodeId = episode.safeId,
+                episodeNumber = episode.episodeNumber ?: episode.safeNumber,
+                quality = quality,
+                format = file.format,
+                url = url,
+                headersJson = headersJson,
+                filePath = null,
+                bytesTotal = 0L,
+                bytesDone = 0L,
+                status = com.mikdadstream.app.data.download.DownloadManager.STATUS_QUEUED,
+                progress = 0f,
+                createdAt = System.currentTimeMillis(),
+            )
+        )
+        closeDownloads()
     }
 
     fun refreshHistory() {

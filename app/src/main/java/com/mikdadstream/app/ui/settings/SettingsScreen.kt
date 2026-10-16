@@ -34,8 +34,10 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.WarningAmber
@@ -82,7 +84,10 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     contentPadding: PaddingValues,
     activeSourceName: String,
+    isPremium: Boolean = false,
     onOpenSources: () -> Unit,
+    onOpenLanguage: () -> Unit = {},
+    onOpenPremium: () -> Unit = {},
     onPairDevice: () -> Unit = {},
     onOpenDesignKit: () -> Unit = {},
 ) {
@@ -97,6 +102,13 @@ fun SettingsScreen(
     val healthRunning by viewModel.healthRunning.collectAsState()
     val healthResults by viewModel.healthResults.collectAsState()
     val healthProgress by viewModel.healthProgress.collectAsState()
+    val language by com.mikdadstream.app.AppGraph.prefs.language.collectAsState()
+
+    val languageLabel = when (language) {
+        PrefsStore.LANG_EN -> "Bahasa Inggris"
+        PrefsStore.LANG_SU -> "Bahasa Sunda"
+        else -> "Bahasa Indonesia"
+    }
 
     val displaySourceName = remember(activeSourceName, allSources) {
         val resolved = allSources.firstOrNull { it.safeId.equals(activeSourceName, true) }?.safeName
@@ -246,6 +258,46 @@ fun SettingsScreen(
             )
         }
 
+        // ---------- Paket Premium ----------
+        SettingsSection(
+            title = "Paket Premium",
+            icon = { Icon(Icons.Filled.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenPremium)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Star,
+                    contentDescription = null,
+                    tint = if (isPremium) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = if (isPremium) "Premium Aktif" else "Buka Unduh Video",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        text = if (isPremium) "Fitur unduh video sudah terbuka"
+                        else "Rp 10.000 sekali bayar",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = if (isPremium) "Aktif" else "Beli",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
         // ---------- Tema ----------
         SettingsSection(
             title = "Tampilan",
@@ -269,6 +321,47 @@ fun SettingsScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+            }
+        }
+
+        // ---------- Bahasa ----------
+        SettingsSection(
+            title = "Bahasa",
+            icon = { Icon(Icons.Filled.Translate, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenLanguage)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Translate,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Bahasa aplikasi",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        text = languageLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = "Ganti",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
         }
 
@@ -416,48 +509,6 @@ fun SettingsScreen(
                     text = "Buka",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
-                )
-            }
-        }
-
-        // ---------- Lainnya ----------
-        SettingsSection(
-            title = "Lainnya",
-            icon = { Icon(Icons.Filled.Movie, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenDesignKit)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Icon(
-                    Icons.Outlined.Widgets,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(22.dp),
-                )
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = "Semua Layar",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = "Jelajahi seluruh fitur & halaman aplikasi",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Icon(
-                    Icons.Outlined.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
                 )
             }
         }

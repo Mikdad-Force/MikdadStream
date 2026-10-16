@@ -133,6 +133,7 @@ class PlayerActivity : ComponentActivity() {
             cover = intent.getStringExtra(EXTRA_COVER),
             episodes = episodes,
             startPositionMs = intent.getLongExtra(EXTRA_POSITION, 0L),
+            localUrl = intent.getStringExtra(EXTRA_LOCAL_URL),
         )
     }
 
@@ -145,6 +146,7 @@ class PlayerActivity : ComponentActivity() {
         private const val EXTRA_COVER = "cover"
         private const val EXTRA_EPISODES = "episodes"
         private const val EXTRA_POSITION = "position"
+        private const val EXTRA_LOCAL_URL = "local_url"
 
         fun intent(context: Context, request: PlayRequest): Intent =
             Intent(context, PlayerActivity::class.java).apply {
@@ -156,6 +158,7 @@ class PlayerActivity : ComponentActivity() {
                 putExtra(EXTRA_COVER, request.cover)
                 putExtra(EXTRA_POSITION, request.startPositionMs)
                 putExtra(EXTRA_EPISODES, Gson().toJson(request.episodes))
+                request.localUrl?.let { putExtra(EXTRA_LOCAL_URL, it) }
             }
     }
 }

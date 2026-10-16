@@ -3,6 +3,10 @@ package com.mikdadstream.app
 import android.app.Application
 import android.content.Context
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+import com.mikdadstream.app.data.download.DownloadManager
+import com.mikdadstream.app.data.firebase.UserRepository
 import com.mikdadstream.app.data.local.AppDatabase
 import com.mikdadstream.app.data.local.PrefsStore
 import com.mikdadstream.app.data.remote.ApiClient
@@ -18,12 +22,43 @@ object AppGraph {
         private set
     lateinit var repository: StreamRepository
         private set
+    lateinit var downloads: DownloadManager
+        private set
+    lateinit var users: UserRepository
+        private set
+
+    private val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `downloads` (" +
+                    "`key` TEXT NOT NULL, " +
+                    "`content_id` TEXT NOT NULL, " +
+                    "`model_id` TEXT NOT NULL, " +
+                    "`title` TEXT NOT NULL, " +
+                    "`cover` TEXT, " +
+                    "`episode_id` TEXT, " +
+                    "`episode_number` INTEGER, " +
+                    "`quality` TEXT, " +
+                    "`format` TEXT, " +
+                    "`url` TEXT NOT NULL, " +
+                    "`headers_json` TEXT, " +
+                    "`file_path` TEXT, " +
+                    "`bytes_total` INTEGER NOT NULL, " +
+                    "`bytes_done` INTEGER NOT NULL, " +
+                    "`status` TEXT NOT NULL, " +
+                    "`progress` REAL NOT NULL, " +
+                    "`created_at` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`key`))"
+            )
+        }
+    }
 
     fun init(context: Context) {
         if (::prefs.isInitialized) return
         val app = context.applicationContext
         prefs = PrefsStore(app)
         database = Room.databaseBuilder(app, AppDatabase::class.java, "mikdad_stream.db")
+            .addMigrations(MIGRATION_1_2)
             .fallbackToDestructiveMigration()
             .build()
         apiClient = ApiClient(prefs)
@@ -33,6 +68,9 @@ object AppGraph {
             historyDao = database.historyDao(),
             searchHistoryDao = database.searchHistoryDao(),
         )
+        downloads = DownloadManager(app, database.downloadDao())
+        users = UserRepository()
+        users.start()
     }
 }
 

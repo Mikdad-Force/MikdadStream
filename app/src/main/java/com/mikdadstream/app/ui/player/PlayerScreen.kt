@@ -84,6 +84,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -221,7 +222,7 @@ fun PlayerScreen(
         java.util.concurrent.atomic.AtomicReference<Map<String, String>>(emptyMap())
     }
     val dataSourceFactory = remember {
-        object : androidx.media3.datasource.DataSource.Factory {
+        val httpFactory = object : androidx.media3.datasource.DataSource.Factory {
             override fun createDataSource(): androidx.media3.datasource.DataSource {
                 val dataSource = DefaultHttpDataSource.Factory()
                     .setConnectTimeoutMs(20_000)
@@ -237,6 +238,7 @@ fun PlayerScreen(
                 return dataSource
             }
         }
+        DefaultDataSource.Factory(context, httpFactory)
     }
     val player = remember {
         ExoPlayer.Builder(context)
@@ -363,6 +365,21 @@ fun PlayerScreen(
     LaunchedEffect(episodeId, reload) {
         loadingStreams = true
         streamError = null
+        val local = request.localUrl
+        if (!local.isNullOrBlank()) {
+            streams = listOf(
+                MediaStream(
+                    server = "Unduhan",
+                    format = "mp4",
+                    quality = "Lokal",
+                    url = local,
+                )
+            )
+            apiSubtitles = emptyList()
+            selectedIndex = 0
+            loadingStreams = false
+            return@LaunchedEffect
+        }
         try {
             val data = AppGraph.repository.source(request.modelId, episodeId, request.contentId)
             val list = data.playableStreams

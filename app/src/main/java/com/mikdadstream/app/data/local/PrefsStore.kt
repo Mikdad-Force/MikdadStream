@@ -39,6 +39,8 @@ class PrefsStore(context: Context) {
     )
     private val _activeSource = MutableStateFlow(sp.getString(KEY_SOURCE, DEFAULT_SOURCE) ?: DEFAULT_SOURCE)
     private val _themeMode = MutableStateFlow(sp.getInt(KEY_THEME, THEME_SYSTEM))
+    private val _language = MutableStateFlow(sp.getString(KEY_LANGUAGE, LANG_ID) ?: LANG_ID)
+    private val _premiumUnlocked = MutableStateFlow(sp.getBoolean(KEY_PREMIUM_UNLOCK, false))
     private val _serverStatus = MutableStateFlow<String?>(null)
     private val _hiddenSources = MutableStateFlow(sp.getStringSet(KEY_HIDDEN, null)?.toSet() ?: emptySet())
     private val _loggedIn = MutableStateFlow(sp.getBoolean(KEY_LOGGED_IN, false))
@@ -47,6 +49,8 @@ class PrefsStore(context: Context) {
     val profile: StateFlow<Profile?> = _profile
     val activeSource: StateFlow<String> = _activeSource
     val themeMode: StateFlow<Int> = _themeMode
+    val language: StateFlow<String> = _language
+    val premiumUnlocked: StateFlow<Boolean> = _premiumUnlocked
     val serverStatus: StateFlow<String?> = _serverStatus
     val hiddenSources: StateFlow<Set<String>> = _hiddenSources
     val loggedIn: StateFlow<Boolean> = _loggedIn
@@ -124,6 +128,16 @@ class PrefsStore(context: Context) {
         _themeMode.value = mode
     }
 
+    fun setLanguage(code: String) {
+        sp.edit { putString(KEY_LANGUAGE, code) }
+        _language.value = code
+    }
+
+    fun setPremiumUnlocked(value: Boolean) {
+        sp.edit { putBoolean(KEY_PREMIUM_UNLOCK, value) }
+        _premiumUnlocked.value = value
+    }
+
     fun setServerStatus(status: String?) {
         _serverStatus.value = status
     }
@@ -162,6 +176,10 @@ class PrefsStore(context: Context) {
         const val THEME_DARK = 1
         const val THEME_LIGHT = 2
 
+        const val LANG_ID = "id"
+        const val LANG_EN = "en"
+        const val LANG_SU = "su"
+
         private const val KEY_ACCESS = "access_token"
         private const val KEY_REFRESH = "refresh_token"
         private const val KEY_ACCESS_EXP = "access_exp"
@@ -174,6 +192,8 @@ class PrefsStore(context: Context) {
         private const val KEY_PREMIUM = "premium"
         private const val KEY_SOURCE = "active_source"
         private const val KEY_THEME = "theme_mode"
+        private const val KEY_LANGUAGE = "app_language"
+        private const val KEY_PREMIUM_UNLOCK = "premium_unlocked"
         private const val KEY_HIDDEN = "hidden_sources"
         private const val KEY_LOGGED_IN = "logged_in"
     }

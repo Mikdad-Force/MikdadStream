@@ -1,6 +1,7 @@
 package com.mikdadstream.app.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,11 +24,13 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Search
@@ -72,10 +75,11 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     contentPadding: PaddingValues,
     profile: Profile?,
+    accountBadge: String = "Normal",
+    isPremium: Boolean = false,
     onProfileClick: () -> Unit,
     onSearchClick: () -> Unit,
     onNotificationClick: () -> Unit,
-    onLibraryClick: () -> Unit,
     onOpenItem: (item: MediaItem, modelId: String?) -> Unit,
     onContinue: (item: HistoryEntity) -> Unit,
     onSeeHistory: () -> Unit,
@@ -83,9 +87,9 @@ fun HomeScreen(
     val state by viewModel.state.collectAsState()
     val history by viewModel.continueWatching.collectAsState()
     val gridState = rememberLazyGridState()
-    val hero = if (state.loading || state.error != null) null
-    else state.items.firstOrNull { !it.isNews } ?: state.items.firstOrNull()
-    val rest = state.items.filter { it !== hero }
+    val heroes = if (state.loading || state.error != null) emptyList()
+    else state.items.filter { !it.isNews }.ifEmpty { state.items }.take(6)
+    val rest = state.items.filter { item -> heroes.none { it === item } }
 
     LaunchedEffect(gridState, state.hasMore, state.loading, state.loadingMore) {
         snapshotFlow {
@@ -120,19 +124,20 @@ fun HomeScreen(
             item(span = { GridItemSpan(maxLineSpan) }, key = "greeting") {
                 GreetingHeader(
                     profile = profile,
+                    accountBadge = accountBadge,
+                    isPremium = isPremium,
                     onProfileClick = onProfileClick,
                     onSearchClick = onSearchClick,
                     onNotificationClick = onNotificationClick,
-                    onLibraryClick = onLibraryClick,
                 )
             }
 
             // ---- Hero / sorotan ----
-            if (hero != null) {
+            if (heroes.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "hero") {
-                    HeroBanner(
-                        item = hero,
-                        onClick = { onOpenItem(hero, viewModel.activeSourceId()) },
+                    HeroCarousel(
+                        items = heroes,
+                        onOpen = { onOpenItem(it, viewModel.activeSourceId()) },
                     )
                 }
             }
@@ -258,56 +263,105 @@ fun HomeScreen(
 @Composable
 private fun GreetingHeader(
     profile: Profile?,
+    accountBadge: String,
+    isPremium: Boolean,
     onProfileClick: () -> Unit,
     onSearchClick: () -> Unit,
     onNotificationClick: () -> Unit,
-    onLibraryClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
-                .clickable(onClick = onProfileClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            val avatar = profile?.avatarUrl
-            if (!avatar.isNullOrBlank()) {
-                AsyncImage(
-                    model = avatar,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Text(
-                    text = profile?.initials ?: "S",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                )
+        Box(modifier = Modifier.size(50.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .align(Alignment.TopStart)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable(onClick = onProfileClick),
+                contentAlignment = Alignment.Center,
+            ) {
+                val avatar = profile?.avatarUrl
+                if (!avatar.isNullOrBlank()) {
+                    AsyncImage(
+                        model = avatar,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Text(
+                        text = profile?.initials ?: "S",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            if (isPremium) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                        .border(2.dp, MaterialTheme.colorScheme.background, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Star,
+                        contentDescription = "Premium",
+                        tint = Color.White,
+                        modifier = Modifier.size(10.dp),
+                    )
+                }
             }
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                text = "Hi, ${profile?.displayName?.substringBefore(" ")?.ifBlank { null } ?: "Sobat"}",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "Hi, ${profile?.displayName?.substringBefore(" ")?.ifBlank { null } ?: "Sobat"}",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                AccountBadge(label = accountBadge, highlighted = isPremium)
+            }
             Text(
                 text = "Let's watch a movie",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        IconHeaderButton(Icons.Outlined.BookmarkBorder, onClick = onLibraryClick)
         IconHeaderButton(Icons.Outlined.Search, onClick = onSearchClick)
         IconHeaderButton(Icons.Outlined.Notifications, showDot = true, onClick = onNotificationClick)
+    }
+}
+
+@Composable
+private fun AccountBadge(label: String, highlighted: Boolean) {
+    val bg = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val fg = if (highlighted) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(bg)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = fg,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -345,8 +399,8 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(160.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .height(200.dp)
+                .clip(RoundedCornerShape(18.dp))
                 .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF8A7BFF))))
                 .pressScale(onClick),
         ) {
@@ -371,7 +425,7 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                     .align(Alignment.CenterStart)
                     .padding(16.dp)
                     .fillMaxWidth(0.62f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
                     text = "Watch popular movies",
@@ -380,7 +434,7 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                 )
                 Text(
                     text = item.safeTitle,
-                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = PlusJakarta, fontSize = 18.sp),
+                    style = MaterialTheme.typography.headlineSmall.copy(fontFamily = PlusJakarta, fontSize = 17.sp, lineHeight = 22.sp),
                     color = Color.White,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -394,6 +448,7 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                 )
                 Row(
                     modifier = Modifier
+                        .softShadow(6.dp, RoundedCornerShape(999.dp))
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color.White)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -415,25 +470,36 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HeroCarousel(items: List<MediaItem>, onOpen: (MediaItem) -> Unit) {
+    val pagerState = rememberPagerState(pageCount = { items.size })
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth(),
+            pageSpacing = 10.dp,
+        ) { page ->
+            HeroBanner(item = items[page], onClick = { onOpen(items[page]) })
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(width = 22.dp, height = 6.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.primary)
-            )
-            Spacer(Modifier.width(6.dp))
-            repeat(2) {
+            repeat(items.size) { index ->
+                val selected = pagerState.currentPage == index
                 Box(
                     modifier = Modifier
-                        .padding(end = 6.dp)
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.outline)
+                        .padding(horizontal = 3.dp)
+                        .size(width = if (selected) 22.dp else 6.dp, height = 6.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.outline
+                        )
                 )
             }
         }

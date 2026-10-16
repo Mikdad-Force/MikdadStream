@@ -84,17 +84,18 @@ fun FloatingBottomNavBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 16.dp),
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 4.dp),
     ) {
         val slotWidth = maxWidth / items.size
-        val glowSize = orbSize * 2
+        val glowSize = orbSize + 18.dp
 
-        val targetOffset = slotWidth * safeIndex + (slotWidth - orbSize) / 2
+        // Titik tengah slot aktif (ruang konten pill) — orb terpusat presisi.
+        val orbCenterX = slotWidth * (safeIndex + 0.5f)
         val orbOffset by animateDpAsState(
-            targetValue = targetOffset,
+            targetValue = orbCenterX - glowSize / 2f,
             animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
+                dampingRatio = Spring.DampingRatioNoBouncy,
                 stiffness = Spring.StiffnessMediumLow,
             ),
             label = "orbOffset",
@@ -105,31 +106,22 @@ fun FloatingBottomNavBar(
                 .fillMaxWidth()
                 .height(height)
                 .shadow(
-                    elevation = 20.dp,
+                    elevation = 18.dp,
                     shape = shape,
                     clip = false,
                     ambientColor = Color.Black,
-                    spotColor = orbColor.copy(alpha = 0.35f),
+                    spotColor = orbColor.copy(alpha = 0.30f),
                 )
                 .clip(shape)
-                .background(containerColor)
-                .border(1.dp, Color.White.copy(alpha = 0.06f), shape),
+                .background(containerColor),
         ) {
-            // Garis tipis penghubung antar slot (di belakang ikon).
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth((items.size - 1) / items.size.toFloat())
-                    .height(1.dp)
-                    .background(contentColor.copy(alpha = 0.10f)),
-            )
-
-            // Glow + bola orb aktif (berpindah mulus mengikuti seleksi).
+            // Glow + bola orb aktif (selalu presisi di bawah ikon aktif).
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .offset(x = orbOffset)
                     .size(glowSize),
+                contentAlignment = Alignment.Center,
             ) {
                 Box(
                     modifier = Modifier
@@ -137,8 +129,8 @@ fun FloatingBottomNavBar(
                         .background(
                             Brush.radialGradient(
                                 colors = listOf(
-                                    orbColor.copy(alpha = 0.45f),
-                                    orbColor.copy(alpha = 0.14f),
+                                    orbColor.copy(alpha = 0.50f),
+                                    orbColor.copy(alpha = 0.16f),
                                     Color.Transparent,
                                 ),
                             ),
@@ -146,14 +138,14 @@ fun FloatingBottomNavBar(
                 )
                 Box(
                     modifier = Modifier
-                        .align(Alignment.Center)
                         .size(orbSize)
                         .background(
                             Brush.linearGradient(
                                 colors = listOf(orbColorLight, orbColor, orbColorDark),
                             ),
                             CircleShape,
-                        ),
+                        )
+                        .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape),
                 )
             }
 

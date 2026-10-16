@@ -172,33 +172,6 @@ private fun AuthTitle(title: String, subtitle: String) {
 }
 
 @Composable
-private fun OrDivider() {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .weight(1f)
-                .height(1.dp)
-                .background(MaterialTheme.colorScheme.outline),
-        )
-        Text(
-            text = "atau",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 12.dp),
-        )
-        Box(
-            Modifier
-                .weight(1f)
-                .height(1.dp)
-                .background(MaterialTheme.colorScheme.outline),
-        )
-    }
-}
-
-@Composable
 private fun BottomSwitch(lead: String, action: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -232,40 +205,6 @@ private fun PasswordTrailing(visible: Boolean, onToggle: () -> Unit) {
     )
 }
 
-@Composable
-private fun RememberRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, onForgot: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = CheckboxDefaults.colors(
-                checkedColor = MaterialTheme.colorScheme.primary,
-                uncheckedColor = MaterialTheme.colorScheme.outline,
-                checkmarkColor = Color.White,
-            ),
-        )
-        Text(
-            text = "Ingat saya",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = "Lupa Sandi?",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(onClick = onForgot)
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-        )
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Public screens
 // ---------------------------------------------------------------------------
@@ -273,51 +212,26 @@ private fun RememberRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit, on
 @Composable
 fun SignInScreen(
     onBack: () -> Unit,
-    onSignIn: (email: String, password: String) -> Unit,
-    onSignUp: () -> Unit,
-    onForgot: () -> Unit,
-    onGoogleSignIn: () -> Unit = { onSignIn("", "") },
+    onGoogleSignIn: () -> Unit,
 ) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var showPassword by remember { mutableStateOf(false) }
-    var rememberMe by remember { mutableStateOf(true) }
-
     AuthContainer(onBack = onBack) {
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(36.dp))
         BrandMark()
-        Spacer(Modifier.height(28.dp))
-        AuthTitle("Selamat datang kembali", "Masuk untuk melanjutkan menonton favoritmu.")
-        Spacer(Modifier.height(22.dp))
-        StreamTextField(
-            value = email,
-            onValueChange = { email = it },
-            placeholder = "Email",
-            leadingIcon = Icons.Outlined.Email,
-            imeAction = ImeAction.Next,
+        Spacer(Modifier.height(30.dp))
+        AuthTitle(
+            title = "Masuk dengan Google",
+            subtitle = "Gunakan akun Google kamu untuk masuk dan mulai menonton favoritmu.",
         )
-        Spacer(Modifier.height(14.dp))
-        StreamTextField(
-            value = password,
-            onValueChange = { password = it },
-            placeholder = "Sandi",
-            leadingIcon = Icons.Outlined.Lock,
-            trailing = { PasswordTrailing(showPassword) { showPassword = !showPassword } },
-            isPassword = true,
-            passwordVisible = showPassword,
-            imeAction = ImeAction.Done,
-            onDone = { onSignIn(email, password) },
-        )
-        Spacer(Modifier.height(4.dp))
-        RememberRow(rememberMe, { rememberMe = it }, onForgot)
-        Spacer(Modifier.height(18.dp))
-        StreamPrimaryButton(text = "Masuk", onClick = { onSignIn(email, password) })
-        Spacer(Modifier.height(20.dp))
-        OrDivider()
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(30.dp))
         GoogleSignInButton(onClick = onGoogleSignIn)
-        Spacer(Modifier.height(28.dp))
-        BottomSwitch("Belum punya akun?", "Daftar", onSignUp)
+        Spacer(Modifier.height(18.dp))
+        Text(
+            text = "Dengan melanjutkan, kamu menyetujui Ketentuan Layanan dan Kebijakan Privasi Mikdad Stream.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
         Spacer(Modifier.height(32.dp))
     }
 }
