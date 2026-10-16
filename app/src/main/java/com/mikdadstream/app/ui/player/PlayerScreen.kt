@@ -137,23 +137,31 @@ private fun subtitleMime(url: String): String? {
     }
 }
 
-private fun subtitleLangName(code: String?): String? = when (code?.lowercase()?.substringBefore('-')) {
-    "id", "in" -> "Indonesia"
-    "en" -> "English"
-    "ms" -> "Melayu"
-    "jv" -> "Jawa"
-    "su" -> "Sunda"
-    "zh" -> "\u4e2d\u6587"
-    "ja" -> "\u65e5\u672c\u8a9e"
-    "ko" -> "\ud55c\uad6d\uc5b4"
-    "es" -> "Espa\u00f1ol"
-    "ar" -> "\u0627\u0644\u0639\u0631\u0628\u064a\u0629"
-    "pt" -> "Portugu\u00eas"
-    "fr" -> "Fran\u00e7ais"
-    "de" -> "Deutsch"
-    "th" -> "\u0e44\u0e17\u0e22"
-    "vi" -> "Ti\u1ebfng Vi\u1ec7t"
-    else -> null
+private fun subtitleLangName(code: String?): String? {
+    val raw = code?.trim()?.lowercase() ?: return null
+    if (raw.isEmpty()) return null
+    val key = raw.substringBefore('-').substringBefore('_')
+    return when {
+        key in setOf("id", "in", "ind", "indonesia", "bahasa", "bahasa indonesia") -> "Indonesia"
+        key in setOf("en", "eng", "english") -> "English"
+        key in setOf("ms", "may", "malay", "melayu") -> "Melayu"
+        key in setOf("jv", "jav", "jawa", "javanese") -> "Jawa"
+        key in setOf("su", "sun", "sunda", "sundanese") -> "Sunda"
+        raw.contains("\u4e2d") -> if (raw.contains("\u7e41")) "\u7e41\u9ad4\u4e2d\u6587" else "\u7b80\u9ad4\u4e2d\u6587"
+        key in setOf("zh", "chi", "zho", "chs", "cht", "chinese") -> "\u4e2d\u6587"
+        key in setOf("ja", "jpn", "japanese") -> "\u65e5\u672c\u8a9e"
+        key in setOf("ko", "kor", "korean") -> "\ud55c\uad6d\uc5b4"
+        key in setOf("es", "spa", "spanish") -> "Espa\u00f1ol"
+        key in setOf("ar", "ara", "arabic") -> "\u0627\u0644\u0639\u0631\u0628\u064a\u0629"
+        key in setOf("pt", "por", "portuguese", "po") -> "Portugu\u00eas"
+        key in setOf("fr", "fra", "fre", "french") -> "Fran\u00e7ais"
+        key in setOf("de", "deu", "ger", "german") -> "Deutsch"
+        key in setOf("th", "tha", "thai") -> "\u0e44\u0e17\u0e22"
+        key in setOf("vi", "vie", "vietnamese") -> "Ti\u1ebfng Vi\u1ec7t"
+        key in setOf("ru", "rus", "russian") -> "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"
+        key in setOf("tl", "fil", "filipino", "tagalog") -> "Filipino"
+        else -> null
+    }
 }
 
 private fun formatTime(ms: Long): String {
@@ -317,9 +325,9 @@ fun PlayerScreen(
             val tg = g.mediaTrackGroup
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
-                val langName = subtitleLangName(f.language)
-                val label = f.label?.takeIf { it.isNotBlank() }
-                    ?: langName
+                val langName = subtitleLangName(f.language) ?: subtitleLangName(f.label)
+                val label = langName
+                    ?: f.label?.takeIf { it.isNotBlank() }
                     ?: f.language?.takeIf { it.isNotBlank() }
                     ?: "Subtitle ${opts.size + 1}"
                 val key = "${tg.id}#$i"
@@ -327,7 +335,7 @@ fun PlayerScreen(
                 if (g.isTrackSelected(i)) selectedKey = key
             }
         }
-        subOptions = opts
+        subOptions = opts.sortedBy { if (it.label == "Indonesia") 0 else 1 }
         selectedSubKey = selectedKey
     }
 
@@ -460,7 +468,7 @@ fun PlayerScreen(
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-            .setPreferredTextLanguages()
+            .setPreferredTextLanguages("id", "in", "ind")
             .setSelectUndeterminedTextLanguage(false)
             .build()
         player.setMediaItem(builder.build())
