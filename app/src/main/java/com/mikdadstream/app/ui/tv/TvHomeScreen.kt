@@ -19,11 +19,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -45,10 +45,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -161,64 +164,67 @@ fun TvHomeScreen(
     val hero = if (state.loading || state.error != null) null
     else state.items.firstOrNull { !it.isNews } ?: state.items.firstOrNull()
     val rest = state.items.filter { it !== hero }
-    val listState = rememberLazyListState()
+    val scrollState = rememberScrollState()
+    val firstFocus = remember { FocusRequester() }
 
-    LaunchedEffect(listState, state.hasMore, state.loading, state.loadingMore) {
-        snapshotFlow {
-            val info = listState.layoutInfo
-            (info.visibleItemsInfo.lastOrNull()?.index ?: 0) to info.totalItemsCount
-        }.collect { (last, total) ->
-            if (state.hasMore && !state.loading && !state.loadingMore && total > 0 && last >= total - 3) {
-                viewModel.loadMore()
+    LaunchedEffect(scrollState, state.hasMore, state.loading, state.loadingMore) {
+        snapshotFlow { scrollState.value to scrollState.maxValue }
+            .collect { (value, max) ->
+                if (state.hasMore && !state.loading && !state.loadingMore && max > 0 && value >= max - 480) {
+                    viewModel.loadMore()
+                }
             }
+    }
+
+    LaunchedEffect(hero?.safeId) {
+        if (hero != null) {
+            delay(150)
+            runCatching { firstFocus.requestFocus() }
         }
     }
 
-    LazyColumn(
-        state = listState,
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(TvBg),
-        contentPadding = PaddingValues(
-            top = contentPadding.calculateTopPadding(),
-            bottom = contentPadding.calculateBottomPadding() + 40.dp,
-        ),
+            .background(TvBg)
+            .verticalScroll(scrollState)
+            .padding(
+                top = contentPadding.calculateTopPadding(),
+                bottom = contentPadding.calculateBottomPadding() + 40.dp,
+            ),
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
         if (hero != null) {
-            item(key = "hero") {
-                TvHero(
-                    item = hero,
-                    profile = profile,
-                    onPlay = { onOpenItem(hero, viewModel.activeSourceId()) },
-                    onInfo = { onOpenItem(hero, viewModel.activeSourceId()) },
-                )
-            }
+            TvHero(
+                item = hero,
+                profile = profile,
+                playFocusRequester = firstFocus,
+                onPlay = { onOpenItem(hero, viewModel.activeSourceId()) },
+                onInfo = { onOpenItem(hero, viewModel.activeSourceId()) },
+            )
         }
 
         if (state.categories.isNotEmpty()) {
-            item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 40.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(state.categories, key = { it.id }) { category ->
-                        FilterChipPill(
-                            label = category.name,
-                            selected = category.id == state.activeCategory?.id,
-                            onClick = { viewModel.selectCategory(category) },
-                        )
-                    }
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 40.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(state.categories, key = { it.id }) { category ->
+                    FilterChipPill(
+                        label = category.name,
+                        selected = category.id == state.activeCategory?.id,
+                        onClick = { viewModel.selectCategory(category) },
+                    )
                 }
             }
         }
 
         when {
-            state.loading && state.items.isEmpty() -> item {
+            state.loading && state.items.isEmpty() -> {
                 LoadingGrid(modifier = Modifier.padding(horizontal = 40.dp))
             }
 
-            state.error != null && state.items.isEmpty() -> item {
+            state.error != null && state.items.isEmpty() -> {
                 TvMessage(
                     title = "Gagal memuat konten",
                     subtitle = state.error.orEmpty(),
@@ -227,7 +233,7 @@ fun TvHomeScreen(
                 )
             }
 
-            state.items.isEmpty() -> item {
+            state.items.isEmpty() -> {
                 TvMessage(
                     title = "Belum ada konten",
                     subtitle = "Kategori ini kosong. Coba kategori atau sumber lain.",
@@ -236,39 +242,31 @@ fun TvHomeScreen(
 
             else -> {
                 if (history.isNotEmpty()) {
-                    item {
-                        TvRow("Lanjutkan Menonton") {
-                            items(history, key = { it.contentId }) { entry ->
-                                TvContinueCard(entry) { onContinue(entry) }
-                            }
+                    TvRow("Lanjutkan Menonton") {
+                        items(history, key = { it.contentId }) { entry ->
+                            TvContinueCard(entry) { onContinue(entry) }
                         }
                     }
                 }
-                item {
-                    TvRow("Rekomendasi untukmu") {
-                        items(rest.take(14), key = { "rec" + it.safeId + it.hashCode() }) { item ->
-                            TvPosterCard(item) { onOpenItem(item, viewModel.activeSourceId()) }
-                        }
+                TvRow("Rekomendasi untukmu") {
+                    items(rest.take(14), key = { "rec" + it.safeId + it.hashCode() }) { item ->
+                        TvPosterCard(item) { onOpenItem(item, viewModel.activeSourceId()) }
                     }
                 }
-                item {
-                    TvRow(state.activeCategory?.name ?: "Semua Konten") {
-                        items(rest, key = { it.safeId + (it.source ?: "") + it.hashCode() }) { item ->
-                            TvPosterCard(item) { onOpenItem(item, viewModel.activeSourceId()) }
-                        }
+                TvRow(state.activeCategory?.name ?: "Semua Konten") {
+                    items(rest, key = { it.safeId + (it.source ?: "") + it.hashCode() }) { item ->
+                        TvPosterCard(item) { onOpenItem(item, viewModel.activeSourceId()) }
                     }
                 }
                 if (state.loadingMore) {
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.Center,
-                        ) {
-                            LinearProgressIndicator(
-                                modifier = Modifier.width(160.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.width(160.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                     }
                 }
             }
@@ -280,13 +278,14 @@ fun TvHomeScreen(
 private fun TvHero(
     item: MediaItem,
     profile: Profile?,
+    playFocusRequester: FocusRequester,
     onPlay: () -> Unit,
     onInfo: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(420.dp),
+            .height(340.dp),
     ) {
         AsyncImage(
             model = item.cover,
@@ -346,7 +345,13 @@ private fun TvHero(
                 overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TvHeroButton("Putar", Icons.Filled.PlayArrow, primary = true, onClick = onPlay)
+                TvHeroButton(
+                    text = "Putar",
+                    icon = Icons.Filled.PlayArrow,
+                    primary = true,
+                    onClick = onPlay,
+                    modifier = Modifier.focusRequester(playFocusRequester),
+                )
                 TvHeroButton("Info", Icons.Outlined.Info, primary = false, onClick = onInfo)
             }
         }
@@ -365,13 +370,14 @@ private fun TvHeroButton(
     icon: ImageVector,
     primary: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(150), label = "heroBtn")
     val bg = if (primary) Color.White else Color(0x40FFFFFF)
     val fg = if (primary) Color(0xFF02050F) else Color.White
     Row(
-        modifier = Modifier
+        modifier = modifier
             .scale(scale)
             .clip(RoundedCornerShape(8.dp))
             .background(bg)

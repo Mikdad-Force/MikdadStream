@@ -11,5 +11,6 @@ fun Context.isTelevision(): Boolean {
     val uiMode = getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
     val tvMode = uiMode?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
     val leanback = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
-    return tvMode || leanback
+    val noTouch = !packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
+    return tvMode || leanback || noTouch
 }
