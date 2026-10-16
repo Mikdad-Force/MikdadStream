@@ -8,7 +8,7 @@ plugins {
     id("com.google.gms.google-services")
 }
 
-val apiBaseUrl: String = (findProperty("STREAM_API_URL") as String?) ?: "https://api.mkd-gudang.biz.id"
+val apiBaseUrl: String = (findProperty("STREAM_API_URL") as String?) ?: "https://mikdad-api.mikdadtv.workers.dev"
 
 val googleClientId: String = (findProperty("GOOGLE_CLIENT_ID") as String?)
     ?: "350158650454-osksv8riv4q7dfpr4ff2o509l6git6ot.apps.googleusercontent.com"
@@ -41,8 +41,8 @@ android {
         applicationId = "com.mikdadstream.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 29
-        versionName = "1.11.12"
+        versionCode = 30
+        versionName = "1.11.13"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("Boolean", "FORCE_TV", "$forceTv")
