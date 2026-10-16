@@ -9,6 +9,7 @@ import android.media.AudioManager
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -67,8 +68,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -117,6 +123,32 @@ private class GestureState {
     var accX = 0f
     var accY = 0f
     var lastLiveSeekAt = 0L
+}
+
+/**
+ * Jembatan antara tombol remote (diproses di PlayerActivity) dengan status pemutar
+ * Compose. Diisi oleh PlayerScreen selama ia aktif.
+ */
+internal object PlayerRemoteController {
+    var ready: Boolean = false
+    var controlsVisible: () -> Boolean = { false }
+    var togglePlay: () -> Unit = {}
+    var play: () -> Unit = {}
+    var pause: () -> Unit = {}
+    var seekBack: () -> Unit = {}
+    var seekForward: () -> Unit = {}
+    var showControls: () -> Unit = {}
+
+    fun reset() {
+        ready = false
+        controlsVisible = { false }
+        togglePlay = {}
+        play = {}
+        pause = {}
+        seekBack = {}
+        seekForward = {}
+        showControls = {}
+    }
 }
 
 private fun resolveStreamUrl(url: String?): String? {
@@ -237,6 +269,7 @@ fun PlayerScreen(
 
     val inPip = activity?.inPipState?.value == true
     val gesture = remember { GestureState() }
+    val controlFocus = remember { FocusRequester() }
 
     val resizeModes = intArrayOf(
         AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -521,6 +554,30 @@ fun PlayerScreen(
         }
     }
 
+    // ---- Dukungan tombol remote / D-pad (diproses di PlayerActivity) ----
+    DisposableEffect(player) {
+        PlayerRemoteController.ready = true
+        PlayerRemoteController.controlsVisible = { showControls }
+        PlayerRemoteController.togglePlay = {
+            if (player.isPlaying) player.pause() else player.play()
+            showControls = true
+        }
+        PlayerRemoteController.play = { player.play() }
+        PlayerRemoteController.pause = { player.pause() }
+        PlayerRemoteController.seekBack = { seekBy(-10_000L); showControls = true }
+        PlayerRemoteController.seekForward = { seekBy(10_000L); showControls = true }
+        PlayerRemoteController.showControls = { showControls = true }
+        onDispose { PlayerRemoteController.reset() }
+    }
+
+    // Beri fokus ke tombol putar/jeda saat kontrol tampil agar D-pad bisa menjelajah.
+    LaunchedEffect(showControls, mediaReady, inPip) {
+        if (showControls && mediaReady && !inPip) {
+            delay(60)
+            runCatching { controlFocus.requestFocus() }
+        }
+    }
+
     // ---- Simpan progres berkala ----
     LaunchedEffect(player, episodeId) {
         while (true) {
@@ -708,6 +765,7 @@ fun PlayerScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color(0x66000000))
+                        .tvFocusRing(RoundedCornerShape(999.dp))
                         .clickable {
                             saveProgressNow()
                             onBack()
@@ -764,6 +822,7 @@ fun PlayerScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color(0x33000000))
+                        .tvFocusRing(RoundedCornerShape(999.dp))
                         .clickable { seekBy(-10_000L) }
                         .padding(14.dp)
                         .size(30.dp),
@@ -775,6 +834,8 @@ fun PlayerScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color.White)
+                        .tvFocusRing(RoundedCornerShape(999.dp))
+                        .focusRequester(controlFocus)
                         .clickable {
                             if (player.isPlaying) player.pause() else player.play()
                         }
@@ -788,6 +849,7 @@ fun PlayerScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color(0x33000000))
+                        .tvFocusRing(RoundedCornerShape(999.dp))
                         .clickable { seekBy(10_000L) }
                         .padding(14.dp)
                         .size(30.dp),
@@ -954,6 +1016,7 @@ fun PlayerScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color.White)
+                        .tvFocusRing(RoundedCornerShape(999.dp))
                         .clickable {
                             streamError = null
                             loadingStreams = true
@@ -972,6 +1035,7 @@ fun PlayerScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(999.dp))
                             .background(Color(0x33FFFFFF))
+                            .tvFocusRing(RoundedCornerShape(999.dp))
                             .clickable { showEpisodes = true }
                             .padding(horizontal = 20.dp, vertical = 10.dp),
                     ) {
@@ -1097,6 +1161,7 @@ fun PlayerScreen(
                                         if (index == selectedIndex) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                     )
+                                    .tvFocusRing(RoundedCornerShape(14.dp))
                                     .clickable {
                                         saveProgressNow()
                                         pendingSeek.longValue = player.currentPosition
@@ -1166,6 +1231,7 @@ fun PlayerScreen(
                                     if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                                     else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                 )
+                                .tvFocusRing(RoundedCornerShape(14.dp))
                                 .clickable { playEpisode(episode) }
                                 .padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1199,6 +1265,17 @@ fun PlayerScreen(
 }
 
 @Composable
+private fun Modifier.tvFocusRing(shape: Shape = RoundedCornerShape(10.dp)): Modifier {
+    var focused by remember { mutableStateOf(false) }
+    return this
+        .onFocusChanged { focused = it.isFocused }
+        .then(
+            if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape)
+            else Modifier
+        )
+}
+
+@Composable
 private fun CtlButton(
     icon: ImageVector? = null,
     text: String? = null,
@@ -1209,6 +1286,7 @@ private fun CtlButton(
     Column(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
+            .tvFocusRing(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 9.dp, vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1236,6 +1314,7 @@ private fun <T> OptionMenu(
     onDismiss: () -> Unit,
     note: String? = null,
 ) {
+    BackHandler { onDismiss() }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1285,6 +1364,7 @@ private fun <T> OptionMenu(
                             if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                             else Color.Transparent
                         )
+                        .tvFocusRing(RoundedCornerShape(10.dp))
                         .clickable { onSelect(value) }
                         .padding(horizontal = 8.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically,

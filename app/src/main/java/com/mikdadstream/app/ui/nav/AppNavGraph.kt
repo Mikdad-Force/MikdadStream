@@ -38,6 +38,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.focus.FocusRequester
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -206,6 +207,7 @@ fun AppNavGraph(isTv: Boolean = false) {
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val showHeader = false
+    val homeContentFocus = remember { FocusRequester() }
     val showBottomBar = currentRoute == Routes.HOME || currentRoute == Routes.LIBRARY ||
         currentRoute == Routes.SETTINGS || currentRoute == Routes.SEARCH || currentRoute == Routes.DOWNLOADS
 
@@ -232,6 +234,7 @@ fun AppNavGraph(isTv: Boolean = false) {
                     onNavigate = { route -> navController.navigateTop(route) },
                     onSourceClick = { mainViewModel.openSheet() },
                     onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
+                    downFocus = if (currentRoute == Routes.HOME) homeContentFocus else null,
                 )
             } else if (showHeader) {
                 AppHeader(
@@ -268,6 +271,7 @@ fun AppNavGraph(isTv: Boolean = false) {
                         viewModel = vm,
                         contentPadding = padding,
                         profile = profile,
+                        initialFocus = homeContentFocus,
                         onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
                         onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
                     )

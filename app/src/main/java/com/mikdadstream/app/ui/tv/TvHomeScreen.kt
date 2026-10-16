@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -83,6 +85,7 @@ fun TvTopBar(
     onNavigate: (String) -> Unit,
     onSourceClick: () -> Unit,
     onProfileClick: () -> Unit,
+    downFocus: FocusRequester? = null,
 ) {
     Row(
         modifier = Modifier
@@ -100,12 +103,12 @@ fun TvTopBar(
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.ExtraBold,
         )
-        TvNavItem("Beranda", Icons.Filled.Home, currentRoute == "home") { onNavigate("home") }
-        TvNavItem("Cari", Icons.Filled.Search, currentRoute == "search") { onNavigate("search") }
-        TvNavItem("Koleksi", Icons.Outlined.BookmarkBorder, currentRoute == "library") { onNavigate("library") }
-        TvNavItem("Profil", Icons.Filled.Person, currentRoute == "settings") { onProfileClick() }
+        TvNavItem("Beranda", Icons.Filled.Home, currentRoute == "home", downFocus = downFocus) { onNavigate("home") }
+        TvNavItem("Cari", Icons.Filled.Search, currentRoute == "search", downFocus = downFocus) { onNavigate("search") }
+        TvNavItem("Koleksi", Icons.Outlined.BookmarkBorder, currentRoute == "library", downFocus = downFocus) { onNavigate("library") }
+        TvNavItem("Profil", Icons.Filled.Person, currentRoute == "settings", downFocus = downFocus) { onProfileClick() }
         Spacer(Modifier.weight(1f))
-        TvNavItem("Sumber", Icons.Outlined.Refresh, false, label = activeSourceName ?: "Sumber") { onSourceClick() }
+        TvNavItem("Sumber", Icons.Outlined.Refresh, false, label = activeSourceName ?: "Sumber", downFocus = downFocus) { onSourceClick() }
     }
 }
 
@@ -115,6 +118,7 @@ private fun TvNavItem(
     icon: ImageVector,
     selected: Boolean,
     label: String? = null,
+    downFocus: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -130,6 +134,7 @@ private fun TvNavItem(
             .clip(RoundedCornerShape(10.dp))
             .background(if (focused) Color.White.copy(alpha = 0.14f) else Color.Transparent)
             .onFocusChanged { focused = it.isFocused }
+            .focusProperties { downFocus?.let { down = it } }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -156,6 +161,7 @@ fun TvHomeScreen(
     viewModel: HomeViewModel,
     contentPadding: PaddingValues,
     profile: Profile?,
+    initialFocus: FocusRequester,
     onOpenItem: (item: MediaItem, modelId: String?) -> Unit,
     onContinue: (item: HistoryEntity) -> Unit,
 ) {
@@ -165,7 +171,6 @@ fun TvHomeScreen(
     else state.items.firstOrNull { !it.isNews } ?: state.items.firstOrNull()
     val rest = state.items.filter { it !== hero }
     val scrollState = rememberScrollState()
-    val firstFocus = remember { FocusRequester() }
 
     LaunchedEffect(scrollState, state.hasMore, state.loading, state.loadingMore) {
         snapshotFlow { scrollState.value to scrollState.maxValue }
@@ -176,17 +181,24 @@ fun TvHomeScreen(
             }
     }
 
-    LaunchedEffect(hero?.safeId) {
-        if (hero != null) {
-            delay(150)
-            runCatching { firstFocus.requestFocus() }
+    LaunchedEffect(hero?.safeId, initialFocus) {
+        if (hero == null) return@LaunchedEffect
+        repeat(3) {
+            runCatching { initialFocus.requestFocus() }
+            delay(90)
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(TvBg)
+            .focusRequester(initialFocus)
+            .focusable(),
+    ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
             .verticalScroll(scrollState)
             .padding(
                 top = contentPadding.calculateTopPadding(),
@@ -198,7 +210,6 @@ fun TvHomeScreen(
             TvHero(
                 item = hero,
                 profile = profile,
-                playFocusRequester = firstFocus,
                 onPlay = { onOpenItem(hero, viewModel.activeSourceId()) },
                 onInfo = { onOpenItem(hero, viewModel.activeSourceId()) },
             )
@@ -272,13 +283,13 @@ fun TvHomeScreen(
             }
         }
     }
+    }
 }
 
 @Composable
 private fun TvHero(
     item: MediaItem,
     profile: Profile?,
-    playFocusRequester: FocusRequester,
     onPlay: () -> Unit,
     onInfo: () -> Unit,
 ) {
@@ -350,7 +361,6 @@ private fun TvHero(
                     icon = Icons.Filled.PlayArrow,
                     primary = true,
                     onClick = onPlay,
-                    modifier = Modifier.focusRequester(playFocusRequester),
                 )
                 TvHeroButton("Info", Icons.Outlined.Info, primary = false, onClick = onInfo)
             }

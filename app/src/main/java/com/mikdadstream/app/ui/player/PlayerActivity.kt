@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
+import android.view.KeyEvent
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import android.view.WindowManager
@@ -63,6 +64,65 @@ class PlayerActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    /**
+     * Dukungan remote TV / D-pad. Tombol media selalu ditangani. Saat kontrol
+     * tersembunyi, D-pad mengontrol pemutaran langsung; saat kontrol tampil,
+     * D-pad diteruskan ke Compose agar bisa menjelajah tombol kontrol.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (PlayerRemoteController.ready && event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                KeyEvent.KEYCODE_HEADSETHOOK -> {
+                    if (event.repeatCount == 0) PlayerRemoteController.togglePlay()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                    PlayerRemoteController.play()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                    PlayerRemoteController.pause()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                    PlayerRemoteController.seekBack()
+                    return true
+                }
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                    PlayerRemoteController.seekForward()
+                    return true
+                }
+            }
+            if (!PlayerRemoteController.controlsVisible()) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER,
+                    KeyEvent.KEYCODE_SPACE,
+                    KeyEvent.KEYCODE_BUTTON_A -> {
+                        PlayerRemoteController.togglePlay()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        PlayerRemoteController.seekBack()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        PlayerRemoteController.seekForward()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP,
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        PlayerRemoteController.showControls()
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     fun enterPip() {
