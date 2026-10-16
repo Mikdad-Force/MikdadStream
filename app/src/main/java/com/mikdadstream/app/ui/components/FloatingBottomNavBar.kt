@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -174,7 +175,7 @@ fun FloatingBottomNavBar(
                             .fillMaxHeight()
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
+                                indication = LocalIndication.current,
                             ) { onSelect(index) },
                         contentAlignment = Alignment.Center,
                     ) {

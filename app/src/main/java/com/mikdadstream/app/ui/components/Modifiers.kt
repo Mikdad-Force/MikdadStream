@@ -3,6 +3,7 @@ package com.mikdadstream.app.ui.components
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -35,7 +36,11 @@ fun Modifier.pressScale(onClick: () -> Unit): Modifier {
             // bayangan dinamis mengikuti tekanan
             shadowElevation = if (pressed) 2.dp.toPx() else 10.dp.toPx()
         }
-        .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+        .clickable(
+            interactionSource = interactionSource,
+            indication = LocalIndication.current,
+            onClick = onClick,
+        )
 }
 
 /** Bayangan lembut konsisten untuk semua kartu. */

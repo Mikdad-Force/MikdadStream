@@ -1,17 +1,20 @@
 package com.mikdadstream.app.ui.theme
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mikdadstream.app.ui.components.TvFocusIndication
 
 // ---------- Streamview dark palette ----------
 
@@ -153,6 +156,10 @@ fun MikdadStreamTheme(
         colorScheme = StreamScheme,
         typography = AppTypography,
         shapes = AppShapes,
-        content = content,
-    )
+    ) {
+        // Penanda fokus global: terlihat jelas saat dinavigasi pakai remote (D-pad).
+        CompositionLocalProvider(LocalIndication provides TvFocusIndication) {
+            content()
+        }
+    }
 }
