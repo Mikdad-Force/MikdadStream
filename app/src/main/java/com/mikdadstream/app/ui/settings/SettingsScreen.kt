@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tv
@@ -53,7 +52,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,8 +59,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,9 +103,6 @@ fun SettingsScreen(
     val healthResults by viewModel.healthResults.collectAsState()
     val healthProgress by viewModel.healthProgress.collectAsState()
     val language by com.mikdadstream.app.AppGraph.prefs.language.collectAsState()
-    val firebaseAccount by com.mikdadstream.app.AppGraph.users.account.collectAsState()
-    val firebaseError by com.mikdadstream.app.AppGraph.users.lastError.collectAsState()
-    val firebaseScope = rememberCoroutineScope()
 
     val languageLabel = when (language) {
         PrefsStore.LANG_EN -> "Bahasa Inggris"
@@ -302,92 +295,6 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
-            }
-        }
-
-        // ---------- Akun Firebase ----------
-        SettingsSection(
-            title = "Akun Firebase",
-            icon = { Icon(Icons.Filled.Cloud, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Icon(
-                    Icons.Filled.Cloud,
-                    contentDescription = null,
-                    tint = if (firebaseAccount != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp),
-                )
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = if (firebaseAccount != null) "Tersinkron dengan Firestore" else "Belum tersinkron",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = firebaseAccount?.let { "uid: ${it.uid}\n${it.email.orEmpty()}" }
-                            ?: (firebaseError ?: "Login dengan Google untuk menyinkronkan akun."),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (firebaseAccount == null) {
-                    Text(
-                        text = "Sinkronkan",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { firebaseScope.launch { com.mikdadstream.app.AppGraph.users.syncNow() } }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
-
-            if (firebaseAccount != null) {
-                SettingsDivider()
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Icon(
-                        Icons.Filled.Star,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp),
-                    )
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            text = "Mode Developers",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                        Text(
-                            text = "Tandai akun ini sebagai Developers (tag Developers, bukan Premium)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = firebaseAccount?.accountType == com.mikdadstream.app.data.firebase.AccountType.DEVELOPERS,
-                        onCheckedChange = { enabled ->
-                            firebaseScope.launch {
-                                com.mikdadstream.app.AppGraph.users.setAccountType(
-                                    if (enabled) com.mikdadstream.app.data.firebase.AccountType.DEVELOPERS
-                                    else com.mikdadstream.app.data.firebase.AccountType.NORMAL
-                                )
-                            }
-                        },
-                    )
-                }
             }
         }
 
