@@ -20,14 +20,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.NotificationsNone
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -45,7 +42,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,6 +60,8 @@ import kotlinx.coroutines.flow.first
 import androidx.navigation.navArgument
 import com.mikdadstream.app.AppGraph
 import com.mikdadstream.app.ui.components.AppHeader
+import com.mikdadstream.app.ui.components.FloatingBottomNavBar
+import com.mikdadstream.app.ui.components.FloatingNavItem
 import com.mikdadstream.app.ui.components.SourceSheet
 import com.mikdadstream.app.ui.detail.DetailScreen
 import com.mikdadstream.app.ui.detail.DetailViewModel
@@ -148,19 +146,22 @@ private object Routes {
     const val PAIR_DEVICE = "pair_device"
 }
 
-private data class BottomTab(
-    val route: String,
-    val label: String,
-    val selectedIcon: ImageVector,
-    val unselectedIcon: ImageVector,
+private const val NAV_ADD = "nav_add"
+
+private val floatingNavItems = listOf(
+    FloatingNavItem(Routes.HOME, Icons.Rounded.Home, "Beranda", selectedIcon = Icons.Rounded.Home),
+    FloatingNavItem(Routes.SEARCH, Icons.Rounded.Search, "Cari", selectedIcon = Icons.Rounded.Search),
+    FloatingNavItem(NAV_ADD, Icons.Rounded.Add, "Tambah"),
+    FloatingNavItem(Routes.NOTIFICATIONS, Icons.Rounded.NotificationsNone, "Notifikasi", selectedIcon = Icons.Rounded.NotificationsNone),
+    FloatingNavItem(Routes.SETTINGS, Icons.Rounded.Menu, "Profil", selectedIcon = Icons.Rounded.Menu),
 )
 
-private val bottomTabs = listOf(
-    BottomTab(Routes.HOME, "Beranda", Icons.Filled.Home, Icons.Outlined.Home),
-    BottomTab(Routes.SEARCH, "Cari", Icons.Filled.Search, Icons.Outlined.Search),
-    BottomTab(Routes.LIBRARY, "Koleksi", Icons.Filled.Bookmark, Icons.Outlined.BookmarkBorder),
-    BottomTab(Routes.SETTINGS, "Profil", Icons.Filled.Person, Icons.Outlined.Person),
-)
+private fun floatingNavIndex(route: String?): Int = when (route) {
+    Routes.SEARCH -> 1
+    Routes.NOTIFICATIONS -> 3
+    Routes.SETTINGS -> 4
+    else -> 0
+}
 
 @Composable
 private inline fun <reified T : ViewModel> sharedViewModel(crossinline factory: () -> T): T =
@@ -186,7 +187,7 @@ fun AppNavGraph(isTv: Boolean = false) {
     val currentRoute = backStack?.destination?.route
     val showHeader = false
     val showBottomBar = currentRoute == Routes.HOME || currentRoute == Routes.LIBRARY ||
-        currentRoute == Routes.SETTINGS || currentRoute == Routes.SEARCH
+        currentRoute == Routes.SETTINGS || currentRoute == Routes.SEARCH || currentRoute == Routes.NOTIFICATIONS
 
     fun openDetail(modelId: String?, id: String, source: String?, autoplay: Boolean = false) {
         val route = "detail?modelId=${Uri.encode(modelId.orEmpty())}" +
@@ -225,10 +226,18 @@ fun AppNavGraph(isTv: Boolean = false) {
         },
         bottomBar = {
             if (!isTv && showBottomBar) {
-                AppBottomBar(
-                    tabs = bottomTabs,
-                    currentRoute = currentRoute,
-                    onSelect = { tab -> navController.navigateTop(tab.route) },
+                FloatingBottomNavBar(
+                    items = floatingNavItems,
+                    selectedIndex = floatingNavIndex(currentRoute),
+                    onSelect = { index ->
+                        when (floatingNavItems[index].id) {
+                            NAV_ADD -> mainViewModel.openSheet()
+                            Routes.NOTIFICATIONS -> navController.navigateTop(Routes.NOTIFICATIONS)
+                            Routes.SEARCH -> navController.navigateTop(Routes.SEARCH)
+                            Routes.SETTINGS -> navController.navigateTop(Routes.SETTINGS)
+                            else -> navController.navigateTop(Routes.HOME)
+                        }
+                    },
                 )
             }
         },
@@ -257,6 +266,7 @@ fun AppNavGraph(isTv: Boolean = false) {
                         onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
                         onSearchClick = { navController.navigateTop(Routes.SEARCH) },
                         onNotificationClick = { navController.navigate(Routes.NOTIFICATIONS) },
+                        onLibraryClick = { navController.navigateTop(Routes.LIBRARY) },
                         onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
                         onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
                         onSeeHistory = { navController.navigateTop(Routes.HISTORY) },
@@ -396,71 +406,6 @@ fun AppNavGraph(isTv: Boolean = false) {
                 }
             },
         )
-    }
-}
-
-@Composable
-private fun AppBottomBar(
-    tabs: List<BottomTab>,
-    currentRoute: String?,
-    onSelect: (BottomTab) -> Unit,
-) {
-    val primary = MaterialTheme.colorScheme.primary
-    val inactive = MaterialTheme.colorScheme.onSurfaceVariant
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .navigationBarsPadding(),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(Color(0xFF1B1D26)),
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            tabs.forEach { tab ->
-                val selected = currentRoute == tab.route
-                val scale by animateFloatAsState(
-                    targetValue = if (selected) 1.04f else 1f,
-                    animationSpec = tween(200),
-                    label = "navScale",
-                )
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .scale(scale)
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { onSelect(tab) }
-                        .padding(vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Icon(
-                        imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
-                        contentDescription = tab.label,
-                        tint = if (selected) primary else inactive,
-                        modifier = Modifier.size(23.dp),
-                    )
-                    Text(
-                        text = tab.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (selected) primary else inactive,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                    )
-                }
-            }
-        }
     }
 }
 

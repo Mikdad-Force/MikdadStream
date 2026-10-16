@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Search
@@ -74,6 +75,7 @@ fun HomeScreen(
     onProfileClick: () -> Unit,
     onSearchClick: () -> Unit,
     onNotificationClick: () -> Unit,
+    onLibraryClick: () -> Unit,
     onOpenItem: (item: MediaItem, modelId: String?) -> Unit,
     onContinue: (item: HistoryEntity) -> Unit,
     onSeeHistory: () -> Unit,
@@ -121,6 +123,7 @@ fun HomeScreen(
                     onProfileClick = onProfileClick,
                     onSearchClick = onSearchClick,
                     onNotificationClick = onNotificationClick,
+                    onLibraryClick = onLibraryClick,
                 )
             }
 
@@ -258,6 +261,7 @@ private fun GreetingHeader(
     onProfileClick: () -> Unit,
     onSearchClick: () -> Unit,
     onNotificationClick: () -> Unit,
+    onLibraryClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -301,6 +305,7 @@ private fun GreetingHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        IconHeaderButton(Icons.Outlined.BookmarkBorder, onClick = onLibraryClick)
         IconHeaderButton(Icons.Outlined.Search, onClick = onSearchClick)
         IconHeaderButton(Icons.Outlined.Notifications, showDot = true, onClick = onNotificationClick)
     }
