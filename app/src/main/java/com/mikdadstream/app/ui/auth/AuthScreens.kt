@@ -1,5 +1,6 @@
 package com.mikdadstream.app.ui.auth
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,7 +25,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Backspace
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Lock
@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mikdadstream.app.R
 import com.mikdadstream.app.ui.components.FilterChipPill
 import com.mikdadstream.app.ui.components.StreamIconCircle
 import com.mikdadstream.app.ui.components.StreamOutlineButton
@@ -109,28 +111,10 @@ private fun BrandMark() {
                     .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(23.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = "M",
-                    fontFamily = PlusJakarta,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 40.sp,
-                    color = Color.White,
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.background)
-                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Filled.PlayArrow,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp),
+                Image(
+                    painter = painterResource(R.drawable.ic_ghost),
+                    contentDescription = "Mikdad",
+                    modifier = Modifier.size(58.dp),
                 )
             }
         }
