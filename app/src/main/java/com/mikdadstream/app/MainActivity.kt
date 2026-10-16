@@ -92,6 +92,10 @@ private fun AppRoot(isTv: Boolean) {
     LaunchedEffect(Unit) {
         if (AppGraph.prefs.loggedIn.value) {
             runCatching { AppGraph.apiClient.auth.ensureSession() }
+            runCatching { AppGraph.users.syncNow() }
+            if (AppGraph.users.available && AppGraph.users.currentUid == null) {
+                AppGraph.prefs.setLoggedIn(false)
+            }
         }
         booting = false
     }
@@ -147,13 +151,19 @@ private fun AuthFlow(isTv: Boolean) {
             val avatar = claims["picture"] ?: account.photoUrl?.toString()
             val sub = claims["sub"]
             scope.launch {
-                runCatching { AppGraph.users.signInWithGoogle(account.idToken.orEmpty()) }
+                val firebaseUser = AppGraph.users.signInWithGoogle(account.idToken.orEmpty())
+                if (firebaseUser == null) {
+                    AppGraph.users.lastError.value?.let {
+                        android.widget.Toast.makeText(context, "Firebase: $it", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
                 val ok = runCatching {
                     AppGraph.apiClient.auth.loginWithGoogleAsync(email, name, avatar, sub)
                 }.getOrDefault(false)
                 if (ok) finishLogin() else deviceLogin(email)
             }
         } catch (e: ApiException) {
+            android.widget.Toast.makeText(context, "Google Sign-In gagal (kode ${e.statusCode})", android.widget.Toast.LENGTH_LONG).show()
             deviceLogin()
         }
     }

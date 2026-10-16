@@ -1,5 +1,6 @@
 package com.mikdadstream.app.data.firebase
 
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -29,25 +30,37 @@ data class AccountState(
 /**
  * Akun berbasis Firebase (Authentication + Firestore).
  * Data disimpan pada koleksi `users/{uid}`.
- * Bila Firebase tidak terkonfigurasi, seluruh operasi gagal dengan aman (null) tanpa crash.
+ * Semua kegagalan dicatat ke `lastError` agar bisa ditampilkan di UI.
  */
 class UserRepository {
 
-    private val auth: FirebaseAuth? = runCatching { FirebaseAuth.getInstance() }.getOrNull()
-    private val firestore: FirebaseFirestore? = runCatching { FirebaseFirestore.getInstance() }.getOrNull()
+    private val auth: FirebaseAuth? = runCatching { FirebaseAuth.getInstance() }
+        .onFailure { Log.e(TAG, "FirebaseAuth tidak bisa diinisialisasi", it) }
+        .getOrNull()
+    private val firestore: FirebaseFirestore? = runCatching { FirebaseFirestore.getInstance() }
+        .onFailure { Log.e(TAG, "FirebaseFirestore tidak bisa diinisialisasi", it) }
+        .getOrNull()
 
     private val _account = MutableStateFlow<AccountState?>(null)
     val account: StateFlow<AccountState?> = _account
 
+    private val _lastError = MutableStateFlow<String?>(null)
+    val lastError: StateFlow<String?> = _lastError
+
     private var listener: ListenerRegistration? = null
 
+    val available: Boolean get() = auth != null && firestore != null
     val currentUid: String? get() = auth?.currentUser?.uid
 
-    /** Pasang pemantau status login Firebase agar profil selalu tersinkron. */
     fun start() {
-        val firebaseAuth = auth ?: return
+        val firebaseAuth = auth
+        if (firebaseAuth == null) {
+            fail("Firebase Auth tidak tersedia di perangkat ini")
+            return
+        }
         firebaseAuth.addAuthStateListener { fa ->
             val user = fa.currentUser
+            Log.d(TAG, "AuthState berubah: uid=${user?.uid ?: "null"}")
             if (user == null) {
                 detachListener()
                 _account.value = null
@@ -59,25 +72,55 @@ class UserRepository {
 
     /** Login Google memakai ID token dari Google Sign-In. */
     suspend fun signInWithGoogle(idToken: String): AccountState? {
-        val firebaseAuth = auth ?: return null
-        return runCatching {
+        val firebaseAuth = auth
+        if (firebaseAuth == null) {
+            fail("Firebase Auth tidak tersedia di perangkat ini")
+            return null
+        }
+        if (idToken.isBlank()) {
+            fail("ID token Google kosong — Google Sign-In gagal")
+            return null
+        }
+        return try {
             val credential = GoogleAuthProvider.getCredential(idToken, null)
             val result = firebaseAuth.signInWithCredential(credential).await()
-            result.user?.let { upsert(it) }
-        }.getOrNull()
+            val user = result.user
+            if (user == null) {
+                fail("Firebase tidak mengembalikan user setelah login")
+                null
+            } else {
+                Log.i(TAG, "Login Firebase sukses uid=${user.uid}")
+                upsert(user)
+            }
+        } catch (t: Throwable) {
+            fail("Login Firebase gagal: ${t.message}")
+            null
+        }
     }
 
     suspend fun signOut() {
         runCatching { auth?.signOut() }
         detachListener()
         _account.value = null
+        _lastError.value = null
+    }
+
+    /** Paksa sinkronisasi profil ke Firestore (dipanggil saat app dibuka / setelah login). */
+    suspend fun syncNow(): AccountState? {
+        val user = auth?.currentUser ?: return null
+        return upsert(user)
     }
 
     /** Sinkronkan data profil dasar ke Firestore (tanpa menimpa status premium). */
     suspend fun upsert(user: FirebaseUser? = auth?.currentUser): AccountState? {
         val u = user ?: return null
-        val db = firestore ?: return null
+        val db = firestore
+        if (db == null) {
+            fail("Firestore tidak tersedia di perangkat ini")
+            return null
+        }
         val ref = db.collection(COLLECTION).document(u.uid)
+
         val profile = runCatching { ref.get().await() }.getOrNull()
         val existing = profile?.exists() == true
         val payload = mutableMapOf<String, Any?>(
@@ -85,6 +128,7 @@ class UserRepository {
             "email" to u.email,
             "displayName" to u.displayName,
             "avatarUrl" to u.photoUrl?.toString(),
+            "lastLoginAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp(),
         )
         if (!existing) {
@@ -93,7 +137,14 @@ class UserRepository {
             payload["premium"] = initial == AccountType.PREMIUM
             payload["createdAt"] = FieldValue.serverTimestamp()
         }
-        runCatching { ref.set(payload, SetOptions.merge()).await() }
+
+        val writeError = runCatching { ref.set(payload, SetOptions.merge()).await() }.exceptionOrNull()
+        if (writeError != null) {
+            fail("Gagal menulis ke Firestore: ${writeError.message}")
+        } else {
+            Log.i(TAG, "Firestore users/${u.uid} tersimpan")
+            _lastError.value = null
+        }
 
         val storedType = profile?.getString("accountType")
         val premium = profile?.getBoolean("premium") ?: false
@@ -109,7 +160,7 @@ class UserRepository {
             _account.value = _account.value?.copy(accountType = AccountType.PREMIUM, premium = true)
             return
         }
-        runCatching {
+        val writeError = runCatching {
             firestore?.collection(COLLECTION)?.document(uid)?.set(
                 mapOf(
                     "premium" to true,
@@ -119,12 +170,10 @@ class UserRepository {
                 ),
                 SetOptions.merge(),
             )?.await()
-        }
+        }.exceptionOrNull()
+        if (writeError != null) fail("Gagal menyimpan premium: ${writeError.message}")
+        else _lastError.value = null
         _account.value = _account.value?.copy(accountType = AccountType.PREMIUM, premium = true)
-    }
-
-    suspend fun refresh() {
-        upsert()
     }
 
     private fun attachListener(user: FirebaseUser) {
@@ -135,7 +184,11 @@ class UserRepository {
         }
         detachListener()
         listener = db.collection(COLLECTION).document(user.uid)
-            .addSnapshotListener { snapshot, _ ->
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    fail("Gagal membaca Firestore: ${error.message}")
+                    return@addSnapshotListener
+                }
                 if (snapshot == null) return@addSnapshotListener
                 if (!snapshot.exists()) {
                     _account.value = stateFrom(user, null, false)
@@ -186,7 +239,13 @@ class UserRepository {
     private fun isDeveloper(email: String?): Boolean =
         email != null && developerEmails.contains(email.lowercase())
 
+    private fun fail(message: String) {
+        Log.e(TAG, message)
+        _lastError.value = message
+    }
+
     companion object {
+        private const val TAG = "MikdadFirebase"
         const val COLLECTION = "users"
 
         /** Akun yang otomatis berlabel Developers. Tambahkan email lain di sini. */
