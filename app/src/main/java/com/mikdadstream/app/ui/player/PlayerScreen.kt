@@ -137,6 +137,25 @@ private fun subtitleMime(url: String): String? {
     }
 }
 
+private fun subtitleLangName(code: String?): String? = when (code?.lowercase()?.substringBefore('-')) {
+    "id", "in" -> "Indonesia"
+    "en" -> "English"
+    "ms" -> "Melayu"
+    "jv" -> "Jawa"
+    "su" -> "Sunda"
+    "zh" -> "\u4e2d\u6587"
+    "ja" -> "\u65e5\u672c\u8a9e"
+    "ko" -> "\ud55c\uad6d\uc5b4"
+    "es" -> "Espa\u00f1ol"
+    "ar" -> "\u0627\u0644\u0639\u0631\u0628\u064a\u0629"
+    "pt" -> "Portugu\u00eas"
+    "fr" -> "Fran\u00e7ais"
+    "de" -> "Deutsch"
+    "th" -> "\u0e44\u0e17\u0e22"
+    "vi" -> "Ti\u1ebfng Vi\u1ec7t"
+    else -> null
+}
+
 private fun formatTime(ms: Long): String {
     if (ms <= 0L) return "0:00"
     val s = ms / 1000
@@ -298,7 +317,9 @@ fun PlayerScreen(
             val tg = g.mediaTrackGroup
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
+                val langName = subtitleLangName(f.language)
                 val label = f.label?.takeIf { it.isNotBlank() }
+                    ?: langName
                     ?: f.language?.takeIf { it.isNotBlank() }
                     ?: "Subtitle ${opts.size + 1}"
                 val key = "${tg.id}#$i"
@@ -313,10 +334,11 @@ fun PlayerScreen(
     fun selectSubtitle(opt: SubOption?) {
         val bp = player.trackSelectionParameters.buildUpon()
         bp.clearOverridesOfType(C.TRACK_TYPE_TEXT)
-        bp.setPreferredTextLanguages()
-        bp.setSelectUndeterminedTextLanguage(false)
         if (opt != null) {
-            bp.setOverrideForType(TrackSelectionOverride(opt.group, opt.index))
+            bp.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setOverrideForType(TrackSelectionOverride(opt.group, opt.index))
+        } else {
+            bp.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         }
         player.trackSelectionParameters = bp.build()
         selectedSubKey = opt?.key
@@ -361,6 +383,16 @@ fun PlayerScreen(
         return if (b < 0f) 0.5f else b
     }
 
+    fun pickStreamIndex(list: List<MediaStream>): Int = when {
+        list.isEmpty() -> 0
+        list.size == 1 -> 0
+        else -> list.indices.maxWithOrNull(
+            compareBy<Int> { if (list[it].isEmbed) 0 else 1 }
+                .thenBy { (list[it].format ?: "").equals("hls", ignoreCase = true) }
+                .thenBy { list[it].qualityCode ?: 0 },
+        ) ?: 0
+    }
+
     // ---- Muat sumber video dari API ----
     LaunchedEffect(episodeId, reload) {
         loadingStreams = true
@@ -380,20 +412,21 @@ fun PlayerScreen(
             loadingStreams = false
             return@LaunchedEffect
         }
+        // Sumber sudah di-preload dari layar detail -> pemutaran langsung mulus.
+        if (reload == 0 && episodeId == request.episodeId && request.streams.isNotEmpty()) {
+            val list = request.streams
+            streams = list
+            apiSubtitles = request.subtitles
+            selectedIndex = pickStreamIndex(list)
+            loadingStreams = false
+            return@LaunchedEffect
+        }
         try {
             val data = AppGraph.repository.source(request.modelId, episodeId, request.contentId)
             val list = data.playableStreams
             streams = list
             apiSubtitles = data.subtitles.orEmpty()
-            selectedIndex = when {
-                list.isEmpty() -> 0
-                list.size == 1 -> 0
-                else -> list.indices.maxWithOrNull(
-                    compareBy<Int> { if (list[it].isEmbed) 0 else 1 }
-                        .thenBy { (list[it].format ?: "").equals("hls", ignoreCase = true) }
-                        .thenBy { list[it].qualityCode ?: 0 },
-                ) ?: 0
-            }
+            selectedIndex = pickStreamIndex(list)
             loadingStreams = false
             if (list.isEmpty()) {
                 streamError = "Tidak ada sumber pemutaran untuk episode ini."
@@ -990,6 +1023,7 @@ fun PlayerScreen(
             subOptions.map { it to it.label }
         OptionMenu(
             title = "Subtitle",
+            note = if (subOptions.isEmpty()) "Tidak ada subtitle tersedia untuk video ini." else null,
             items = items,
             selected = { it?.key == selectedSubKey },
             onSelect = { opt ->
@@ -1192,6 +1226,7 @@ private fun <T> OptionMenu(
     selected: (T) -> Boolean,
     onSelect: (T) -> Unit,
     onDismiss: () -> Unit,
+    note: String? = null,
 ) {
     Box(
         modifier = Modifier
@@ -1224,6 +1259,14 @@ private fun <T> OptionMenu(
                 color = Color.White,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
+            note?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
             items.forEach { (value, label) ->
                 val isSelected = selected(value)
                 Row(

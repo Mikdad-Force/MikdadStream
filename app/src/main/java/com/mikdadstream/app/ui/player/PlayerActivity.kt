@@ -21,6 +21,8 @@ import com.google.gson.reflect.TypeToken
 import com.mikdadstream.app.AppGraph
 import com.mikdadstream.app.data.local.HistoryEntity
 import com.mikdadstream.app.data.remote.EpisodeData
+import com.mikdadstream.app.data.remote.MediaStream
+import com.mikdadstream.app.data.remote.SubtitleTrack
 import com.mikdadstream.app.ui.detail.PlayRequest
 import com.mikdadstream.app.ui.theme.MikdadStreamTheme
 
@@ -124,6 +126,20 @@ class PlayerActivity : ComponentActivity() {
                 gson.fromJson<List<EpisodeData>>(episodesJson, type) ?: emptyList()
             }.getOrDefault(emptyList())
         }
+        val streamsJson = intent.getStringExtra(EXTRA_STREAMS)
+        val streams: List<MediaStream> = if (streamsJson.isNullOrBlank()) emptyList() else {
+            runCatching {
+                val type = object : TypeToken<List<MediaStream>>() {}.type
+                gson.fromJson<List<MediaStream>>(streamsJson, type) ?: emptyList()
+            }.getOrDefault(emptyList())
+        }
+        val subtitlesJson = intent.getStringExtra(EXTRA_SUBTITLES)
+        val subtitles: List<SubtitleTrack> = if (subtitlesJson.isNullOrBlank()) emptyList() else {
+            runCatching {
+                val type = object : TypeToken<List<SubtitleTrack>>() {}.type
+                gson.fromJson<List<SubtitleTrack>>(subtitlesJson, type) ?: emptyList()
+            }.getOrDefault(emptyList())
+        }
         return PlayRequest(
             modelId = modelId,
             contentId = contentId,
@@ -134,6 +150,8 @@ class PlayerActivity : ComponentActivity() {
             episodes = episodes,
             startPositionMs = intent.getLongExtra(EXTRA_POSITION, 0L),
             localUrl = intent.getStringExtra(EXTRA_LOCAL_URL),
+            streams = streams,
+            subtitles = subtitles,
         )
     }
 
@@ -147,6 +165,8 @@ class PlayerActivity : ComponentActivity() {
         private const val EXTRA_EPISODES = "episodes"
         private const val EXTRA_POSITION = "position"
         private const val EXTRA_LOCAL_URL = "local_url"
+        private const val EXTRA_STREAMS = "streams"
+        private const val EXTRA_SUBTITLES = "subtitles"
 
         fun intent(context: Context, request: PlayRequest): Intent =
             Intent(context, PlayerActivity::class.java).apply {
@@ -158,6 +178,12 @@ class PlayerActivity : ComponentActivity() {
                 putExtra(EXTRA_COVER, request.cover)
                 putExtra(EXTRA_POSITION, request.startPositionMs)
                 putExtra(EXTRA_EPISODES, Gson().toJson(request.episodes))
+                if (request.streams.isNotEmpty()) {
+                    putExtra(EXTRA_STREAMS, Gson().toJson(request.streams))
+                }
+                if (request.subtitles.isNotEmpty()) {
+                    putExtra(EXTRA_SUBTITLES, Gson().toJson(request.subtitles))
+                }
                 request.localUrl?.let { putExtra(EXTRA_LOCAL_URL, it) }
             }
     }

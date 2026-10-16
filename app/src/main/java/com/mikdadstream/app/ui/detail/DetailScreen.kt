@@ -104,7 +104,7 @@ fun DetailScreen(
             state = state,
             contentPadding = contentPadding,
             onBack = onBack,
-            onPlay = { request -> onPlay(request) },
+            onPlay = { request -> viewModel.preparePlay(request) { ready -> onPlay(ready) } },
             onToggleWatchlist = { viewModel.toggleWatchlist() },
             onDownload = { episode -> viewModel.openDownloads(episode) },
             onDownloadFile = { file -> viewModel.startDownload(file) },
@@ -274,7 +274,7 @@ private fun DetailContent(
                         .height(50.dp)
                         .clip(RoundedCornerShape(999.dp))
                         .background(MaterialTheme.colorScheme.primary)
-                        .clickable {
+                        .clickable(enabled = !state.preparing) {
                             val request = state.history?.let { resumePlayRequest(state) }
                             onPlay(request ?: firstPlayRequest(state) ?: return@clickable)
                         }
@@ -282,14 +282,22 @@ private fun DetailContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(
-                        Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp),
-                    )
+                    if (state.preparing) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    } else {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                     Text(
-                        text = playLabel,
+                        text = if (state.preparing) "Menyiapkan\u2026" else playLabel,
                         style = MaterialTheme.typography.labelLarge,
                         color = Color.White,
                         maxLines = 1,

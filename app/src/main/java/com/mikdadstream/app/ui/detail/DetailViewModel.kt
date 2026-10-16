@@ -8,6 +8,7 @@ import com.mikdadstream.app.data.remote.ApiError
 import com.mikdadstream.app.data.remote.DetailData
 import com.mikdadstream.app.data.remote.EpisodeData
 import com.mikdadstream.app.data.remote.MediaStream
+import com.mikdadstream.app.data.remote.SubtitleTrack
 import com.mikdadstream.app.data.repository.StreamRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +26,7 @@ data class DetailUiState(
     val loadingDownloads: Boolean = false,
     val downloadError: String? = null,
     val downloadLocked: Boolean = false,
+    val preparing: Boolean = false,
 )
 
 /** Permintaan pemutaran yang diteruskan ke PlayerActivity. */
@@ -38,6 +40,8 @@ data class PlayRequest(
     val episodes: List<EpisodeData>,
     val startPositionMs: Long = 0L,
     val localUrl: String? = null,
+    val streams: List<MediaStream> = emptyList(),
+    val subtitles: List<SubtitleTrack> = emptyList(),
 )
 
 class DetailViewModel(
@@ -147,6 +151,31 @@ class DetailViewModel(
             episodes = detail.episodeList,
             startPositionMs = history.positionMs,
         )
+    }
+
+    /** Preload sumber video agar PlayerActivity terbuka langsung siap (tanpa lag). */
+    fun preparePlay(target: PlayRequest, onReady: (PlayRequest) -> Unit) {
+        if (target.episodeId.isBlank()) {
+            onReady(target)
+            return
+        }
+        if (_state.value.preparing) return
+        _state.value = _state.value.copy(preparing = true)
+        viewModelScope.launch {
+            val ready = try {
+                val data = repo.source(target.modelId, target.episodeId, target.contentId)
+                val streams = data.playableStreams
+                if (streams.isEmpty()) {
+                    target
+                } else {
+                    target.copy(streams = streams, subtitles = data.subtitles.orEmpty())
+                }
+            } catch (e: Exception) {
+                target
+            }
+            _state.value = _state.value.copy(preparing = false)
+            onReady(ready)
+        }
     }
 
     fun openDownloads(episode: EpisodeData) {
