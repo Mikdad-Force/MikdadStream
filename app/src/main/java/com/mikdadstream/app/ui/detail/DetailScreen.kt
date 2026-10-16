@@ -302,7 +302,7 @@ private fun DetailContent(
                     icon = if (state.inWatchlist) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                     contentDescription = if (state.inWatchlist) "Hapus dari daftar" else "Tambah ke daftar",
                     background = StreamPrimarySoft,
-                    tint = Color(0xFF1A1633),
+                    tint = Color(0xFF06283A),
                     onClick = onToggleWatchlist,
                 )
                 CircleAction(

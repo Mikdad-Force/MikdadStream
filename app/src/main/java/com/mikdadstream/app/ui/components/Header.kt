@@ -106,7 +106,7 @@ fun AppHeader(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(Color(0xFF5B3DF5), Color(0xFF9B5CFF)))),
+                        .background(Brush.linearGradient(listOf(Color(0xFF1573B8), Color(0xFF4FB3F0)))),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(

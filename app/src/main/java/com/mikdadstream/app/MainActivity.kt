@@ -237,7 +237,7 @@ private fun SplashScreen() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.radialGradient(listOf(Color(0xFF141B33), Color(0xFF070A13)))),
+            .background(Brush.radialGradient(listOf(Color(0xFF0A2437), Color(0xFF04080F)))),
         contentAlignment = Alignment.Center,
     ) {
         Column(

@@ -267,7 +267,7 @@ fun StreamIconCircle(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     background: Color = StreamPrimarySoft,
-    tint: Color = Color(0xFF1A1633),
+    tint: Color = Color(0xFF06283A),
     size: Int = 48,
 ) {
     Box(

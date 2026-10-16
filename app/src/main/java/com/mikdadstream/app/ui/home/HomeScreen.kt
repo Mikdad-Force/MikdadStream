@@ -405,7 +405,7 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                 .fillMaxWidth()
                 .height(200.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF8A7BFF))))
+                .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF6BC1F5))))
                 .pressScale(onClick),
         ) {
             PosterImage(

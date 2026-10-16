@@ -39,8 +39,8 @@ android {
         applicationId = "com.mikdadstream.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.11.4"
+        versionCode = 22
+        versionName = "1.11.5"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("Boolean", "FORCE_TV", "$forceTv")

@@ -22,11 +22,11 @@ val StreamSurfaceChip = Color(0xFF1B1D26)
 val StreamOutline = Color(0xFF282837)
 val StreamLine = Color(0xFF1B1D26)
 
-val StreamPrimary = Color(0xFF685CF0)
-val StreamPrimaryDark = Color(0xFF5647E8)
-val StreamPrimarySoft = Color(0xFFBEB9FA)
-val StreamPrimaryLite = Color(0xFFCCC8F5)
-val StreamPrimaryContainer = Color(0xFF221F3D)
+val StreamPrimary = Color(0xFF24A0ED)
+val StreamPrimaryDark = Color(0xFF1B82C4)
+val StreamPrimarySoft = Color(0xFFA9D9F8)
+val StreamPrimaryLite = Color(0xFFC6E7FB)
+val StreamPrimaryContainer = Color(0xFF0E2E45)
 
 val StreamTextPrimary = Color(0xFFE1E1E2)
 val StreamTextSecondary = Color(0xFFB0B0B3)
@@ -46,7 +46,7 @@ val GradientPoster = listOf(Color.Transparent, Color(0xE602050F))
 
 @Composable
 fun brandBrush(): Brush = Brush.linearGradient(
-    listOf(StreamPrimary, Color(0xFF8A7BFF)),
+    listOf(StreamPrimary, Color(0xFF6BC1F5)),
 )
 
 @Composable
@@ -68,11 +68,11 @@ private val StreamScheme = darkColorScheme(
     primaryContainer = StreamPrimaryContainer,
     onPrimaryContainer = StreamPrimarySoft,
     secondary = StreamPrimarySoft,
-    onSecondary = Color(0xFF1A1633),
+    onSecondary = Color(0xFF06283A),
     secondaryContainer = StreamSurfaceChip,
     onSecondaryContainer = StreamPrimaryLite,
     tertiary = StreamPrimarySoft,
-    onTertiary = Color(0xFF1A1633),
+    onTertiary = Color(0xFF06283A),
     background = StreamBg,
     onBackground = StreamTextPrimary,
     surface = StreamBg,
