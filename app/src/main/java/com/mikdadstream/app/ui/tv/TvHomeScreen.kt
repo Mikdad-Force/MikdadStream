@@ -5,7 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -85,7 +83,6 @@ fun TvTopBar(
     onNavigate: (String) -> Unit,
     onSourceClick: () -> Unit,
     onProfileClick: () -> Unit,
-    downFocus: FocusRequester? = null,
 ) {
     Row(
         modifier = Modifier
@@ -103,12 +100,12 @@ fun TvTopBar(
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.ExtraBold,
         )
-        TvNavItem("Beranda", Icons.Filled.Home, currentRoute == "home", downFocus = downFocus) { onNavigate("home") }
-        TvNavItem("Cari", Icons.Filled.Search, currentRoute == "search", downFocus = downFocus) { onNavigate("search") }
-        TvNavItem("Koleksi", Icons.Outlined.BookmarkBorder, currentRoute == "library", downFocus = downFocus) { onNavigate("library") }
-        TvNavItem("Profil", Icons.Filled.Person, currentRoute == "settings", downFocus = downFocus) { onProfileClick() }
+        TvNavItem("Beranda", Icons.Filled.Home, currentRoute == "home") { onNavigate("home") }
+        TvNavItem("Cari", Icons.Filled.Search, currentRoute == "search") { onNavigate("search") }
+        TvNavItem("Koleksi", Icons.Outlined.BookmarkBorder, currentRoute == "library") { onNavigate("library") }
+        TvNavItem("Profil", Icons.Filled.Person, currentRoute == "settings") { onProfileClick() }
         Spacer(Modifier.weight(1f))
-        TvNavItem("Sumber", Icons.Outlined.Refresh, false, label = activeSourceName ?: "Sumber", downFocus = downFocus) { onSourceClick() }
+        TvNavItem("Sumber", Icons.Outlined.Refresh, false, label = activeSourceName ?: "Sumber") { onSourceClick() }
     }
 }
 
@@ -118,7 +115,6 @@ private fun TvNavItem(
     icon: ImageVector,
     selected: Boolean,
     label: String? = null,
-    downFocus: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -134,7 +130,6 @@ private fun TvNavItem(
             .clip(RoundedCornerShape(10.dp))
             .background(if (focused) Color.White.copy(alpha = 0.14f) else Color.Transparent)
             .onFocusChanged { focused = it.isFocused }
-            .focusProperties { downFocus?.let { down = it } }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -192,9 +187,7 @@ fun TvHomeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(TvBg)
-            .focusRequester(initialFocus)
-            .focusable(),
+            .background(TvBg),
     ) {
     Column(
         modifier = Modifier
@@ -210,6 +203,7 @@ fun TvHomeScreen(
             TvHero(
                 item = hero,
                 profile = profile,
+                playFocusRequester = initialFocus,
                 onPlay = { onOpenItem(hero, viewModel.activeSourceId()) },
                 onInfo = { onOpenItem(hero, viewModel.activeSourceId()) },
             )
@@ -290,6 +284,7 @@ fun TvHomeScreen(
 private fun TvHero(
     item: MediaItem,
     profile: Profile?,
+    playFocusRequester: FocusRequester,
     onPlay: () -> Unit,
     onInfo: () -> Unit,
 ) {
@@ -361,6 +356,7 @@ private fun TvHero(
                     icon = Icons.Filled.PlayArrow,
                     primary = true,
                     onClick = onPlay,
+                    modifier = Modifier.focusRequester(playFocusRequester),
                 )
                 TvHeroButton("Info", Icons.Outlined.Info, primary = false, onClick = onInfo)
             }

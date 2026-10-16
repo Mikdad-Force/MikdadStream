@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,11 +35,14 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -208,8 +212,16 @@ fun AppNavGraph(isTv: Boolean = false) {
     val currentRoute = backStack?.destination?.route
     val showHeader = false
     val homeContentFocus = remember { FocusRequester() }
+    val routeFocus = remember { FocusRequester() }
     val showBottomBar = currentRoute == Routes.HOME || currentRoute == Routes.LIBRARY ||
         currentRoute == Routes.SETTINGS || currentRoute == Routes.SEARCH || currentRoute == Routes.DOWNLOADS
+
+    LaunchedEffect(currentRoute, isTv) {
+        if (!isTv) return@LaunchedEffect
+        runCatching { routeFocus.requestFocus() }
+        delay(80)
+        runCatching { routeFocus.requestFocus() }
+    }
 
     fun openDetail(modelId: String?, id: String, source: String?, autoplay: Boolean = false) {
         val route = "detail?modelId=${Uri.encode(modelId.orEmpty())}" +
@@ -225,6 +237,7 @@ fun AppNavGraph(isTv: Boolean = false) {
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        modifier = if (isTv) Modifier.focusRequester(routeFocus).focusGroup() else Modifier,
         topBar = {
             if (isTv && showBottomBar) {
                 TvTopBar(
@@ -234,7 +247,6 @@ fun AppNavGraph(isTv: Boolean = false) {
                     onNavigate = { route -> navController.navigateTop(route) },
                     onSourceClick = { mainViewModel.openSheet() },
                     onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
-                    downFocus = if (currentRoute == Routes.HOME) homeContentFocus else null,
                 )
             } else if (showHeader) {
                 AppHeader(
