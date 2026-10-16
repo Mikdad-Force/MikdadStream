@@ -15,6 +15,8 @@ val googleClientId: String = (findProperty("GOOGLE_CLIENT_ID") as String?)
 
 val forceTv: Boolean = (findProperty("FORCE_TV") as String?)?.toBoolean() ?: false
 
+val updateRepo: String = (findProperty("UPDATE_REPO") as String?) ?: "Mikdad-Force/MikdadStream"
+
 val keystoreFile = rootProject.file("mikdadstream.keystore")
 val releaseStorePassword: String = (findProperty("STREAM_STORE_PASSWORD") as String?) ?: "mikdadstream"
 val releaseKeyPassword: String = (findProperty("STREAM_KEY_PASSWORD") as String?) ?: "mikdadstream"
@@ -39,11 +41,12 @@ android {
         applicationId = "com.mikdadstream.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 25
-        versionName = "1.11.8"
+        versionCode = 26
+        versionName = "1.11.9"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("Boolean", "FORCE_TV", "$forceTv")
+        buildConfigField("String", "UPDATE_REPO", "\"$updateRepo\"")
         vectorDrawables { useSupportLibrary = true }
     }
 

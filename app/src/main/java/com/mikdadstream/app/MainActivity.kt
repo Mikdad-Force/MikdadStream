@@ -58,6 +58,7 @@ import com.mikdadstream.app.ui.theme.MikdadStreamTheme
 import com.mikdadstream.app.ui.theme.brandBrush
 import com.mikdadstream.app.ui.tv.TvPairingScreen
 import com.mikdadstream.app.ui.tv.isTelevision
+import com.mikdadstream.app.ui.update.UpdateScreen
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -94,6 +95,14 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot(isTv: Boolean) {
     val loggedIn by AppGraph.prefs.loggedIn.collectAsState()
     var booting by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+    val updater = AppGraph.updater
+    val downloading by updater.downloading.collectAsState()
+    val progress by updater.progress.collectAsState()
+    var updateInfo by remember { mutableStateOf<com.mikdadstream.app.data.update.UpdateInfo?>(null) }
+    var updateFailed by remember { mutableStateOf(false) }
+    var installing by remember { mutableStateOf(false) }
+    var permissionNeeded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (AppGraph.prefs.loggedIn.value) {
@@ -104,6 +113,42 @@ private fun AppRoot(isTv: Boolean) {
             }
         }
         booting = false
+    }
+
+    LaunchedEffect(Unit) {
+        runCatching { updater.check() }.getOrNull()?.let { updateInfo = it }
+    }
+
+    val info = updateInfo
+    if (info != null) {
+        UpdateScreen(
+            info = info,
+            downloading = downloading,
+            progress = progress,
+            permissionNeeded = permissionNeeded,
+            installing = installing,
+            failed = updateFailed,
+            onUpdate = {
+                scope.launch {
+                    updateFailed = false
+                    val file = updater.download(info)
+                    if (file == null) {
+                        updateFailed = true
+                        return@launch
+                    }
+                    if (!updater.canInstall()) {
+                        permissionNeeded = true
+                        return@launch
+                    }
+                    installing = true
+                    runCatching { updater.install(file) }.onFailure { updateFailed = true }
+                    installing = false
+                }
+            },
+            onOpenPermission = { updater.openInstallPermission() },
+            onOpenBrowser = { updater.openPage(info.pageUrl) },
+        )
+        return
     }
 
     when {

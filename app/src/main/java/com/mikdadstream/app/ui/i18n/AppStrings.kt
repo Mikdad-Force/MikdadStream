@@ -65,6 +65,21 @@ data class AppStrings(
     val dlDone: String,
     val dlFailed: String,
     val dlDownloading: (Int) -> String,
+
+    // Pembaruan aplikasi
+    val updateTitle: String,
+    val updateBadge: String,
+    val updateBody: String,
+    val updateCurrent: (String) -> String,
+    val updateLatest: (String) -> String,
+    val updateNow: String,
+    val updateDownloading: (Int) -> String,
+    val updatePreparing: String,
+    val updatePermission: String,
+    val updatePermissionCta: String,
+    val updateOpenBrowser: String,
+    val updateFailed: String,
+    val updateRetry: String,
 )
 
 private val Id = AppStrings(
@@ -125,6 +140,20 @@ private val Id = AppStrings(
     dlDone = "Selesai • siap ditonton",
     dlFailed = "Gagal mengunduh",
     dlDownloading = { p -> "Mengunduh $p%" },
+
+    updateTitle = "Pembaruan Wajib",
+    updateBadge = "PEMBARUAN WAJIB",
+    updateBody = "Versi baru aplikasi tersedia di GitHub. Perbarui sekarang untuk melanjutkan menonton.",
+    updateCurrent = { v -> "Versi terpasang: $v" },
+    updateLatest = { v -> "Versi terbaru: $v" },
+    updateNow = "Perbarui Sekarang",
+    updateDownloading = { p -> "Mengunduh pembaruan… $p%" },
+    updatePreparing = "Menyiapkan pemasangan…",
+    updatePermission = "Izinkan pemasangan dari sumber ini, lalu tekan Perbarui Sekarang lagi.",
+    updatePermissionCta = "Buka Pengaturan Izin",
+    updateOpenBrowser = "Buka di GitHub",
+    updateFailed = "Gagal mengunduh pembaruan. Periksa koneksi lalu coba lagi.",
+    updateRetry = "Coba Lagi",
 )
 
 private val En = AppStrings(
@@ -185,6 +214,20 @@ private val En = AppStrings(
     dlDone = "Done • ready to watch",
     dlFailed = "Download failed",
     dlDownloading = { p -> "Downloading $p%" },
+
+    updateTitle = "Update Required",
+    updateBadge = "UPDATE REQUIRED",
+    updateBody = "A new version is available on GitHub. Update now to keep watching.",
+    updateCurrent = { v -> "Installed version: $v" },
+    updateLatest = { v -> "Latest version: $v" },
+    updateNow = "Update Now",
+    updateDownloading = { p -> "Downloading update… $p%" },
+    updatePreparing = "Preparing installation…",
+    updatePermission = "Allow installs from this source, then tap Update Now again.",
+    updatePermissionCta = "Open Permission Settings",
+    updateOpenBrowser = "Open on GitHub",
+    updateFailed = "Failed to download the update. Check your connection and try again.",
+    updateRetry = "Try Again",
 )
 
 private val Su = AppStrings(
@@ -245,6 +288,20 @@ private val Su = AppStrings(
     dlDone = "Réngsé • siap ditonton",
     dlFailed = "Gagal ngunduh",
     dlDownloading = { p -> "Nuju ngunduh $p%" },
+
+    updateTitle = "Pembaruan Wajib",
+    updateBadge = "PEMBARUAN WAJIB",
+    updateBody = "Versi anyar aplikasi sadia di GitHub. Perbarui ayeuna pikeun nuluykeun nonton.",
+    updateCurrent = { v -> "Versi kapasang: $v" },
+    updateLatest = { v -> "Versi panganyarna: $v" },
+    updateNow = "Perbarui Ayeuna",
+    updateDownloading = { p -> "Nuju ngunduh pembaruan… $p%" },
+    updatePreparing = "Nyiapkeun pamasangan…",
+    updatePermission = "Ngidinan pamasangan tina sumber ieu, teras pencét Perbarui Ayeuna deui.",
+    updatePermissionCta = "Buka Setélan Idin",
+    updateOpenBrowser = "Buka di GitHub",
+    updateFailed = "Gagal ngunduh pembaruan. Pariksa sambungan teras coba deui.",
+    updateRetry = "Coba Deui",
 )
 
 fun appStringsFor(code: String?): AppStrings = when (code?.lowercase()) {

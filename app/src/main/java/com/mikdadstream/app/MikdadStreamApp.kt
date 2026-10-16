@@ -11,6 +11,7 @@ import com.mikdadstream.app.data.local.AppDatabase
 import com.mikdadstream.app.data.local.PrefsStore
 import com.mikdadstream.app.data.remote.ApiClient
 import com.mikdadstream.app.data.repository.StreamRepository
+import com.mikdadstream.app.data.update.AppUpdater
 
 /** Kontainer dependensi sederhana (tanpa Hilt agar ringan). */
 object AppGraph {
@@ -25,6 +26,8 @@ object AppGraph {
     lateinit var downloads: DownloadManager
         private set
     lateinit var users: UserRepository
+        private set
+    lateinit var updater: AppUpdater
         private set
 
     private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -71,6 +74,7 @@ object AppGraph {
         downloads = DownloadManager(app, database.downloadDao())
         users = UserRepository()
         users.start()
+        updater = AppUpdater(app)
     }
 }
 
