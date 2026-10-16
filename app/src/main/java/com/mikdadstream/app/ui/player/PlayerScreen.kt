@@ -90,6 +90,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.mikdadstream.app.AppGraph
+import com.mikdadstream.app.BuildConfig
 import com.mikdadstream.app.data.remote.ApiError
 import com.mikdadstream.app.data.remote.EpisodeData
 import com.mikdadstream.app.data.remote.MediaStream
@@ -115,6 +116,13 @@ private class GestureState {
     var accX = 0f
     var accY = 0f
     var lastLiveSeekAt = 0L
+}
+
+private fun resolveStreamUrl(url: String?): String? {
+    val u = url?.takeIf { it.isNotBlank() } ?: return null
+    if (u.startsWith("http://") || u.startsWith("https://")) return u
+    if (u.startsWith("/")) return BuildConfig.API_BASE_URL.trimEnd('/') + u
+    return u
 }
 
 private fun subtitleMime(url: String): String? {
@@ -385,7 +393,7 @@ fun PlayerScreen(
     // ---- Terapkan stream terpilih ke ExoPlayer (pemutar native) ----
     LaunchedEffect(selectedIndex, episodeId) {
         val stream = streams.getOrNull(selectedIndex) ?: return@LaunchedEffect
-        val url = stream.safeUrl ?: return@LaunchedEffect
+        val url = resolveStreamUrl(stream.safeUrl) ?: return@LaunchedEffect
         playerError = null
         streamHeaders.set(stream.headers.orEmpty())
         val builder = ExoMediaItem.Builder().setUri(url)
