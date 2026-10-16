@@ -28,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontFamily
@@ -56,6 +58,14 @@ fun TvPairingScreen(onPaired: () -> Unit) {
     var secondsLeft by remember { mutableIntStateOf(900) }
     var expired by remember { mutableStateOf(false) }
     var startedAt by remember { mutableIntStateOf(0) }
+
+    val newCodeFocus = remember { FocusRequester() }
+    LaunchedEffect(expired) {
+        if (expired) {
+            delay(120)
+            runCatching { newCodeFocus.requestFocus() }
+        }
+    }
 
     LaunchedEffect(startedAt) {
         state = PairingState.Loading
@@ -177,7 +187,11 @@ fun TvPairingScreen(onPaired: () -> Unit) {
                         if (expired) {
                             Text("Kode kedaluwarsa", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(6.dp))
-                            StreamPrimaryButton(text = "Buat kode baru", onClick = { startedAt++ })
+                            StreamPrimaryButton(
+                                text = "Buat kode baru",
+                                onClick = { startedAt++ },
+                                modifier = Modifier.focusRequester(newCodeFocus),
+                            )
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(
@@ -207,6 +221,11 @@ fun TvPairingScreen(onPaired: () -> Unit) {
 
 @Composable
 private fun TvPairingError(message: String, onRetry: () -> Unit) {
+    val retryFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(120)
+        runCatching { retryFocus.requestFocus() }
+    }
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(
             modifier = Modifier
@@ -217,7 +236,7 @@ private fun TvPairingError(message: String, onRetry: () -> Unit) {
         ) {
             Text(message, color = Color(0xFFF5B7B7), textAlign = TextAlign.Center, modifier = Modifier.width(520.dp))
         }
-        StreamPrimaryButton(text = "Coba lagi", onClick = onRetry)
+        StreamPrimaryButton(text = "Coba lagi", onClick = onRetry, modifier = Modifier.focusRequester(retryFocus))
     }
 }
 

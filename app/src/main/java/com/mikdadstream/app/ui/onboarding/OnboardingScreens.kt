@@ -26,15 +26,22 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.mikdadstream.app.ui.components.StreamPrimaryButton
+import com.mikdadstream.app.ui.tv.isTelevision
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 data class OnboardPage(
@@ -66,6 +73,15 @@ fun OnboardingScreen(onFinish: () -> Unit) {
     val pagerState = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
     val isLastPage = pagerState.currentPage == pages.lastIndex
+    val isTv = LocalContext.current.isTelevision()
+    val primaryFocus = remember { FocusRequester() }
+
+    LaunchedEffect(isTv) {
+        if (isTv) {
+            delay(150)
+            runCatching { primaryFocus.requestFocus() }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -119,6 +135,7 @@ fun OnboardingScreen(onFinish: () -> Unit) {
                         }
                     }
                 },
+                modifier = Modifier.focusRequester(primaryFocus),
             )
         }
         Spacer(Modifier.height(24.dp))

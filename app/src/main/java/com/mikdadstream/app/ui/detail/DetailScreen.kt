@@ -40,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +49,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -64,6 +67,8 @@ import com.mikdadstream.app.ui.components.SectionHeader
 import com.mikdadstream.app.ui.components.ShimmerBox
 import com.mikdadstream.app.ui.theme.StreamBg
 import com.mikdadstream.app.ui.theme.StreamPrimarySoft
+import com.mikdadstream.app.ui.tv.TvRequestFocusOnShow
+import kotlinx.coroutines.delay
 
 @Composable
 fun DetailScreen(
@@ -113,6 +118,8 @@ fun DetailScreen(
     }
 
     if (state.downloadLocked) {
+        val premiumFocus = remember { FocusRequester() }
+        TvRequestFocusOnShow(premiumFocus)
         AlertDialog(
             onDismissRequest = { viewModel.dismissDownloadLock() },
             title = { Text("Butuh Premium") },
@@ -120,11 +127,14 @@ fun DetailScreen(
                 Text("Fitur unduh video hanya untuk pengguna Premium. Buka sekarang dengan Rp 10.000 sekali bayar.")
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.dismissDownloadLock()
-                    viewModel.closeDownloads()
-                    onOpenPremium()
-                }) { Text("Beli Premium") }
+                TextButton(
+                    modifier = Modifier.focusRequester(premiumFocus),
+                    onClick = {
+                        viewModel.dismissDownloadLock()
+                        viewModel.closeDownloads()
+                        onOpenPremium()
+                    },
+                ) { Text("Beli Premium") }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.dismissDownloadLock() }) { Text("Nanti") }
@@ -406,6 +416,8 @@ private fun DetailContent(
 
     // ---------- Dialog unduhan ----------
     state.downloadEpisode?.let { episode ->
+        val rowFocus = remember { FocusRequester() }
+        TvRequestFocusOnShow(rowFocus, !state.loadingDownloads && state.downloads.isNotEmpty())
         AlertDialog(
             onDismissRequest = onCloseDownloads,
             containerColor = MaterialTheme.colorScheme.surface,
@@ -436,10 +448,15 @@ private fun DetailContent(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        state.downloads.forEach { file ->
+                        state.downloads.forEachIndexed { idx, file ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .then(
+                                        if (idx == 0)
+                                            Modifier.focusRequester(rowFocus)
+                                        else Modifier
+                                    )
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .clickable { onDownloadFile(file) }

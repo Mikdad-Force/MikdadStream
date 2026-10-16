@@ -55,6 +55,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +64,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -78,6 +81,8 @@ import com.mikdadstream.app.ui.components.FilterChipPill
 import com.mikdadstream.app.ui.theme.StreamPrimarySoft
 import com.mikdadstream.app.ui.theme.StreamTextMuted
 import com.mikdadstream.app.ui.theme.brandBrush
+import com.mikdadstream.app.ui.tv.TvRequestFocusOnShow
+import kotlinx.coroutines.delay
 
 @Composable
 fun SettingsScreen(
@@ -568,6 +573,8 @@ fun SettingsScreen(
 
     // ---------- Dialog hasil cek kesehatan ----------
     if (showHealthDialog) {
+        val dialogFocus = remember { FocusRequester() }
+        TvRequestFocusOnShow(dialogFocus)
         AlertDialog(
             onDismissRequest = { showHealthDialog = false },
             containerColor = MaterialTheme.colorScheme.surface,
@@ -615,7 +622,10 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showHealthDialog = false }) {
+                TextButton(
+                    modifier = Modifier.focusRequester(dialogFocus),
+                    onClick = { showHealthDialog = false },
+                ) {
                     Text("Tutup", color = MaterialTheme.colorScheme.primary)
                 }
             },
@@ -635,6 +645,8 @@ fun SettingsScreen(
 
     // ---------- Dialog ubah nama ----------
     if (editName) {
+        val saveFocus = remember { FocusRequester() }
+        TvRequestFocusOnShow(saveFocus)
         AlertDialog(
             onDismissRequest = { editName = false },
             containerColor = MaterialTheme.colorScheme.surface,
@@ -655,6 +667,7 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(
+                    modifier = Modifier.focusRequester(saveFocus),
                     onClick = {
                         editName = false
                         viewModel.renameDisplay(nameInput)
@@ -669,6 +682,8 @@ fun SettingsScreen(
 
     // ---------- Dialog konfirmasi ----------
     confirmAction?.let { action ->
+        val deleteFocus = remember { FocusRequester() }
+        TvRequestFocusOnShow(deleteFocus)
         AlertDialog(
             onDismissRequest = { confirmAction = null },
             containerColor = MaterialTheme.colorScheme.surface,
@@ -676,6 +691,7 @@ fun SettingsScreen(
             text = { Text("Data yang dihapus tidak bisa dikembalikan. Lanjutkan?", color = MaterialTheme.colorScheme.onSurfaceVariant) },
             confirmButton = {
                 TextButton(
+                    modifier = Modifier.focusRequester(deleteFocus),
                     onClick = {
                         action()
                         confirmAction = null

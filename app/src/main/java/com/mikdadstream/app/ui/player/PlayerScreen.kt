@@ -10,6 +10,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -99,6 +100,7 @@ import com.mikdadstream.app.data.remote.EpisodeData
 import com.mikdadstream.app.data.remote.MediaStream
 import com.mikdadstream.app.data.remote.SubtitleTrack
 import com.mikdadstream.app.ui.detail.PlayRequest
+import com.mikdadstream.app.ui.tv.TvRequestFocusOnShow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -567,8 +569,10 @@ fun PlayerScreen(
     }
 
     // Beri fokus ke tombol putar/jeda saat kontrol tampil agar D-pad bisa menjelajah.
-    LaunchedEffect(showControls, mediaReady, inPip) {
-        if (showControls && mediaReady && !inPip) {
+    LaunchedEffect(showControls, mediaReady, inPip, showSpeedMenu, showSubMenu, showSleepMenu) {
+        if (showControls && mediaReady && !inPip &&
+            !showSpeedMenu && !showSubMenu && !showSleepMenu
+        ) {
             delay(60)
             runCatching { controlFocus.requestFocus() }
         }
@@ -1119,12 +1123,17 @@ fun PlayerScreen(
 
     // ---- Sheet sumber ----
     if (showSources) {
+        val sheetFocus = remember { FocusRequester() }
+        TvRequestFocusOnShow(sheetFocus)
         ModalBottomSheet(
             onDismissRequest = { showSources = false },
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp),
+                modifier = Modifier
+                    .focusRequester(sheetFocus)
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
@@ -1196,12 +1205,17 @@ fun PlayerScreen(
 
     // ---- Sheet episode ----
     if (showEpisodes) {
+        val sheetFocus = remember { FocusRequester() }
+        TvRequestFocusOnShow(sheetFocus)
         ModalBottomSheet(
             onDismissRequest = { showEpisodes = false },
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp),
+                modifier = Modifier
+                    .focusRequester(sheetFocus)
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
@@ -1291,16 +1305,14 @@ private fun <T> OptionMenu(
     note: String? = null,
 ) {
     BackHandler { onDismiss() }
+    val firstFocus = remember { FocusRequester() }
+    TvRequestFocusOnShow(firstFocus)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(20f)
             .background(Color(0x99000000))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onDismiss,
-            ),
+            .pointerInput(Unit) { detectTapGestures { onDismiss() } },
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -1308,11 +1320,9 @@ private fun <T> OptionMenu(
                 .widthIn(max = 320.dp)
                 .clip(RoundedCornerShape(18.dp))
                 .background(Color(0xF01C1C22))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {},
-                )
+                .pointerInput(Unit) { detectTapGestures { } }
+                .focusRequester(firstFocus)
+                .focusGroup()
                 .padding(horizontal = 18.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {

@@ -35,11 +35,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -50,6 +53,7 @@ import coil.compose.AsyncImage
 import com.mikdadstream.app.data.local.Profile
 import com.mikdadstream.app.data.remote.SourceModel
 import com.mikdadstream.app.ui.theme.brandBrush
+import com.mikdadstream.app.ui.tv.TvRequestFocusOnShow
 
 /**
  * Header atas: foto profil, kolom pencarian, dan tombol Sumber Video.
@@ -209,6 +213,8 @@ fun SourceSheet(
     onDismiss: () -> Unit,
     onHide: ((SourceModel) -> Unit)? = null,
 ) {
+    val sheetFocus = remember { FocusRequester() }
+    TvRequestFocusOnShow(sheetFocus, models.isNotEmpty())
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -226,6 +232,7 @@ fun SourceSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .focusRequester(sheetFocus)
                 .padding(horizontal = 18.dp)
                 .padding(bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

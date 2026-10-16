@@ -50,9 +50,17 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,6 +70,7 @@ import com.mikdadstream.app.ui.components.FullScreenState
 import com.mikdadstream.app.ui.components.LoadingGrid
 import com.mikdadstream.app.ui.components.SectionHeader
 import com.mikdadstream.app.ui.components.VideoCard
+import com.mikdadstream.app.ui.tv.isTelevision
 
 @OptIn(ExperimentalLayoutApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
@@ -76,9 +85,15 @@ fun SearchScreen(
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val gridState = rememberLazyGridState()
+    val isTv = LocalContext.current.isTelevision()
+    val focusManager = LocalFocusManager.current
 
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        // Di Android TV jangan fokuskan kolom teks otomatis: fokus akan
+        // "terperangkap" di TextField dan remote tidak bisa turun ke hasil.
+        if (!isTv) {
+            runCatching { focusRequester.requestFocus() }
+        }
     }
 
     LaunchedEffect(gridState, state.hasMore, state.loading, state.loadingMore) {
@@ -133,7 +148,19 @@ fun SearchScreen(
                 onValueChange = { viewModel.onQueryChange(it) },
                 modifier = Modifier
                     .weight(1f)
-                    .focusRequester(focusRequester),
+                    .focusRequester(focusRequester)
+                    .onPreviewKeyEvent { event ->
+                        val down = event.key == Key.DirectionDown
+                        val up = event.key == Key.DirectionUp
+                        if (isTv && event.type == KeyEventType.KeyDown && (down || up)) {
+                            focusManager.moveFocus(
+                                if (down) FocusDirection.Down else FocusDirection.Up
+                            )
+                            true
+                        } else {
+                            false
+                        }
+                    },
                 placeholder = {
                     Text(
                         "Cari judul, anime, drama…",
