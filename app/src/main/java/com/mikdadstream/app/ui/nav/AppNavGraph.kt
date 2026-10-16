@@ -156,12 +156,12 @@ private object Routes {
     const val PAIR_DEVICE = "pair_device"
 }
 
-private val floatingNavItems = listOf(
-    FloatingNavItem(Routes.SEARCH, Icons.Rounded.Search, "Cari", selectedIcon = Icons.Rounded.Search),
-    FloatingNavItem(Routes.LIBRARY, Icons.Rounded.BookmarkBorder, "Koleksi", selectedIcon = Icons.Rounded.Bookmark),
-    FloatingNavItem(Routes.HOME, Icons.Rounded.Home, "Beranda", selectedIcon = Icons.Rounded.Home),
-    FloatingNavItem(Routes.DOWNLOADS, Icons.Rounded.Download, "Unduh", selectedIcon = Icons.Rounded.Download),
-    FloatingNavItem(Routes.SETTINGS, Icons.Rounded.Settings, "Pengaturan", selectedIcon = Icons.Rounded.Settings),
+private fun floatingNavItems(s: com.mikdadstream.app.ui.i18n.AppStrings) = listOf(
+    FloatingNavItem(Routes.SEARCH, Icons.Rounded.Search, s.navSearch, selectedIcon = Icons.Rounded.Search),
+    FloatingNavItem(Routes.LIBRARY, Icons.Rounded.BookmarkBorder, s.navLibrary, selectedIcon = Icons.Rounded.Bookmark),
+    FloatingNavItem(Routes.HOME, Icons.Rounded.Home, s.navHome, selectedIcon = Icons.Rounded.Home),
+    FloatingNavItem(Routes.DOWNLOADS, Icons.Rounded.Download, s.navDownloads, selectedIcon = Icons.Rounded.Download),
+    FloatingNavItem(Routes.SETTINGS, Icons.Rounded.Settings, s.navSettings, selectedIcon = Icons.Rounded.Settings),
 )
 
 private fun floatingNavIndex(route: String?): Int = when (route) {
@@ -246,10 +246,11 @@ fun AppNavGraph(isTv: Boolean = false) {
         },
         bottomBar = {
             if (!isTv && showBottomBar) {
+                val navItems = floatingNavItems(com.mikdadstream.app.ui.i18n.LocalStrings.current)
                 FloatingBottomNavBar(
-                    items = floatingNavItems,
+                    items = navItems,
                     selectedIndex = floatingNavIndex(currentRoute),
-                    onSelect = { index -> navController.navigateTop(floatingNavItems[index].id) },
+                    onSelect = { index -> navController.navigateTop(navItems[index].id) },
                 )
             }
         },

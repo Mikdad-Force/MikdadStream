@@ -103,6 +103,7 @@ fun SettingsScreen(
     val healthResults by viewModel.healthResults.collectAsState()
     val healthProgress by viewModel.healthProgress.collectAsState()
     val language by com.mikdadstream.app.AppGraph.prefs.language.collectAsState()
+    val s = com.mikdadstream.app.ui.i18n.LocalStrings.current
 
     val languageLabel = when (language) {
         PrefsStore.LANG_EN -> "Bahasa Inggris"
@@ -142,7 +143,7 @@ fun SettingsScreen(
     ) {
         // ---------- Header ----------
         Text(
-            text = "Profil",
+            text = s.profileTitle,
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground,
         )
@@ -260,7 +261,7 @@ fun SettingsScreen(
 
         // ---------- Paket Premium ----------
         SettingsSection(
-            title = "Paket Premium",
+            title = s.secPremium,
             icon = { Icon(Icons.Filled.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
         ) {
             Row(
@@ -300,7 +301,7 @@ fun SettingsScreen(
 
         // ---------- Tema ----------
         SettingsSection(
-            title = "Tampilan",
+            title = s.secAppearance,
             icon = { Icon(Icons.Filled.Palette, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
         ) {
             Row(
@@ -326,7 +327,7 @@ fun SettingsScreen(
 
         // ---------- Bahasa ----------
         SettingsSection(
-            title = "Bahasa",
+            title = s.secLanguage,
             icon = { Icon(Icons.Filled.Translate, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
         ) {
             Row(
@@ -367,7 +368,7 @@ fun SettingsScreen(
 
         // ---------- Sumber video ----------
         SettingsSection(
-            title = "Sumber Video",
+            title = s.secSources,
             icon = { Icon(Icons.Filled.Movie, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
         ) {
             Row(
@@ -474,7 +475,7 @@ fun SettingsScreen(
 
         // ---------- Perangkat ----------
         SettingsSection(
-            title = "Perangkat",
+            title = s.secDevice,
             icon = { Icon(Icons.Filled.Tv, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
         ) {
             Row(
@@ -515,7 +516,7 @@ fun SettingsScreen(
 
         // ---------- Data ----------
         SettingsSection(
-            title = "Data & Penyimpanan",
+            title = s.secDataStorage,
             icon = { Icon(Icons.Filled.Storage, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
         ) {
             DataAction(Icons.Filled.History, "Bersihkan riwayat tontonan") {
@@ -533,14 +534,14 @@ fun SettingsScreen(
 
         // ---------- Informasi ----------
         SettingsSection(
-            title = "Informasi",
+            title = s.secInfo,
             icon = { Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
         ) {
             InfoRow("Versi aplikasi", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         }
 
         SettingsSection(
-            title = "Tentang",
+            title = s.secAbout,
             icon = { Icon(Icons.Filled.VerifiedUser, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
         ) {
             Column(

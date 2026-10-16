@@ -67,6 +67,7 @@ import com.mikdadstream.app.ui.components.VideoCard
 import com.mikdadstream.app.ui.components.pressScale
 import com.mikdadstream.app.ui.components.softShadow
 import com.mikdadstream.app.ui.theme.PlusJakarta
+import com.mikdadstream.app.ui.i18n.LocalStrings
 import com.mikdadstream.app.ui.theme.StreamPrimarySoft
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -86,6 +87,7 @@ fun HomeScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val history by viewModel.continueWatching.collectAsState()
+    val s = LocalStrings.current
     val gridState = rememberLazyGridState()
     val heroes = if (state.loading || state.error != null) emptyList()
     else state.items.filter { !it.isNews }.ifEmpty { state.items }.take(6)
@@ -146,7 +148,7 @@ fun HomeScreen(
             if (history.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SectionHeader("Lanjutkan Menonton", actionLabel = "Lihat Semua", onAction = onSeeHistory)
+                        SectionHeader(s.continueWatching, actionLabel = s.seeAll, onAction = onSeeHistory)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                             items(history.take(8), key = { it.contentId }) { entry ->
                                 ContinueCard(entry = entry, onClick = { onContinue(entry) })
@@ -248,7 +250,7 @@ fun HomeScreen(
             } else if (!state.hasMore && state.items.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(
-                        text = "Kamu sudah sampai konten terakhir.",
+                        text = s.endOfContent,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
@@ -269,6 +271,7 @@ private fun GreetingHeader(
     onSearchClick: () -> Unit,
     onNotificationClick: () -> Unit,
 ) {
+    val ls = LocalStrings.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -326,7 +329,7 @@ private fun GreetingHeader(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = "Hi, ${profile?.displayName?.substringBefore(" ")?.ifBlank { null } ?: "Sobat"}",
+                    text = "${ls.greetingPrefix} ${profile?.displayName?.substringBefore(" ")?.ifBlank { null } ?: ls.greetingFallback}",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
@@ -336,7 +339,7 @@ private fun GreetingHeader(
                 AccountBadge(label = accountBadge, highlighted = isPremium)
             }
             Text(
-                text = "Let's watch a movie",
+                text = ls.greetingSubtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -395,6 +398,7 @@ private fun IconHeaderButton(
 
 @Composable
 private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
+    val ls = LocalStrings.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
             modifier = Modifier
@@ -428,7 +432,7 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
-                    text = "Watch popular movies",
+                    text = ls.heroPopular,
                     style = MaterialTheme.typography.bodyMedium,
                     color = StreamPrimarySoft,
                 )
@@ -462,7 +466,7 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                         modifier = Modifier.size(16.dp),
                     )
                     Text(
-                        text = "Tonton",
+                        text = ls.watchNow,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.SemiBold,

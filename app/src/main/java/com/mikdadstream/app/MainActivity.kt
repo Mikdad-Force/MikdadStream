@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by AppGraph.prefs.themeMode.collectAsState()
+            val language by AppGraph.prefs.language.collectAsState()
             val darkTheme = when (themeMode) {
                 1 -> true
                 2 -> false
@@ -78,7 +79,11 @@ class MainActivity : ComponentActivity() {
                 controller.isAppearanceLightNavigationBars = !darkTheme
             }
             MikdadStreamTheme(darkTheme = darkTheme) {
-                AppRoot(isTv = applicationContext.isTelevision())
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.mikdadstream.app.ui.i18n.LocalStrings provides com.mikdadstream.app.ui.i18n.appStringsFor(language),
+                ) {
+                    AppRoot(isTv = applicationContext.isTelevision())
+                }
             }
         }
     }

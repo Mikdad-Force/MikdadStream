@@ -47,6 +47,7 @@ import com.mikdadstream.app.data.download.DownloadManager
 import com.mikdadstream.app.data.download.StorageInfo
 import com.mikdadstream.app.data.local.DownloadEntity
 import com.mikdadstream.app.ui.components.PosterImage
+import com.mikdadstream.app.ui.i18n.LocalStrings
 import com.mikdadstream.app.ui.components.StreamPrimaryButton
 import com.mikdadstream.app.ui.components.StreamScreenHeader
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -88,6 +89,7 @@ fun DownloadsScreen(
     onOpenPremium: () -> Unit = {},
     onPlay: (DownloadEntity) -> Unit,
 ) {
+    val s = LocalStrings.current
     val items by viewModel.items.collectAsState()
     val storage by viewModel.storage.collectAsState()
     LaunchedEffect(items) { viewModel.refreshStorage() }
@@ -97,7 +99,7 @@ fun DownloadsScreen(
             .fillMaxSize()
             .statusBarsPadding(),
     ) {
-        StreamScreenHeader(title = "Unduhan", onBack = onBack)
+        StreamScreenHeader(title = s.dlTitle, onBack = onBack)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -121,14 +123,14 @@ fun DownloadsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "Hasil Unduhan",
+                            text = s.dlResults,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onBackground,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f),
                         )
                         Text(
-                            text = "Hapus semua",
+                            text = s.dlDeleteAll,
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold,
@@ -153,6 +155,7 @@ fun DownloadsScreen(
 
 @Composable
 private fun StorageCard(storage: StorageInfo) {
+    val s = LocalStrings.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -173,12 +176,12 @@ private fun StorageCard(storage: StorageInfo) {
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Sisa penyimpanan",
+                    text = s.dlStorageTitle,
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
-                    text = "${formatBytes(storage.freeBytes)} tersedia dari ${formatBytes(storage.totalBytes)}",
+                    text = s.dlAvailableFrom(formatBytes(storage.freeBytes), formatBytes(storage.totalBytes)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -194,7 +197,7 @@ private fun StorageCard(storage: StorageInfo) {
             trackColor = MaterialTheme.colorScheme.surfaceVariant,
         )
         Text(
-            text = "Terpakai ${formatBytes(storage.usedBytes)}",
+            text = s.dlUsed(formatBytes(storage.usedBytes)),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -207,6 +210,7 @@ private fun DownloadRow(
     onPlay: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val s = LocalStrings.current
     val done = item.status == DownloadManager.STATUS_DONE && !item.filePath.isNullOrBlank()
     Row(
         modifier = Modifier
@@ -245,12 +249,12 @@ private fun DownloadRow(
             )
             when (item.status) {
                 DownloadManager.STATUS_DONE -> Text(
-                    text = "Selesai • siap ditonton",
+                    text = s.dlDone,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 DownloadManager.STATUS_FAILED -> Text(
-                    text = "Gagal mengunduh",
+                    text = s.dlFailed,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -265,7 +269,7 @@ private fun DownloadRow(
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
                     Text(
-                        text = "Mengunduh ${(item.progress * 100).toInt()}%",
+                        text = s.dlDownloading((item.progress * 100).toInt()),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -295,6 +299,7 @@ private fun DownloadRow(
 
 @Composable
 private fun DownloadsPaywall(onOpenPremium: () -> Unit) {
+    val s = LocalStrings.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -319,23 +324,24 @@ private fun DownloadsPaywall(onOpenPremium: () -> Unit) {
             )
         }
         Text(
-            text = "Unduh Khusus Premium",
+            text = s.dlLockedTitle,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
         Text(
-            text = "Buka fitur unduh video dengan Paket Premium Rp 10.000 sekali bayar.",
+            text = s.dlLockedSubtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(4.dp))
-        StreamPrimaryButton(text = "Beli Premium Rp 10.000", onClick = onOpenPremium)
+        StreamPrimaryButton(text = s.dlLockedCta, onClick = onOpenPremium)
     }
 }
 
 @Composable
 private fun EmptyDownloads() {
+    val s = LocalStrings.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -353,12 +359,12 @@ private fun EmptyDownloads() {
             Icon(Icons.Outlined.CloudDownload, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(38.dp))
         }
         Text(
-            text = "Belum ada unduhan",
+            text = s.dlEmptyTitle,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
         Text(
-            text = "Video yang kamu unduh akan muncul di sini beserta sisa penyimpanan.",
+            text = s.dlEmptySubtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 32.dp),

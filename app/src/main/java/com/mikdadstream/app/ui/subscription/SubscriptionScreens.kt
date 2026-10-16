@@ -47,6 +47,7 @@ import com.mikdadstream.app.ui.components.StreamOutlineButton
 import com.mikdadstream.app.ui.components.StreamPrimaryButton
 import com.mikdadstream.app.ui.components.StreamScreenHeader
 import com.mikdadstream.app.ui.components.StreamTextField
+import com.mikdadstream.app.ui.i18n.LocalStrings
 import com.mikdadstream.app.ui.theme.StreamTextMuted
 import com.mikdadstream.app.ui.theme.brandBrush
 
@@ -137,26 +138,18 @@ fun SubscriptionScreen(
     onSubscribe: () -> Unit,
     alreadyPremium: Boolean = false,
 ) {
-    val features = listOf(
-        "Buka fitur Unduh Video",
-        "Simpan film untuk ditonton offline",
-        "Tonton tanpa iklan",
-        "Kualitas hingga 4K HDR",
-    )
+    val s = LocalStrings.current
+    val features = s.premiumFeatures
 
-    SubscriptionScaffold(title = "Paket Premium", onBack = onBack) {
+    SubscriptionScaffold(title = s.secPremium, onBack = onBack) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = if (alreadyPremium) "Premium Aktif" else "Buka Unduh Video",
+                text = if (alreadyPremium) s.premiumActiveHeadline else s.premiumHeadline,
                 style = MaterialTheme.typography.displaySmall,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                text = if (alreadyPremium) {
-                    "Terima kasih! Fitur unduh video sudah terbuka di akun Anda."
-                } else {
-                    "Sekali bayar Rp 10.000 untuk membuka fitur unduh video tanpa batas."
-                },
+                text = if (alreadyPremium) s.premiumActiveSubtitle else s.premiumSubtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -204,12 +197,12 @@ fun SubscriptionScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            text = "Rp 10.000",
+                            text = s.premiumPrice,
                             style = MaterialTheme.typography.headlineMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = "/sekali bayar",
+                            text = s.premiumOnce,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -239,12 +232,12 @@ fun SubscriptionScreen(
         }
 
         StreamPrimaryButton(
-            text = if (alreadyPremium) "Premium Aktif" else "Bayar Rp 10.000",
+            text = if (alreadyPremium) s.premiumActive else s.premiumPay,
             onClick = onSubscribe,
         )
 
         Text(
-            text = "Pembelian sekali bayar. Fitur unduh aktif permanen pada akun ini.",
+            text = s.premiumNote,
             style = MaterialTheme.typography.labelSmall,
             color = StreamTextMuted,
             textAlign = TextAlign.Center,
@@ -255,6 +248,7 @@ fun SubscriptionScreen(
 
 @Composable
 fun AddCardScreen(onBack: () -> Unit, onPay: () -> Unit) {
+    val s = LocalStrings.current
     var number by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var expiry by remember { mutableStateOf("") }
@@ -358,7 +352,7 @@ fun AddCardScreen(onBack: () -> Unit, onPay: () -> Unit) {
             }
         }
 
-        StreamPrimaryButton(text = "Bayar Rp 10.000", onClick = onPay)
+        StreamPrimaryButton(text = s.premiumPay, onClick = onPay)
     }
 }
 

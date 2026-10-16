@@ -218,7 +218,7 @@ fun LanguageScreen(onBack: () -> Unit) {
     val current by prefs.language.collectAsState()
     val context = LocalContext.current
 
-    AccountScaffold(title = "Bahasa", onBack = onBack) {
+    AccountScaffold(title = com.mikdadstream.app.ui.i18n.LocalStrings.current.languageTitle, onBack = onBack) {
         StreamCard {
             Column {
                 options.forEachIndexed { index, (code, label) ->

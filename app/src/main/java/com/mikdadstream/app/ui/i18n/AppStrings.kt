@@ -1,0 +1,256 @@
+package com.mikdadstream.app.ui.i18n
+
+import androidx.compose.runtime.staticCompositionLocalOf
+
+/**
+ * Terjemahan teks UI. Bahasa Indonesia (default), Inggris, Sunda.
+ * Diakses via `LocalStrings.current`.
+ */
+data class AppStrings(
+    // Navigasi bawah
+    val navSearch: String,
+    val navLibrary: String,
+    val navHome: String,
+    val navDownloads: String,
+    val navSettings: String,
+
+    // Beranda
+    val greetingPrefix: String,
+    val greetingFallback: String,
+    val greetingSubtitle: String,
+    val heroPopular: String,
+    val watchNow: String,
+    val continueWatching: String,
+    val seeAll: String,
+    val endOfContent: String,
+
+    // Pengaturan
+    val profileTitle: String,
+    val secPremium: String,
+    val secAppearance: String,
+    val secLanguage: String,
+    val secSources: String,
+    val secDevice: String,
+    val secDataStorage: String,
+    val secInfo: String,
+    val secAbout: String,
+
+    // Bahasa
+    val languageTitle: String,
+
+    // Premium
+    val premiumHeadline: String,
+    val premiumSubtitle: String,
+    val premiumActiveHeadline: String,
+    val premiumActiveSubtitle: String,
+    val premiumPrice: String,
+    val premiumOnce: String,
+    val premiumPay: String,
+    val premiumActive: String,
+    val premiumNote: String,
+    val premiumFeatures: List<String>,
+
+    // Unduhan
+    val dlTitle: String,
+    val dlStorageTitle: String,
+    val dlAvailableFrom: (String, String) -> String,
+    val dlUsed: (String) -> String,
+    val dlResults: String,
+    val dlDeleteAll: String,
+    val dlEmptyTitle: String,
+    val dlEmptySubtitle: String,
+    val dlLockedTitle: String,
+    val dlLockedSubtitle: String,
+    val dlLockedCta: String,
+    val dlDone: String,
+    val dlFailed: String,
+    val dlDownloading: (Int) -> String,
+)
+
+private val Id = AppStrings(
+    navSearch = "Cari",
+    navLibrary = "Koleksi",
+    navHome = "Beranda",
+    navDownloads = "Unduh",
+    navSettings = "Pengaturan",
+
+    greetingPrefix = "Hi,",
+    greetingFallback = "Sobat",
+    greetingSubtitle = "Let's watch a movie",
+    heroPopular = "Watch popular movies",
+    watchNow = "Tonton",
+    continueWatching = "Lanjutkan Menonton",
+    seeAll = "Lihat Semua",
+    endOfContent = "Kamu sudah sampai konten terakhir.",
+
+    profileTitle = "Profil",
+    secPremium = "Paket Premium",
+    secAppearance = "Tampilan",
+    secLanguage = "Bahasa",
+    secSources = "Sumber Video",
+    secDevice = "Perangkat",
+    secDataStorage = "Data & Penyimpanan",
+    secInfo = "Informasi",
+    secAbout = "Tentang",
+
+    languageTitle = "Bahasa",
+
+    premiumHeadline = "Buka Unduh Video",
+    premiumSubtitle = "Sekali bayar Rp 10.000 untuk membuka fitur unduh video tanpa batas.",
+    premiumActiveHeadline = "Premium Aktif",
+    premiumActiveSubtitle = "Terima kasih! Fitur unduh video sudah terbuka di akun Anda.",
+    premiumPrice = "Rp 10.000",
+    premiumOnce = "/sekali bayar",
+    premiumPay = "Bayar Rp 10.000",
+    premiumActive = "Premium Aktif",
+    premiumNote = "Pembelian sekali bayar. Fitur unduh aktif permanen pada akun ini.",
+    premiumFeatures = listOf(
+        "Buka fitur Unduh Video",
+        "Simpan film untuk ditonton offline",
+        "Tonton tanpa iklan",
+        "Kualitas hingga 4K HDR",
+    ),
+
+    dlTitle = "Unduhan",
+    dlStorageTitle = "Sisa penyimpanan",
+    dlAvailableFrom = { free, total -> "$free tersedia dari $total" },
+    dlUsed = { used -> "Terpakai $used" },
+    dlResults = "Hasil Unduhan",
+    dlDeleteAll = "Hapus semua",
+    dlEmptyTitle = "Belum ada unduhan",
+    dlEmptySubtitle = "Video yang kamu unduh akan muncul di sini beserta sisa penyimpanan.",
+    dlLockedTitle = "Unduh Khusus Premium",
+    dlLockedSubtitle = "Buka fitur unduh video dengan Paket Premium Rp 10.000 sekali bayar.",
+    dlLockedCta = "Beli Premium Rp 10.000",
+    dlDone = "Selesai • siap ditonton",
+    dlFailed = "Gagal mengunduh",
+    dlDownloading = { p -> "Mengunduh $p%" },
+)
+
+private val En = AppStrings(
+    navSearch = "Search",
+    navLibrary = "Library",
+    navHome = "Home",
+    navDownloads = "Downloads",
+    navSettings = "Settings",
+
+    greetingPrefix = "Hi,",
+    greetingFallback = "Friend",
+    greetingSubtitle = "Let's watch a movie",
+    heroPopular = "Watch popular movies",
+    watchNow = "Watch",
+    continueWatching = "Continue Watching",
+    seeAll = "See All",
+    endOfContent = "You've reached the end of the content.",
+
+    profileTitle = "Profile",
+    secPremium = "Premium Plan",
+    secAppearance = "Appearance",
+    secLanguage = "Language",
+    secSources = "Video Source",
+    secDevice = "Device",
+    secDataStorage = "Data & Storage",
+    secInfo = "Information",
+    secAbout = "About",
+
+    languageTitle = "Language",
+
+    premiumHeadline = "Unlock Video Downloads",
+    premiumSubtitle = "A one-time Rp 10,000 payment to unlock unlimited video downloads.",
+    premiumActiveHeadline = "Premium Active",
+    premiumActiveSubtitle = "Thank you! Video downloads are now unlocked on your account.",
+    premiumPrice = "Rp 10.000",
+    premiumOnce = "/one-time",
+    premiumPay = "Pay Rp 10.000",
+    premiumActive = "Premium Active",
+    premiumNote = "One-time purchase. Downloads stay unlocked on this account.",
+    premiumFeatures = listOf(
+        "Unlock video downloads",
+        "Save movies to watch offline",
+        "Watch without ads",
+        "Up to 4K HDR quality",
+    ),
+
+    dlTitle = "Downloads",
+    dlStorageTitle = "Free storage",
+    dlAvailableFrom = { free, total -> "$free available of $total" },
+    dlUsed = { used -> "Used $used" },
+    dlResults = "Downloaded Files",
+    dlDeleteAll = "Delete all",
+    dlEmptyTitle = "No downloads yet",
+    dlEmptySubtitle = "Downloaded videos will appear here along with free storage.",
+    dlLockedTitle = "Downloads are Premium-only",
+    dlLockedSubtitle = "Unlock video downloads with a one-time Premium of Rp 10,000.",
+    dlLockedCta = "Buy Premium Rp 10.000",
+    dlDone = "Done • ready to watch",
+    dlFailed = "Download failed",
+    dlDownloading = { p -> "Downloading $p%" },
+)
+
+private val Su = AppStrings(
+    navSearch = "Pilari",
+    navLibrary = "Koléksi",
+    navHome = "Imah",
+    navDownloads = "Unduh",
+    navSettings = "Setélan",
+
+    greetingPrefix = "Hai,",
+    greetingFallback = "Sobat",
+    greetingSubtitle = "Hayu urang nonton pilem",
+    heroPopular = "Tonton pilem populér",
+    watchNow = "Tonton",
+    continueWatching = "Nuluykeun Nonton",
+    seeAll = "Tingali Sadayana",
+    endOfContent = "Anjeun parantos nepi ka kontén pamungkas.",
+
+    profileTitle = "Profil",
+    secPremium = "Pakét Premium",
+    secAppearance = "Paméran",
+    secLanguage = "Basa",
+    secSources = "Sumber Video",
+    secDevice = "Parabot",
+    secDataStorage = "Data & Panyimpenan",
+    secInfo = "Inpormasi",
+    secAbout = "Ngeunaan",
+
+    languageTitle = "Basa",
+
+    premiumHeadline = "Buka Unduh Video",
+    premiumSubtitle = "Sakali bayar Rp 10.000 pikeun muka fitur unduh video tanpa wates.",
+    premiumActiveHeadline = "Premium Aktip",
+    premiumActiveSubtitle = "Hatur nuhun! Fitur unduh video parantos kabuka dina akun anjeun.",
+    premiumPrice = "Rp 10.000",
+    premiumOnce = "/sakali bayar",
+    premiumPay = "Bayar Rp 10.000",
+    premiumActive = "Premium Aktip",
+    premiumNote = "Meuli sakali. Fitur unduh tetep kabuka dina akun ieu.",
+    premiumFeatures = listOf(
+        "Buka fitur Unduh Video",
+        "Simpen pilem pikeun ditonton offline",
+        "Nonton tanpa iklan",
+        "Kualitas nepi ka 4K HDR",
+    ),
+
+    dlTitle = "Unduhan",
+    dlStorageTitle = "Sésa panyimpenan",
+    dlAvailableFrom = { free, total -> "$free aya tina $total" },
+    dlUsed = { used -> "Dipaké $used" },
+    dlResults = "Hasil Unduhan",
+    dlDeleteAll = "Hapus sadayana",
+    dlEmptyTitle = "Teu acan aya unduhan",
+    dlEmptySubtitle = "Video anu diunduh bakal némbongan di dieu sasarengan sésa panyimpenan.",
+    dlLockedTitle = "Unduh Husus Premium",
+    dlLockedSubtitle = "Buka fitur unduh video ku Pakét Premium Rp 10.000 sakali bayar.",
+    dlLockedCta = "Meuli Premium Rp 10.000",
+    dlDone = "Réngsé • siap ditonton",
+    dlFailed = "Gagal ngunduh",
+    dlDownloading = { p -> "Nuju ngunduh $p%" },
+)
+
+fun appStringsFor(code: String?): AppStrings = when (code?.lowercase()) {
+    "en" -> En
+    "su" -> Su
+    else -> Id
+}
+
+val LocalStrings = staticCompositionLocalOf { Id }
