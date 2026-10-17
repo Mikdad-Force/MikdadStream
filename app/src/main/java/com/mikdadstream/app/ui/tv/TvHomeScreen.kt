@@ -5,7 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,21 +15,22 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Icon
@@ -43,9 +43,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,15 +65,20 @@ import coil.compose.AsyncImage
 import com.mikdadstream.app.data.local.HistoryEntity
 import com.mikdadstream.app.data.local.Profile
 import com.mikdadstream.app.data.remote.MediaItem
-import com.mikdadstream.app.ui.components.FilterChipPill
 import com.mikdadstream.app.ui.components.LoadingGrid
 import com.mikdadstream.app.ui.components.PosterImage
 import com.mikdadstream.app.ui.home.HomeViewModel
-import com.mikdadstream.app.ui.theme.PlusJakarta
+import com.mikdadstream.app.ui.theme.Outfit
+import com.mikdadstream.app.ui.theme.Oswald
+import com.mikdadstream.app.ui.theme.Poppins
 import com.mikdadstream.app.ui.theme.StreamPrimarySoft
+import kotlinx.coroutines.launch
 
 private val TvBg = Color(0xFF0A0B12)
 private val TvCardBg = Color(0xFF14151F)
+private val TvAccent = Color(0xFFFA4776)
+private val TvStar = Color(0xFFFFC700)
+private val TvPanel = Color(0xFF676571).copy(alpha = 0.34f)
 
 @Composable
 fun TvTopBar(
@@ -82,66 +87,111 @@ fun TvTopBar(
     onNavigate: (String) -> Unit,
     onSourceClick: () -> Unit,
 ) {
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                Brush.verticalGradient(listOf(TvBg, TvBg.copy(alpha = 0.0f)))
+                Brush.verticalGradient(listOf(Color(0xCC0A0B12), TvBg.copy(alpha = 0f)))
             )
-            .padding(horizontal = 32.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
+            .padding(horizontal = 40.dp, vertical = 18.dp),
     ) {
+        Row(
+            modifier = Modifier.align(Alignment.CenterStart),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(34.dp),
+        ) {
+            TvTopLink("Beranda", currentRoute == "home") { onNavigate("home") }
+            TvTopLink("Cari", currentRoute == "search") { onNavigate("search") }
+            TvTopLink("Koleksi", currentRoute == "library") { onNavigate("library") }
+        }
+
         Text(
             text = "MIKDAD",
-            style = MaterialTheme.typography.titleLarge.copy(fontFamily = PlusJakarta, fontSize = 22.sp),
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.ExtraBold,
+            fontFamily = Oswald,
+            fontWeight = FontWeight.Bold,
+            fontSize = 30.sp,
+            letterSpacing = 3.sp,
+            color = TvAccent,
+            modifier = Modifier.align(Alignment.Center),
         )
-        TvNavItem("Beranda", Icons.Filled.Home, currentRoute == "home") { onNavigate("home") }
-        TvNavItem("Cari", Icons.Filled.Search, currentRoute == "search") { onNavigate("search") }
-        TvNavItem("Koleksi", Icons.Outlined.BookmarkBorder, currentRoute == "library") { onNavigate("library") }
-        Spacer(Modifier.weight(1f))
-        TvNavItem("Sumber", Icons.Outlined.Refresh, false, label = activeSourceName ?: "Sumber") { onSourceClick() }
+
+        Row(
+            modifier = Modifier.align(Alignment.CenterEnd),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            TvTopIcon(Icons.Filled.Search, "Cari") { onNavigate("search") }
+            TvTopLink(
+                text = activeSourceName?.takeIf { it.isNotBlank() } ?: "Sumber",
+                selected = false,
+                onClick = onSourceClick,
+            )
+        }
     }
 }
 
 @Composable
-private fun TvNavItem(
+private fun TvTopLink(
     text: String,
-    icon: ImageVector,
     selected: Boolean,
-    label: String? = null,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(150), label = "navScale")
-    val color = when {
-        focused -> Color.White
-        selected -> Color.White
-        else -> Color(0xFFB9BAC4)
-    }
-    Row(
+    val scale by animateFloatAsState(if (focused) 1.08f else 1f, tween(140), label = "topLink")
+    Text(
+        text = text,
+        fontFamily = Outfit,
+        fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Medium,
+        fontSize = 20.sp,
+        color = if (selected || focused) Color.White else Color(0xFFD3D3DA),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .scale(scale)
             .clip(RoundedCornerShape(10.dp))
-            .background(if (focused) Color.White.copy(alpha = 0.14f) else Color.Transparent)
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    )
+}
+
+@Composable
+private fun TvTopIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Icon(
+        icon,
+        contentDescription = label,
+        tint = Color.White,
+        modifier = Modifier
+            .clip(CircleShape)
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+            .size(24.dp),
+    )
+}
+
+@Composable
+private fun TvCategoryPill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (selected) TvAccent else Color.White.copy(alpha = 0.06f))
+            .border(
+                width = 1.dp,
+                color = if (selected) Color.Transparent else Color.White.copy(alpha = 0.22f),
+                shape = RoundedCornerShape(999.dp),
             )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 9.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
         Text(
-            text = label ?: text,
-            style = MaterialTheme.typography.titleSmall,
-            color = color,
-            fontWeight = if (selected || focused) FontWeight.Bold else FontWeight.Medium,
+            text = label,
+            fontFamily = Outfit,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            fontSize = 15.sp,
+            color = if (selected) Color.White else Color(0xFFD3D3DA),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -177,7 +227,7 @@ fun TvHomeScreen(
         if (hero == null) return@LaunchedEffect
         repeat(3) {
             runCatching { initialFocus.requestFocus() }
-            delay(90)
+            kotlinx.coroutines.delay(90)
         }
     }
 
@@ -186,94 +236,95 @@ fun TvHomeScreen(
             .fillMaxSize()
             .background(TvBg),
     ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(
-                top = contentPadding.calculateTopPadding(),
-                bottom = contentPadding.calculateBottomPadding() + 40.dp,
-            ),
-        verticalArrangement = Arrangement.spacedBy(28.dp),
-    ) {
-        if (hero != null) {
-            TvHero(
-                item = hero,
-                profile = profile,
-                playFocusRequester = initialFocus,
-                onPlay = { onOpenItem(hero, viewModel.activeSourceId()) },
-                onInfo = { onOpenItem(hero, viewModel.activeSourceId()) },
-            )
-        }
-
-        if (state.categories.isNotEmpty()) {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 40.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(state.categories, key = { it.id }) { category ->
-                    FilterChipPill(
-                        label = category.name,
-                        selected = category.id == state.activeCategory?.id,
-                        onClick = { viewModel.selectCategory(category) },
-                    )
-                }
-            }
-        }
-
-        when {
-            state.loading && state.items.isEmpty() -> {
-                LoadingGrid(modifier = Modifier.padding(horizontal = 40.dp))
-            }
-
-            state.error != null && state.items.isEmpty() -> {
-                TvMessage(
-                    title = "Gagal memuat konten",
-                    subtitle = state.error.orEmpty(),
-                    actionLabel = "Coba Lagi",
-                    onAction = { viewModel.retry() },
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(
+                    top = contentPadding.calculateTopPadding(),
+                    bottom = contentPadding.calculateBottomPadding() + 40.dp,
+                ),
+            verticalArrangement = Arrangement.spacedBy(28.dp),
+        ) {
+            if (hero != null) {
+                TvHero(
+                    item = hero,
+                    profile = profile,
+                    playFocusRequester = initialFocus,
+                    onPlay = { onOpenItem(hero, viewModel.activeSourceId()) },
+                    onInfo = { onOpenItem(hero, viewModel.activeSourceId()) },
                 )
             }
 
-            state.items.isEmpty() -> {
-                TvMessage(
-                    title = "Belum ada konten",
-                    subtitle = "Kategori ini kosong. Coba kategori atau sumber lain.",
-                )
-            }
-
-            else -> {
-                if (history.isNotEmpty()) {
-                    TvRow("Lanjutkan Menonton") {
-                        items(history, key = { it.contentId }) { entry ->
-                            TvContinueCard(entry) { onContinue(entry) }
-                        }
-                    }
-                }
-                TvRow("Rekomendasi untukmu") {
-                    items(rest.take(14), key = { "rec" + it.safeId + it.hashCode() }) { item ->
-                        TvPosterCard(item) { onOpenItem(item, viewModel.activeSourceId()) }
-                    }
-                }
-                TvRow(state.activeCategory?.name ?: "Semua Konten") {
-                    items(rest, key = { it.safeId + (it.source ?: "") + it.hashCode() }) { item ->
-                        TvPosterCard(item) { onOpenItem(item, viewModel.activeSourceId()) }
-                    }
-                }
-                if (state.loadingMore) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        LinearProgressIndicator(
-                            modifier = Modifier.width(160.dp),
-                            color = MaterialTheme.colorScheme.primary,
+            if (state.categories.isNotEmpty()) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 40.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.offset(y = (-18).dp),
+                ) {
+                    items(state.categories, key = { it.id }) { category ->
+                        TvCategoryPill(
+                            label = category.name,
+                            selected = category.id == state.activeCategory?.id,
+                            onClick = { viewModel.selectCategory(category) },
                         )
                     }
                 }
             }
+
+            when {
+                state.loading && state.items.isEmpty() -> {
+                    LoadingGrid(modifier = Modifier.padding(horizontal = 40.dp))
+                }
+
+                state.error != null && state.items.isEmpty() -> {
+                    TvMessage(
+                        title = "Gagal memuat konten",
+                        subtitle = state.error.orEmpty(),
+                        actionLabel = "Coba Lagi",
+                        onAction = { viewModel.retry() },
+                    )
+                }
+
+                state.items.isEmpty() -> {
+                    TvMessage(
+                        title = "Belum ada konten",
+                        subtitle = "Kategori ini kosong. Coba kategori atau sumber lain.",
+                    )
+                }
+
+                else -> {
+                    if (history.isNotEmpty()) {
+                        TvRow(title = "Lanjutkan Menonton") {
+                            items(history, key = { it.contentId }) { entry ->
+                                TvContinueCard(entry) { onContinue(entry) }
+                            }
+                        }
+                    }
+                    TvRow(title = "Film Populer") {
+                        items(rest.take(14), key = { "rec" + it.safeId + it.hashCode() }) { item ->
+                            TvPosterCard(item) { onOpenItem(item, viewModel.activeSourceId()) }
+                        }
+                    }
+                    TvRow(title = state.activeCategory?.name ?: "Semua Konten") {
+                        items(rest, key = { it.safeId + (it.source ?: "") + it.hashCode() }) { item ->
+                            TvPosterCard(item) { onOpenItem(item, viewModel.activeSourceId()) }
+                        }
+                    }
+                    if (state.loadingMore) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            LinearProgressIndicator(
+                                modifier = Modifier.width(160.dp),
+                                color = TvAccent,
+                            )
+                        }
+                    }
+                }
+            }
         }
-    }
     }
 }
 
@@ -288,7 +339,7 @@ private fun TvHero(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(340.dp),
+            .height(430.dp),
     ) {
         AsyncImage(
             model = item.cover,
@@ -302,7 +353,7 @@ private fun TvHero(
                 .background(
                     Brush.horizontalGradient(
                         0f to TvBg,
-                        0.5f to TvBg.copy(alpha = 0.75f),
+                        0.55f to TvBg.copy(alpha = 0.72f),
                         1f to Color.Transparent,
                     )
                 )
@@ -312,7 +363,8 @@ private fun TvHero(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Transparent,
+                        0f to TvBg.copy(alpha = 0.35f),
+                        0.35f to Color.Transparent,
                         1f to TvBg,
                     )
                 )
@@ -320,34 +372,46 @@ private fun TvHero(
         Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(start = 40.dp, end = 40.dp)
-                .fillMaxWidth(0.55f),
+                .padding(start = 48.dp, end = 40.dp)
+                .fillMaxWidth(0.52f),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
-                text = "MIKDAD STREAM",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 3.sp,
-            )
-            Text(
                 text = item.safeTitle,
-                style = MaterialTheme.typography.displaySmall.copy(fontFamily = PlusJakarta, fontSize = 40.sp),
+                fontFamily = Oswald,
+                fontWeight = FontWeight.Bold,
+                fontSize = 56.sp,
+                lineHeight = 60.sp,
                 color = Color.White,
-                fontWeight = FontWeight.ExtraBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            val subtitle = item.tag?.firstOrNull { it.isNotBlank() }
+            if (subtitle != null) {
+                Text(
+                    text = subtitle.uppercase(),
+                    fontFamily = Oswald,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 30.sp,
+                    lineHeight = 34.sp,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 text = item.desc?.takeIf { it.isNotBlank() }
                     ?: "Streaming film & series favoritmu dalam kualitas terbaik.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color(0xFFD5D6DE),
+                fontFamily = Outfit,
+                fontWeight = FontWeight.Medium,
+                fontSize = 18.sp,
+                lineHeight = 27.sp,
+                color = Color(0xFFE4E4EA),
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            item.hotScore?.toDoubleOrNull()?.let { TvStarRating(it) }
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 TvHeroButton(
                     text = "Putar",
                     icon = Icons.Filled.PlayArrow,
@@ -360,10 +424,28 @@ private fun TvHero(
         }
         Text(
             text = "Selamat datang, ${profile?.displayName?.substringBefore(" ")?.ifBlank { null } ?: "Sobat"}",
-            style = MaterialTheme.typography.titleMedium,
+            fontFamily = Outfit,
+            fontWeight = FontWeight.Medium,
+            fontSize = 18.sp,
             color = Color.White.copy(alpha = 0.85f),
-            modifier = Modifier.align(Alignment.TopStart).padding(start = 40.dp, top = 8.dp),
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 6.dp),
         )
+    }
+}
+
+@Composable
+private fun TvStarRating(score: Double) {
+    val rating = (if (score > 5.0) score / 2.0 else score).coerceIn(0.0, 5.0)
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        repeat(5) { index ->
+            val filled = index < rating
+            Icon(
+                Icons.Filled.Star,
+                contentDescription = null,
+                tint = if (filled) TvStar else Color.White.copy(alpha = 0.35f),
+                modifier = Modifier.size(24.dp),
+            )
+        }
     }
 }
 
@@ -377,23 +459,19 @@ private fun TvHeroButton(
 ) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(150), label = "heroBtn")
-    val bg = if (primary) Color.White else Color(0x40FFFFFF)
-    val fg = if (primary) Color(0xFF02050F) else Color.White
+    val bg = if (primary) TvAccent else Color.Transparent
+    val fg = Color.White
     Row(
         modifier = modifier
             .scale(scale)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(999.dp))
             .background(bg)
-            .then(
-                if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                else Modifier
+            .border(
+                width = if (primary) 0.dp else 2.dp,
+                color = if (primary) Color.Transparent else Color.White.copy(alpha = 0.75f),
+                shape = RoundedCornerShape(999.dp),
             )
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
+            .clickable(onClick = onClick)
             .padding(horizontal = 26.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -401,9 +479,10 @@ private fun TvHeroButton(
         Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(22.dp))
         Text(
             text = text,
-            style = MaterialTheme.typography.titleMedium,
+            fontFamily = Outfit,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 18.sp,
             color = fg,
-            fontWeight = FontWeight.Bold,
         )
     }
 }
@@ -413,18 +492,64 @@ private fun TvRow(
     title: String,
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
 ) {
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge.copy(fontFamily = PlusJakarta),
+            fontFamily = Poppins,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 20.sp,
             color = Color.White,
-            fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(start = 40.dp),
         )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 40.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            content = content,
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 34.dp)
+                    .background(TvPanel, RoundedCornerShape(24.dp))
+                    .padding(vertical = 16.dp),
+            ) {
+                LazyRow(
+                    state = listState,
+                    contentPadding = PaddingValues(horizontal = 22.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    content = content,
+                )
+            }
+            TvRowNext(
+                onClick = {
+                    scope.launch {
+                        val next = (listState.firstVisibleItemIndex + 2)
+                            .coerceAtMost((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+                        listState.animateScrollToItem(next)
+                    }
+                },
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 44.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TvRowNext(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.12f else 1f, tween(150), label = "rowNext")
+    Box(
+        modifier = modifier
+            .size(56.dp)
+            .scale(scale)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = if (focused) 1f else 0.9f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.AutoMirrored.Filled.NavigateNext,
+            contentDescription = "Berikutnya",
+            tint = Color(0xFF1A1A1F),
+            modifier = Modifier.size(30.dp),
         )
     }
 }
@@ -432,18 +557,14 @@ private fun TvRow(
 @Composable
 private fun TvPosterCard(item: MediaItem, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.09f else 1f, tween(150), label = "poster")
+    val scale by animateFloatAsState(if (focused) 1.16f else 1f, tween(160), label = "poster")
     Column(
         modifier = Modifier
-            .width(156.dp)
+            .width(158.dp)
             .scale(scale)
             .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
+            .clip(RoundedCornerShape(if (focused) 18.dp else 14.dp))
+            .clickable(onClick = onClick)
             .background(if (focused) TvCardBg else Color.Transparent)
             .padding(6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -452,39 +573,41 @@ private fun TvPosterCard(item: MediaItem, onClick: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(if (focused) 16.dp else 12.dp))
                 .then(
-                    if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                    if (focused) Modifier.border(2.dp, TvAccent, RoundedCornerShape(16.dp))
                     else Modifier
                 ),
         ) {
             PosterImage(url = item.cover, modifier = Modifier.fillMaxSize())
         }
-        Text(
-            text = item.safeTitle,
-            style = MaterialTheme.typography.titleSmall,
-            color = if (focused) Color.White else Color(0xFFC9CAD3),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (focused) {
+            Text(
+                text = item.safeTitle,
+                fontFamily = Outfit,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Spacer(Modifier.height(14.dp))
+        }
     }
 }
 
 @Composable
 private fun TvContinueCard(entry: HistoryEntity, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.09f else 1f, tween(150), label = "cont")
+    val scale by animateFloatAsState(if (focused) 1.16f else 1f, tween(160), label = "cont")
     Column(
         modifier = Modifier
-            .width(210.dp)
+            .width(214.dp)
             .scale(scale)
             .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
+            .clip(RoundedCornerShape(if (focused) 18.dp else 14.dp))
+            .clickable(onClick = onClick)
             .background(if (focused) TvCardBg else Color.Transparent)
             .padding(6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -493,9 +616,9 @@ private fun TvContinueCard(entry: HistoryEntity, onClick: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(if (focused) 16.dp else 12.dp))
                 .then(
-                    if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                    if (focused) Modifier.border(2.dp, TvAccent, RoundedCornerShape(16.dp))
                     else Modifier
                 ),
         ) {
@@ -503,7 +626,7 @@ private fun TvContinueCard(entry: HistoryEntity, onClick: () -> Unit) {
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .size(44.dp)
+                    .size(46.dp)
                     .clip(CircleShape)
                     .background(Color(0xCC02050F)),
                 contentAlignment = Alignment.Center,
@@ -512,23 +635,29 @@ private fun TvContinueCard(entry: HistoryEntity, onClick: () -> Unit) {
                     Icons.Filled.PlayArrow,
                     contentDescription = "Lanjutkan",
                     tint = Color.White,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(26.dp),
                 )
             }
             LinearProgressIndicator(
                 progress = { entry.progress },
                 modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp),
-                color = MaterialTheme.colorScheme.primary,
+                color = TvAccent,
                 trackColor = Color(0x66000000),
             )
         }
-        Text(
-            text = entry.title,
-            style = MaterialTheme.typography.titleSmall,
-            color = if (focused) Color.White else Color(0xFFC9CAD3),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (focused) {
+            Text(
+                text = entry.title,
+                fontFamily = Outfit,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Spacer(Modifier.height(14.dp))
+        }
     }
 }
 
@@ -546,13 +675,16 @@ private fun TvMessage(
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge,
+            fontFamily = Poppins,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 20.sp,
             color = Color.White,
-            fontWeight = FontWeight.Bold,
         )
         Text(
             text = subtitle,
-            style = MaterialTheme.typography.bodyMedium,
+            fontFamily = Outfit,
+            fontWeight = FontWeight.Medium,
+            fontSize = 16.sp,
             color = StreamPrimarySoft,
         )
         if (actionLabel != null && onAction != null) {

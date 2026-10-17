@@ -91,5 +91,5 @@ object TvFocusIndication : IndicationNodeFactory {
         }
     }
 
-    private val FocusPrimary = Color(0xFF24A0ED)
+    private val FocusPrimary = Color(0xFFFA4776)
 }

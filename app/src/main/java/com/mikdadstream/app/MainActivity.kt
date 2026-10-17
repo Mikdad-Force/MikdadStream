@@ -81,11 +81,12 @@ class MainActivity : ComponentActivity() {
                 controller.isAppearanceLightStatusBars = !darkTheme
                 controller.isAppearanceLightNavigationBars = !darkTheme
             }
-            MikdadStreamTheme(darkTheme = darkTheme) {
+            val isTv = applicationContext.isTelevision()
+            MikdadStreamTheme(darkTheme = darkTheme, isTv = isTv) {
                 androidx.compose.runtime.CompositionLocalProvider(
                     com.mikdadstream.app.ui.i18n.LocalStrings provides com.mikdadstream.app.ui.i18n.appStringsFor(language),
                 ) {
-                    AppRoot(isTv = applicationContext.isTelevision())
+                    AppRoot(isTv = isTv)
                 }
             }
         }

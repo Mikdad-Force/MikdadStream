@@ -69,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -268,6 +269,10 @@ fun PlayerScreen(
     val inPip = activity?.inPipState?.value == true
     val gesture = remember { GestureState() }
     val controlFocus = remember { FocusRequester() }
+    val backFocus = remember { FocusRequester() }
+    val rewindFocus = remember { FocusRequester() }
+    val forwardFocus = remember { FocusRequester() }
+    val bottomFirstFocus = remember { FocusRequester() }
 
     val resizeModes = intArrayOf(
         AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -628,8 +633,18 @@ fun PlayerScreen(
     }
 
     BackHandler {
-        saveProgressNow()
-        onBack()
+        when {
+            showSpeedMenu -> showSpeedMenu = false
+            showSubMenu -> showSubMenu = false
+            showSleepMenu -> showSleepMenu = false
+            showSources -> showSources = false
+            showEpisodes -> showEpisodes = false
+            showControls && mediaReady -> showControls = false
+            else -> {
+                saveProgressNow()
+                onBack()
+            }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -765,6 +780,8 @@ fun PlayerScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color(0x66000000))
+                        .focusRequester(backFocus)
+                        .focusProperties { down = controlFocus }
                         .clickable {
                             saveProgressNow()
                             onBack()
@@ -821,6 +838,12 @@ fun PlayerScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color(0x33000000))
+                        .focusRequester(rewindFocus)
+                        .focusProperties {
+                            right = controlFocus
+                            up = backFocus
+                            down = bottomFirstFocus
+                        }
                         .clickable { seekBy(-10_000L) }
                         .padding(14.dp)
                         .size(30.dp),
@@ -833,6 +856,12 @@ fun PlayerScreen(
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color.White)
                         .focusRequester(controlFocus)
+                        .focusProperties {
+                            left = rewindFocus
+                            right = forwardFocus
+                            up = backFocus
+                            down = bottomFirstFocus
+                        }
                         .clickable {
                             if (player.isPlaying) player.pause() else player.play()
                         }
@@ -846,6 +875,12 @@ fun PlayerScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color(0x33000000))
+                        .focusRequester(forwardFocus)
+                        .focusProperties {
+                            left = controlFocus
+                            up = backFocus
+                            down = bottomFirstFocus
+                        }
                         .clickable { seekBy(10_000L) }
                         .padding(14.dp)
                         .size(30.dp),
@@ -902,7 +937,13 @@ fun PlayerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        CtlButton(icon = Icons.Filled.Layers, label = "Sumber") {
+                        CtlButton(
+                            icon = Icons.Filled.Layers,
+                            label = "Sumber",
+                            modifier = Modifier
+                                .focusRequester(bottomFirstFocus)
+                                .focusProperties { up = controlFocus },
+                        ) {
                             showSources = true
                         }
                         if (episodes.size > 1) {
@@ -913,7 +954,11 @@ fun PlayerScreen(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        CtlButton(text = formatSpeed(speed), label = "Kecepatan") {
+                        CtlButton(
+                            text = formatSpeed(speed),
+                            label = "Kecepatan",
+                            modifier = Modifier.focusProperties { up = controlFocus },
+                        ) {
                             showSpeedMenu = true
                         }
                         CtlButton(
@@ -1272,10 +1317,11 @@ private fun CtlButton(
     text: String? = null,
     label: String,
     tint: Color = Color.White,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 9.dp, vertical = 5.dp),

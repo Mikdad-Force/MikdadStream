@@ -27,3 +27,23 @@ val Montserrat = FontFamily(
     Font(R.font.montserrat_semibold, FontWeight.SemiBold),
     Font(R.font.montserrat_bold, FontWeight.Bold),
 )
+
+// Font untuk tampilan TV agar sesuai desain dashboard (Oswald/Poppins/Outfit).
+val Oswald = FontFamily(
+    Font(R.font.oswald_wght, FontWeight.Normal),
+    Font(R.font.oswald_wght, FontWeight.Medium),
+    Font(R.font.oswald_wght, FontWeight.SemiBold),
+    Font(R.font.oswald_wght, FontWeight.Bold),
+)
+
+val Outfit = FontFamily(
+    Font(R.font.outfit_wght, FontWeight.Normal),
+    Font(R.font.outfit_wght, FontWeight.Medium),
+    Font(R.font.outfit_wght, FontWeight.SemiBold),
+    Font(R.font.outfit_wght, FontWeight.Bold),
+)
+
+val Poppins = FontFamily(
+    Font(R.font.poppins_semibold, FontWeight.SemiBold),
+    Font(R.font.poppins_semibold, FontWeight.Bold),
+)

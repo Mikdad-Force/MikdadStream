@@ -89,6 +89,21 @@ private val StreamScheme = darkColorScheme(
     onError = Color.White,
 )
 
+// Varian TV: aksen pink sesuai desain dashboard, dipakai hanya di perangkat TV.
+private val TvAccent = Color(0xFFFA4776)
+private val StreamTvScheme = StreamScheme.copy(
+    primary = TvAccent,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF3A1020),
+    onPrimaryContainer = Color(0xFFFFD7E2),
+    secondary = Color(0xFFFF8FB0),
+    onSecondary = Color(0xFF3A1020),
+    onSecondaryContainer = Color(0xFFFFD7E2),
+    tertiary = Color(0xFFFF8FB0),
+    onTertiary = Color(0xFF3A1020),
+    surfaceTint = TvAccent,
+)
+
 private val AppShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(10.dp),
@@ -150,10 +165,11 @@ enum class ThemeMode(val value: Int) {
 @Composable
 fun MikdadStreamTheme(
     darkTheme: Boolean,
+    isTv: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(
-        colorScheme = StreamScheme,
+        colorScheme = if (isTv) StreamTvScheme else StreamScheme,
         typography = AppTypography,
         shapes = AppShapes,
     ) {
