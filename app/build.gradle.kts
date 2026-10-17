@@ -10,6 +10,9 @@ plugins {
 
 val apiBaseUrl: String = (findProperty("STREAM_API_URL") as String?) ?: "https://mikdad-api.mikdadtv.workers.dev"
 
+val appVersionCode: Int = (findProperty("VERSION_CODE") as String?)?.toIntOrNull() ?: 38
+val appVersionName: String = (findProperty("VERSION_NAME") as String?) ?: "2.1.1"
+
 val googleClientId: String = (findProperty("GOOGLE_CLIENT_ID") as String?)
     ?: "350158650454-osksv8riv4q7dfpr4ff2o509l6git6ot.apps.googleusercontent.com"
 
@@ -41,8 +44,8 @@ android {
         applicationId = "com.mikdadstream.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 38
-        versionName = "2.1.1"
+        versionCode = appVersionCode
+        versionName = appVersionName
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"$googleClientId\"")
         buildConfigField("Boolean", "FORCE_TV", "$forceTv")

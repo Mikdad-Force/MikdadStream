@@ -26,7 +26,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease -PVERSION_CODE=${{ github.run_number }} -PVERSION_NAME=2.1.${{ github.run_number }}
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -38,7 +38,7 @@ jobs:
       - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: Release v1.0.${{ github.run_number }}
+          tag_name: v2.1.${{ github.run_number }}
+          name: Release v2.1.${{ github.run_number }}
           files: app/build/outputs/apk/release/*.apk
           make_latest: true
