@@ -62,10 +62,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = if (keystoreFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            if (keystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
             }
         }
     }

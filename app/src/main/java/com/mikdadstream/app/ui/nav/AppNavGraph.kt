@@ -287,8 +287,6 @@ fun AppNavGraph(isTv: Boolean = false) {
                         onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
                         onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
                         onNavigate = { route -> navController.navigateTop(route) },
-                        railFocusRequester = railFocus,
-                        contentFocusRequester = homeContentFocus,
                     )
                 } else {
                     HomeScreen(
