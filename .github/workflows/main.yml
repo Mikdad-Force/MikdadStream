@@ -1,0 +1,36 @@
+name: Build & Sign Release APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Agar bisa di-run manual kapan saja
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # Grant execute permission for gradlew
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      # Build APK Release menggunakan Gradle
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
+
+      # Unggah hasil APK
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 3
