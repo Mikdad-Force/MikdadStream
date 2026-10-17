@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -197,6 +198,8 @@ private fun PasswordTrailing(visible: Boolean, onToggle: () -> Unit) {
 fun SignInScreen(
     onBack: () -> Unit,
     onGoogleSignIn: () -> Unit,
+    loading: Boolean = false,
+    message: String? = null,
 ) {
     AuthContainer(onBack = onBack) {
         Spacer(Modifier.height(36.dp))
@@ -207,7 +210,41 @@ fun SignInScreen(
             subtitle = "Gunakan akun Google kamu untuk masuk dan mulai menonton favoritmu.",
         )
         Spacer(Modifier.height(30.dp))
-        GoogleSignInButton(onClick = onGoogleSignIn)
+        GoogleSignInButton(onClick = { if (!loading) onGoogleSignIn() }, loading = loading)
+        if (loading) {
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = "Menghubungkan ke Google…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (message != null) {
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f))
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            )
+        }
         Spacer(Modifier.height(18.dp))
         Text(
             text = "Dengan melanjutkan, kamu menyetujui Ketentuan Layanan dan Kebijakan Privasi Mikdad Stream.",
@@ -221,21 +258,29 @@ fun SignInScreen(
 }
 
 @Composable
-private fun GoogleSignInButton(onClick: () -> Unit) {
+private fun GoogleSignInButton(onClick: () -> Unit, loading: Boolean = false) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(Color.White)
-            .clickable(onClick = onClick)
+            .clickable(enabled = !loading, onClick = onClick)
             .padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GoogleGlyph()
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = Color(0xFF4285F4),
+            )
+        } else {
+            GoogleGlyph()
+        }
         Spacer(Modifier.width(10.dp))
         Text(
-            text = "Masuk dengan Google",
+            text = if (loading) "Menghubungkan…" else "Masuk dengan Google",
             style = MaterialTheme.typography.labelLarge,
             color = Color(0xFF1F1F1F),
             fontWeight = FontWeight.SemiBold,

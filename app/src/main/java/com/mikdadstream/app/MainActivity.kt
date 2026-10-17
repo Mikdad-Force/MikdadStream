@@ -47,6 +47,7 @@ import androidx.core.view.WindowCompat
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.mikdadstream.app.data.firebase.FirebaseConnectivity
 import com.mikdadstream.app.ui.auth.CreateNewPasswordScreen
 import com.mikdadstream.app.ui.auth.ForgotPasswordScreen
 import com.mikdadstream.app.ui.auth.OtpVerificationScreen
@@ -107,7 +108,9 @@ private fun AppRoot(isTv: Boolean) {
     LaunchedEffect(Unit) {
         if (AppGraph.prefs.loggedIn.value) {
             runCatching { AppGraph.apiClient.auth.ensureSession() }
-            runCatching { AppGraph.users.syncNow() }
+            if (FirebaseConnectivity.isReachable()) {
+                runCatching { AppGraph.users.syncNow() }
+            }
             if (AppGraph.users.available && AppGraph.users.currentUid == null) {
                 AppGraph.prefs.setLoggedIn(false)
             }
@@ -168,6 +171,8 @@ private fun AuthFlow(isTv: Boolean) {
     var step by remember {
         mutableStateOf(if (prefs.loggedIn.value) AuthStep.SignIn else AuthStep.Onboarding)
     }
+    var authBusy by remember { mutableStateOf(false) }
+    var authMessage by remember { mutableStateOf<String?>(null) }
 
     fun finishLogin() {
         prefs.setLoggedIn(true)
@@ -205,6 +210,7 @@ private fun AuthFlow(isTv: Boolean) {
                 val firebaseUser = AppGraph.users.signInWithGoogle(account.idToken.orEmpty())
                 if (firebaseUser == null) {
                     AppGraph.users.lastError.value?.let {
+                        authMessage = "Gagal masuk: $it"
                         android.widget.Toast.makeText(context, "Firebase: $it", android.widget.Toast.LENGTH_LONG).show()
                     }
                 }
@@ -212,20 +218,32 @@ private fun AuthFlow(isTv: Boolean) {
                     AppGraph.apiClient.auth.loginWithGoogleAsync(email, name, avatar, sub)
                 }.getOrDefault(false)
                 if (ok) finishLogin() else deviceLogin(email)
+                authBusy = false
             }
         } catch (e: ApiException) {
+            authBusy = false
             android.widget.Toast.makeText(context, "Google Sign-In gagal (kode ${e.statusCode})", android.widget.Toast.LENGTH_LONG).show()
             deviceLogin()
         }
     }
 
     fun launchGoogleSignIn() {
-        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(BuildConfig.GOOGLE_WEB_CLIENT_ID)
-            .requestEmail()
-            .build()
-        val client = GoogleSignIn.getClient(context, options)
-        googleLauncher.launch(client.signInIntent)
+        if (authBusy) return
+        scope.launch {
+            authBusy = true
+            authMessage = null
+            if (!FirebaseConnectivity.isReachable()) {
+                authMessage = "Jaringan ini sepertinya memblokir server Google (Firebase). Matikan WiFi dan pakai data seluler, atau nyalakan VPN (mis. 1.1.1.1/WARP), lalu coba lagi."
+                authBusy = false
+                return@launch
+            }
+            val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(BuildConfig.GOOGLE_WEB_CLIENT_ID)
+                .requestEmail()
+                .build()
+            val client = GoogleSignIn.getClient(context, options)
+            googleLauncher.launch(client.signInIntent)
+        }
     }
 
     when (step) {
@@ -233,6 +251,8 @@ private fun AuthFlow(isTv: Boolean) {
         AuthStep.SignIn -> SignInScreen(
             onBack = { step = AuthStep.Onboarding },
             onGoogleSignIn = { launchGoogleSignIn() },
+            loading = authBusy,
+            message = authMessage,
         )
         AuthStep.SignUp -> SignUpScreen(
             onBack = { step = AuthStep.SignIn },
