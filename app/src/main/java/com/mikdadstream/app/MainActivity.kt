@@ -119,6 +119,7 @@ private fun AppRoot(isTv: Boolean) {
     }
 
     LaunchedEffect(Unit) {
+        if (isTv) return@LaunchedEffect
         runCatching { updater.check() }.getOrNull()?.let { updateInfo = it }
     }
 

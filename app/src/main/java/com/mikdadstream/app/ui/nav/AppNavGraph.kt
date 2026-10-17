@@ -241,12 +241,10 @@ fun AppNavGraph(isTv: Boolean = false) {
         topBar = {
             if (isTv && showBottomBar) {
                 TvTopBar(
-                    profile = profile,
                     activeSourceName = activeSource?.safeName ?: AppGraph.prefs.activeSource.collectAsState().value,
                     currentRoute = currentRoute,
                     onNavigate = { route -> navController.navigateTop(route) },
                     onSourceClick = { mainViewModel.openSheet() },
-                    onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
                 )
             } else if (showHeader) {
                 AppHeader(

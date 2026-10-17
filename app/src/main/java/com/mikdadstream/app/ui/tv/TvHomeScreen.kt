@@ -77,12 +77,10 @@ private val TvCardBg = Color(0xFF14151F)
 
 @Composable
 fun TvTopBar(
-    profile: Profile?,
     activeSourceName: String?,
     currentRoute: String?,
     onNavigate: (String) -> Unit,
     onSourceClick: () -> Unit,
-    onProfileClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -103,7 +101,6 @@ fun TvTopBar(
         TvNavItem("Beranda", Icons.Filled.Home, currentRoute == "home") { onNavigate("home") }
         TvNavItem("Cari", Icons.Filled.Search, currentRoute == "search") { onNavigate("search") }
         TvNavItem("Koleksi", Icons.Outlined.BookmarkBorder, currentRoute == "library") { onNavigate("library") }
-        TvNavItem("Profil", Icons.Filled.Person, currentRoute == "settings") { onProfileClick() }
         Spacer(Modifier.weight(1f))
         TvNavItem("Sumber", Icons.Outlined.Refresh, false, label = activeSourceName ?: "Sumber") { onSourceClick() }
     }
