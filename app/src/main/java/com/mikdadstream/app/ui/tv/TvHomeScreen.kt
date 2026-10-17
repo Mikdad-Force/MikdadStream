@@ -11,6 +11,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -74,7 +77,7 @@ fun DesignScale(designWidthDp: Float = 1280f, content: @Composable () -> Unit) {
 }
 
 // ───────── Data poster ─────────
-private data class Poster(val title: String, val cover: String?, val bg: Color, val dot: Color, val progress: Float? = null)
+private data class Poster(val title: String, val cover: String?, val bg: Color, val progress: Float? = null)
 
 // ───────── Screen ─────────
 @Composable
@@ -98,10 +101,10 @@ fun TvHomeScreen(
     val rest = state.items.filter { it !== hero }.take(12)
 
     val continuePosters = history.map { entry ->
-        Poster(entry.title, entry.cover, Color(0xFF1E3A5F), Yellow, entry.progress)
+        Poster(entry.title, entry.cover, Color(0xFF1E3A5F), entry.progress)
     }
     val recoPosters = rest.map { item ->
-        Poster(item.safeTitle, item.cover, Color(0xFF2B5F45), Green, null)
+        Poster(item.safeTitle, item.cover, Color(0xFF2B5F45), null)
     }
 
     DesignScale {
@@ -151,18 +154,25 @@ fun TvHomeScreen(
                         )
                         Spacer(Modifier.height(20.dp))
 
-                        // ---- Kategori (mirip tampilan HP) ----
+                        // ---- Kategori chips (plus "Semua Film" untuk moviebox) ----
                         if (state.categories.isNotEmpty()) {
                             CategoryChipsRow(
+                                sourceModelId = viewModel.activeSourceId(),
                                 categories = state.categories,
                                 activeCategory = state.activeCategory,
-                                onCategorySelected = { viewModel.selectCategory(it) }
+                                onCategorySelected = { cat ->
+                                    if (cat == null) {
+                                        viewModel.showAllFilms()
+                                    } else {
+                                        viewModel.selectCategory(cat)
+                                    }
+                                }
                             )
                             Spacer(Modifier.height(18.dp))
                         }
 
                         // ---- Section konten sesuai kategori aktif ----
-                        val activeCategoryName = state.activeCategory?.name ?: "Semua Konten"
+                        val activeCategoryName = state.activeCategory?.name ?: "Semua Film"
                         CategoryContentSection(
                             items = state.items,
                             categoryName = activeCategoryName,
@@ -180,13 +190,7 @@ fun TvHomeScreen(
                             Spacer(Modifier.height(19.dp))
                         }
 
-                        // ---- Rekomendasi untukmu ----
-                        SectionTitle("Rekomendasi untukmu")
-                        Spacer(Modifier.height(12.dp))
-                        PosterRow(recoPosters, showTitle = false) { item ->
-                            rest.firstOrNull { it.safeTitle == item.title }?.let { onOpenItem(it, viewModel.activeSourceId()) }
-                        }
-                        Spacer(Modifier.height(40.dp))
+                        Spacer(Modifier.height(24.dp))
                     }
                 }
             }
@@ -404,16 +408,56 @@ private fun SectionTitle(text: String) {
 // ───────── Kategori chips (mirip HP) ─────────
 @Composable
 private fun CategoryChipsRow(
+    sourceModelId: String,
     categories: List<CategoryBundle>,
     activeCategory: CategoryBundle?,
-    onCategorySelected: (CategoryBundle) -> Unit,
+    onCategorySelected: (CategoryBundle?) -> Unit,
 ) {
     LazyRow(
         contentPadding = PaddingValues(start = 48.dp, end = 48.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.heightIn(max = 80.dp)
     ) {
-        items(categories) { category ->
+        // Chip "Semua Film" hanya tampil untuk sumber moviebox
+        if (sourceModelId == "moviebox") {
+            item {
+                val isActive = activeCategory == null
+                var focused by remember { mutableStateOf(false) }
+                val chipModifier = Modifier
+                    .width(160.dp)
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(
+                        if (isActive) Pink
+                        else if (focused) Color.White.copy(alpha = 0.12f)
+                        else Color.Transparent
+                    )
+                    .border(
+                        BorderStroke(
+                            if (focused) 3.dp else if (isActive) 2.dp else 1.dp,
+                            if (focused) Color.White else if (isActive) Pink else Color.White.copy(alpha = 0.4f)
+                        ),
+                        RoundedCornerShape(26.dp)
+                    )
+                    .onFocusChanged { focused = it.isFocused }
+                    .focusable()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onCategorySelected(null) }
+                    )
+                Box(modifier = chipModifier, contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "Semua Film",
+                        color = if (isActive) Color.White else Color.White.copy(alpha = 0.85f),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            item(key = "spacer") { Spacer(modifier = Modifier.width(12.dp)) }
+        }
+        items(categories, key = { it.id }) { category ->
             val isActive = category.id == activeCategory?.id
             var focused by remember { mutableStateOf(false) }
             val chipModifier = Modifier
@@ -451,7 +495,7 @@ private fun CategoryChipsRow(
     }
 }
 
-// ───────── Section judul + daftar konten berbasis kategori ─────────
+// ───────── Section judul + daftar konten (7 kolom, ke bawah seperti HP) ─────────
 @Composable
 private fun CategoryContentSection(
     items: List<MediaItem>,
@@ -466,7 +510,7 @@ private fun CategoryContentSection(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(start = 48.dp, top = 22.dp, bottom = 14.dp)
         )
-        val displayItems = items.take(20)
+        val displayItems = items.take(70)
         if (displayItems.isEmpty()) {
             Text(
                 text = "Belum ada konten",
@@ -475,17 +519,18 @@ private fun CategoryContentSection(
                 modifier = Modifier.padding(start = 48.dp, top = 8.dp)
             )
         } else {
-            LazyRow(
-                contentPadding = PaddingValues(start = 48.dp, end = 48.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.heightIn(max = 220.dp)
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(7),
+                contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 4.dp, bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                items(displayItems, key = { it.safeId }) { item ->
+                gridItems(displayItems, key = { it.safeId }) { item ->
                     val poster = Poster(
                         title = item.safeTitle,
                         cover = item.cover,
                         bg = Color(0xFF2B5F45),
-                        dot = Green,
                         progress = null
                     )
                     PosterCard(poster, showTitle = true) { onItemClick(item) }
@@ -501,18 +546,17 @@ private fun PosterRow(items: List<Poster>, showTitle: Boolean, onItemClick: (Pos
         contentPadding = PaddingValues(start = 48.dp, end = 48.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        items(items) { PosterCard(it, showTitle) { onItemClick(it) } }
+        items(items, key = { it.title }) { PosterCard(it, showTitle) { onItemClick(it) } }
     }
 }
 
 @Composable
 private fun PosterCard(p: Poster, showTitle: Boolean, onClick: () -> Unit = {}) {
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(8.dp)
     Box(
         Modifier
-            .width(220.dp)
-            .height(125.dp)
+            .aspectRatio(2f / 3f)
             .clip(shape)
             .background(p.bg)
             .onFocusChanged { focused = it.isFocused }
@@ -522,26 +566,26 @@ private fun PosterCard(p: Poster, showTitle: Boolean, onClick: () -> Unit = {}) 
         if (p.cover != null) {
             PosterImage(url = p.cover, modifier = Modifier.fillMaxSize())
         }
-        Box(
-            Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 10.dp, y = (-50).dp)
-                .size(130.dp)
-                .clip(CircleShape)
-                .background(p.dot)
-        )
         if (showTitle) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .background(Color(0xCC000000))
+            )
             Text(
                 p.title,
                 color = Color.White,
-                fontSize = 16.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 14.dp, bottom = 18.dp)
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, bottom = 6.dp),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         p.progress?.let {
             Box(
-                Modifier.align(Alignment.BottomStart).fillMaxWidth().height(6.dp)
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp)
                     .background(Color(0x40000000))
             ) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(it).background(Pink))

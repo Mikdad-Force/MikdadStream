@@ -76,6 +76,17 @@ class HomeViewModel(
         viewModelScope.launch { loadCategory(prefs.activeSource.value, category, token) }
     }
 
+    /** "Semua Film": tampilkan semua konten dari kategori pertama tanpa mengubah activeCategory di UI. */
+    fun showAllFilms() {
+        if (_state.value.categories.isEmpty()) return
+        val first = _state.value.categories.first()
+        // Hindari load ulang kalau sudah ada items dari kategori ini
+        if (_state.value.activeCategory == first) return
+        val token = ++requestToken
+        _state.value = _state.value.copy(loading = true, items = emptyList(), error = null)
+        viewModelScope.launch { loadCategory(prefs.activeSource.value, first, token) }
+    }
+
     private suspend fun loadCategory(sourceId: String, category: CategoryBundle, token: Int) {
         try {
             val data = repo.videos(sourceId, category.id, page = 1)
