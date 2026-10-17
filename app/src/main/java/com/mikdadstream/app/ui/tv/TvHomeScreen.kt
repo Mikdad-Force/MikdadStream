@@ -44,6 +44,7 @@ import com.mikdadstream.app.data.local.Profile
 import com.mikdadstream.app.data.remote.MediaItem
 import com.mikdadstream.app.ui.components.LoadingGrid
 import com.mikdadstream.app.ui.components.PosterImage
+import com.mikdadstream.app.data.repository.CategoryBundle
 import com.mikdadstream.app.ui.home.HomeViewModel
 
 // ───────── Warna (sesuai Theme/MainActivity.kt) ─────────
@@ -149,6 +150,27 @@ fun TvHomeScreen(
                             onInfo = { hero?.let { onOpenItem(it, viewModel.activeSourceId()) } },
                         )
                         Spacer(Modifier.height(20.dp))
+
+                        // ---- Kategori (mirip tampilan HP) ----
+                        if (state.categories.isNotEmpty()) {
+                            CategoryChipsRow(
+                                categories = state.categories,
+                                activeCategory = state.activeCategory,
+                                onCategorySelected = { viewModel.selectCategory(it) }
+                            )
+                            Spacer(Modifier.height(18.dp))
+                        }
+
+                        // ---- Section konten sesuai kategori aktif ----
+                        val activeCategoryName = state.activeCategory?.name ?: "Semua Konten"
+                        CategoryContentSection(
+                            items = state.items,
+                            categoryName = activeCategoryName,
+                            onItemClick = { onOpenItem(it, viewModel.activeSourceId()) }
+                        )
+                        Spacer(Modifier.height(19.dp))
+
+                        // ---- Lanjutkan Menonton ----
                         if (continuePosters.isNotEmpty()) {
                             SectionTitle("Lanjutkan Menonton")
                             Spacer(Modifier.height(13.dp))
@@ -157,6 +179,8 @@ fun TvHomeScreen(
                             }
                             Spacer(Modifier.height(19.dp))
                         }
+
+                        // ---- Rekomendasi untukmu ----
                         SectionTitle("Rekomendasi untukmu")
                         Spacer(Modifier.height(12.dp))
                         PosterRow(recoPosters, showTitle = false) { item ->
@@ -375,6 +399,100 @@ private fun SectionTitle(text: String) {
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(start = 48.dp).height(30.dp)
     )
+}
+
+// ───────── Kategori chips (mirip HP) ─────────
+@Composable
+private fun CategoryChipsRow(
+    categories: List<CategoryBundle>,
+    activeCategory: CategoryBundle?,
+    onCategorySelected: (CategoryBundle) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(start = 48.dp, end = 48.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.heightIn(max = 80.dp)
+    ) {
+        items(categories) { category ->
+            val isActive = category.id == activeCategory?.id
+            var focused by remember { mutableStateOf(false) }
+            val chipModifier = Modifier
+                .width(160.dp)
+                .height(52.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(
+                    if (isActive) Pink
+                    else if (focused) Color.White.copy(alpha = 0.12f)
+                    else Color.Transparent
+                )
+                .border(
+                    BorderStroke(
+                        if (focused) 3.dp else if (isActive) 2.dp else 1.dp,
+                        if (focused) Color.White else if (isActive) Pink else Color.White.copy(alpha = 0.4f)
+                    ),
+                    RoundedCornerShape(26.dp)
+                )
+                .onFocusChanged { focused = it.isFocused }
+                .focusable()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { onCategorySelected(category) }
+                )
+            Box(modifier = chipModifier, contentAlignment = Alignment.Center) {
+                Text(
+                    text = category.name,
+                    color = if (isActive) Color.White else Color.White.copy(alpha = 0.85f),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+// ───────── Section judul + daftar konten berbasis kategori ─────────
+@Composable
+private fun CategoryContentSection(
+    items: List<MediaItem>,
+    categoryName: String,
+    onItemClick: (MediaItem) -> Unit,
+) {
+    Column {
+        Text(
+            text = categoryName,
+            color = Color.White,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 48.dp, top = 22.dp, bottom = 14.dp)
+        )
+        val displayItems = items.take(20)
+        if (displayItems.isEmpty()) {
+            Text(
+                text = "Belum ada konten",
+                color = Muted,
+                fontSize = 18.sp,
+                modifier = Modifier.padding(start = 48.dp, top = 8.dp)
+            )
+        } else {
+            LazyRow(
+                contentPadding = PaddingValues(start = 48.dp, end = 48.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.heightIn(max = 220.dp)
+            ) {
+                items(displayItems, key = { it.safeId }) { item ->
+                    val poster = Poster(
+                        title = item.safeTitle,
+                        cover = item.cover,
+                        bg = Color(0xFF2B5F45),
+                        dot = Green,
+                        progress = null
+                    )
+                    PosterCard(poster, showTitle = true) { onItemClick(item) }
+                }
+            }
+        }
+    }
 }
 
 @Composable
