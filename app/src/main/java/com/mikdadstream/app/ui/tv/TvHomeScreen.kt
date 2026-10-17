@@ -542,11 +542,14 @@ private fun CategoryContentSection(
 
 @Composable
 private fun PosterRow(items: List<Poster>, showTitle: Boolean, onItemClick: (Poster) -> Unit = { _ -> }) {
-    LazyRow(
-        contentPadding = PaddingValues(start = 48.dp, end = 48.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(4),
+        contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 4.dp, bottom = 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        items(items, key = { it.title }) { PosterCard(it, showTitle) { onItemClick(it) } }
+        gridItems(items, key = { it.title }) { PosterCard(it, showTitle) { onItemClick(it) } }
     }
 }
 
