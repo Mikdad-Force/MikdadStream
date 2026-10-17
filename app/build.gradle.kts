@@ -30,12 +30,38 @@ android {
     compileSdk = 36
 
     signingConfigs {
-        if (keystoreFile.exists()) {
-            create("release") {
+        create("release") {
+            if (keystoreFile.exists()) {
                 storeFile = keystoreFile
                 storePassword = releaseStorePassword
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
+            } else {
+                // Fallback: generate a temp keystore via keytool so the APK is still installable
+                val tempDir = File(rootProject.buildDir, "tmp-signing")
+                tempDir.mkdirs()
+                val ksFile = File(tempDir, "temp.keystore")
+                if (!ksFile.exists()) {
+                    exec {
+                        commandLine(
+                            "keytool",
+                            "-genkeypair",
+                            "-v",
+                            "-keystore", ksFile.absolutePath,
+                            "-alias", "temp",
+                            "-keyalg", "RSA",
+                            "-keysize", "2048",
+                            "-validity", "10000",
+                            "-storepass", "tempPass",
+                            "-keypass", "tempPass",
+                            "-dname", "CN=temp, OU=temp, O=temp, L=temp, ST=temp, C=US"
+                        )
+                    }
+                }
+                storeFile = ksFile
+                storePassword = "tempPass"
+                keyAlias = "temp"
+                keyPassword = "tempPass"
             }
         }
     }
@@ -65,9 +91,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            if (keystoreFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

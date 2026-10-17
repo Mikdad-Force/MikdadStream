@@ -25,8 +25,23 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Decode Keystore from Secret
+        run: |
+          echo "${{ secrets.MIKDAD_KEYSTORE }}" | base64 -d > mikdadstream.keystore
+          echo "Keystore decoded: $(ls -la mikdadstream.keystore)"
+
       - name: Build Release APK
-        run: ./gradlew assembleRelease -PVERSION_CODE=${{ github.run_number }} -PVERSION_NAME=2.1.${{ github.run_number }}
+        run: >
+          ./gradlew assembleRelease
+          -PVERSION_CODE=${{ github.run_number }}
+          -PVERSION_NAME=2.1.${{ github.run_number }}
+          -PSTREAM_STORE_PASSWORD=${{ secrets.STREAM_STORE_PASSWORD }}
+          -PSTREAM_KEY_PASSWORD=${{ secrets.STREAM_KEY_PASSWORD }}
+          -PSTREAM_KEY_ALIAS=${{ secrets.STREAM_KEY_ALIAS }}
+        env:
+          STREAM_STORE_PASSWORD: ${{ secrets.STREAM_STORE_PASSWORD }}
+          STREAM_KEY_PASSWORD: ${{ secrets.STREAM_KEY_PASSWORD }}
+          STREAM_KEY_ALIAS: ${{ secrets.STREAM_KEY_ALIAS }}
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
