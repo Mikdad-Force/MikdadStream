@@ -21,9 +21,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bookmark
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Search
@@ -73,6 +75,7 @@ import com.mikdadstream.app.ui.components.AppHeader
 import com.mikdadstream.app.ui.components.FloatingBottomNavBar
 import com.mikdadstream.app.ui.components.FloatingNavItem
 import com.mikdadstream.app.ui.components.SourceSheet
+import com.mikdadstream.app.ui.recommend.RecommendScreen
 import com.mikdadstream.app.ui.detail.DetailScreen
 import com.mikdadstream.app.ui.detail.DetailViewModel
 import com.mikdadstream.app.ui.detail.PlayRequest
@@ -119,10 +122,10 @@ import com.mikdadstream.app.ui.kit.MoviePlayScreen
 import com.mikdadstream.app.ui.kit.DesignKitScreen
 import com.mikdadstream.app.ui.account.PairDeviceScreen
 import com.mikdadstream.app.ui.tv.TvHomeScreen
-import com.mikdadstream.app.ui.tv.TvTopBar
 
 private object Routes {
     const val HOME = "home"
+    const val RECOMMEND = "recommend"
     const val SEARCH = "search"
     const val LIBRARY = "library"
     const val HISTORY = "history"
@@ -162,19 +165,18 @@ private object Routes {
 }
 
 private fun floatingNavItems(s: com.mikdadstream.app.ui.i18n.AppStrings) = listOf(
-    FloatingNavItem(Routes.SEARCH, Icons.Rounded.Search, s.navSearch, selectedIcon = Icons.Rounded.Search),
-    FloatingNavItem(Routes.LIBRARY, Icons.Rounded.BookmarkBorder, s.navLibrary, selectedIcon = Icons.Rounded.Bookmark),
+    // Persis mockup folder Theme: Home / Rekomendasi / Download / History
     FloatingNavItem(Routes.HOME, Icons.Rounded.Home, s.navHome, selectedIcon = Icons.Rounded.Home),
+    FloatingNavItem(Routes.RECOMMEND, Icons.Rounded.AutoAwesome, s.navRecommend, selectedIcon = Icons.Rounded.AutoAwesome),
     FloatingNavItem(Routes.DOWNLOADS, Icons.Rounded.Download, s.navDownloads, selectedIcon = Icons.Rounded.Download),
-    FloatingNavItem(Routes.SETTINGS, Icons.Rounded.Settings, s.navSettings, selectedIcon = Icons.Rounded.Settings),
+    FloatingNavItem(Routes.HISTORY, Icons.Rounded.History, s.navLibrary, selectedIcon = Icons.Rounded.History),
 )
 
 private fun floatingNavIndex(route: String?): Int = when (route) {
-    Routes.SEARCH -> 0
-    Routes.LIBRARY, Routes.HISTORY -> 1
-    Routes.DOWNLOADS -> 3
-    Routes.SETTINGS -> 4
-    else -> 2
+    Routes.RECOMMEND -> 1
+    Routes.DOWNLOADS -> 2
+    Routes.HISTORY, Routes.LIBRARY -> 3
+    else -> 0
 }
 
 @Composable
@@ -212,9 +214,12 @@ fun AppNavGraph(isTv: Boolean = false) {
     val currentRoute = backStack?.destination?.route
     val showHeader = false
     val homeContentFocus = remember { FocusRequester() }
+    val headerFocus = remember { FocusRequester() }
     val routeFocus = remember { FocusRequester() }
-    val showBottomBar = currentRoute == Routes.HOME || currentRoute == Routes.LIBRARY ||
-        currentRoute == Routes.SETTINGS || currentRoute == Routes.SEARCH || currentRoute == Routes.DOWNLOADS
+    val railFocus = remember { FocusRequester() }
+    val showBottomBar = currentRoute == Routes.HOME || currentRoute == Routes.LIBRARY || currentRoute == Routes.RECOMMEND ||
+        currentRoute == Routes.SETTINGS || currentRoute == Routes.SEARCH || currentRoute == Routes.DOWNLOADS ||
+        currentRoute == Routes.HISTORY
 
     LaunchedEffect(currentRoute, isTv) {
         if (!isTv) return@LaunchedEffect
@@ -239,14 +244,7 @@ fun AppNavGraph(isTv: Boolean = false) {
         containerColor = MaterialTheme.colorScheme.background,
         modifier = if (isTv) Modifier.focusRequester(routeFocus).focusGroup() else Modifier,
         topBar = {
-            if (isTv && showBottomBar) {
-                TvTopBar(
-                    activeSourceName = activeSource?.safeName ?: AppGraph.prefs.activeSource.collectAsState().value,
-                    currentRoute = currentRoute,
-                    onNavigate = { route -> navController.navigateTop(route) },
-                    onSourceClick = { mainViewModel.openSheet() },
-                )
-            } else if (showHeader) {
+            if (showHeader) {
                 AppHeader(
                     profile = profile,
                     activeSource = activeSource,
@@ -282,8 +280,15 @@ fun AppNavGraph(isTv: Boolean = false) {
                         contentPadding = padding,
                         profile = profile,
                         initialFocus = homeContentFocus,
+                        headerFocus = headerFocus,
+                        currentRoute = currentRoute,
+                        activeSourceName = activeSource?.safeName,
+                        onSourceClick = { mainViewModel.openSheet() },
                         onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
                         onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
+                        onNavigate = { route -> navController.navigateTop(route) },
+                        railFocusRequester = railFocus,
+                        contentFocusRequester = homeContentFocus,
                     )
                 } else {
                     HomeScreen(
@@ -292,6 +297,8 @@ fun AppNavGraph(isTv: Boolean = false) {
                         profile = profile,
                         accountBadge = accountBadge,
                         isPremium = isPremium,
+                        activeSourceName = activeSource?.safeName,
+                        onSourceClick = { mainViewModel.openSheet() },
                         onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
                         onSearchClick = { navController.navigateTop(Routes.SEARCH) },
                         onNotificationClick = { navController.navigate(Routes.NOTIFICATIONS) },
@@ -300,6 +307,19 @@ fun AppNavGraph(isTv: Boolean = false) {
                         onSeeHistory = { navController.navigateTop(Routes.HISTORY) },
                     )
                 }
+            }
+
+            composable(Routes.RECOMMEND) {
+                val vm: HomeViewModel = sharedViewModel { HomeViewModel(AppGraph.repository, AppGraph.prefs) }
+                val recState by vm.state.collectAsState()
+                val recHistory by vm.continueWatching.collectAsState()
+                RecommendScreen(
+                    items = recState.items,
+                    history = recHistory,
+                    activeSourceName = activeSource?.safeName,
+                    onSourceClick = { mainViewModel.openSheet() },
+                    onOpenItem = { item -> openDetail(null, item.safeId, item.source) },
+                )
             }
 
             composable(Routes.SEARCH) {

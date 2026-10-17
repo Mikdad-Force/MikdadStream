@@ -44,7 +44,7 @@ import com.mikdadstream.app.ui.i18n.LocalStrings
 import com.mikdadstream.app.ui.tv.isTelevision
 import com.mikdadstream.app.ui.theme.StreamBg
 import com.mikdadstream.app.ui.theme.StreamError
-import com.mikdadstream.app.ui.theme.StreamPrimary
+
 import com.mikdadstream.app.ui.theme.StreamSurface
 import com.mikdadstream.app.ui.theme.StreamSurfaceChip
 import com.mikdadstream.app.ui.theme.StreamTextMuted
@@ -85,7 +85,7 @@ fun UpdateScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.radialGradient(listOf(Color(0xFF0A2437), StreamBg))),
+            .background(Brush.radialGradient(listOf(com.mikdadstream.app.ui.theme.LocalAccent.current.copy(alpha = 0.22f), StreamBg))),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -113,12 +113,12 @@ fun UpdateScreen(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(StreamPrimary.copy(alpha = 0.16f))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
                     .padding(horizontal = 14.dp, vertical = 6.dp),
             ) {
                 Text(
                     text = s.updateBadge,
-                    color = StreamPrimary,
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.labelSmall,
                 )
@@ -148,7 +148,7 @@ fun UpdateScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 VersionRow(s.updateCurrent(BuildConfig.VERSION_NAME), StreamTextMuted)
-                VersionRow(s.updateLatest(info.version), StreamPrimary)
+                VersionRow(s.updateLatest(info.version), MaterialTheme.colorScheme.primary)
             }
 
             if (!info.notes.isNullOrBlank()) {
@@ -178,7 +178,7 @@ fun UpdateScreen(
                 Text(
                     text = s.updatePermission,
                     style = MaterialTheme.typography.bodySmall,
-                    color = StreamPrimary,
+                    color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center,
                 )
                 Button(
@@ -213,8 +213,8 @@ fun UpdateScreen(
                     .focusRequester(primaryFocus),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = StreamPrimary,
-                    contentColor = Color(0xFF04121F),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = StreamBg,
                 ),
             ) {
                 when {

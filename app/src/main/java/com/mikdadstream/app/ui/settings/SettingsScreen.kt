@@ -78,8 +78,12 @@ import com.mikdadstream.app.BuildConfig
 import com.mikdadstream.app.data.local.PrefsStore
 import com.mikdadstream.app.data.remote.SourceModel
 import com.mikdadstream.app.ui.components.FilterChipPill
-import com.mikdadstream.app.ui.theme.StreamPrimarySoft
+import com.mikdadstream.app.ui.theme.AccentChoice
+import com.mikdadstream.app.ui.theme.StreamBg
+import com.mikdadstream.app.ui.theme.StreamSuccess
+import com.mikdadstream.app.ui.tv.isTelevision
 import com.mikdadstream.app.ui.theme.StreamTextMuted
+import com.mikdadstream.app.ui.theme.StreamTextPrimary
 import com.mikdadstream.app.ui.theme.brandBrush
 import com.mikdadstream.app.ui.tv.TvRequestFocusOnShow
 import kotlinx.coroutines.delay
@@ -98,6 +102,7 @@ fun SettingsScreen(
 ) {
     val profile by viewModel.profile.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
+    val accent by viewModel.accent.collectAsState()
     val account by viewModel.account.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -146,12 +151,13 @@ fun SettingsScreen(
             .padding(bottom = contentPadding.calculateBottomPadding() + 32.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        // ---------- Header ----------
-        Text(
-            text = s.profileTitle,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
+        if (!androidx.compose.ui.platform.LocalContext.current.isTelevision()) {
+            Text(
+                text = s.profileTitle,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+        }
 
         // ---------- Kartu profil ----------
         Column(
@@ -326,6 +332,45 @@ fun SettingsScreen(
                         onClick = { viewModel.setThemeMode(mode) },
                         modifier = Modifier.weight(1f),
                     )
+                }
+            }
+
+            // ---------- Warna Aksen (persis mockup folder Theme) ----------
+            Text(
+                text = "Warna Aksen",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(start = 16.dp, bottom = 10.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                AccentChoice.entries.forEach { choice ->
+                    val selected = accent == choice.ordinal
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(choice.color)
+                            .border(
+                                3.dp,
+                                if (selected) StreamTextPrimary else Color.Transparent,
+                                CircleShape,
+                            )
+                            .clickable { viewModel.setAccent(choice.ordinal) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (selected) {
+                            Icon(
+                                Icons.Filled.CheckCircle,
+                                contentDescription = choice.label,
+                                tint = StreamBg,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -771,7 +816,7 @@ private fun HealthStat(label: String, count: Int, color: Color) {
 private fun HealthResultRow(health: SourceHealth) {
     val (statusIcon, statusColor, statusText) = when (health.status) {
         HealthStatus.Running -> Triple(Icons.Filled.Refresh, MaterialTheme.colorScheme.primary, "Menguji")
-        HealthStatus.Ok -> Triple(Icons.Filled.CheckCircle, StreamPrimarySoft, "Siap putar")
+        HealthStatus.Ok -> Triple(Icons.Filled.CheckCircle, StreamSuccess, "Siap putar")
         HealthStatus.Warning -> Triple(Icons.Filled.WarningAmber, MaterialTheme.colorScheme.secondary, health.message.ifBlank { "Perhatian" })
         HealthStatus.Failed -> Triple(Icons.Filled.ErrorOutline, MaterialTheme.colorScheme.error, health.message.ifBlank { "Gagal" })
     }

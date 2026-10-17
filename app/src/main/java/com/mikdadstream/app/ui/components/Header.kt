@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,40 +23,37 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Movie
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mikdadstream.app.data.local.Profile
 import com.mikdadstream.app.data.remote.SourceModel
-import com.mikdadstream.app.ui.theme.brandBrush
+import com.mikdadstream.app.ui.theme.LocalAccent
 import com.mikdadstream.app.ui.tv.TvRequestFocusOnShow
 
-/**
- * Header atas: foto profil, kolom pencarian, dan tombol Sumber Video.
- */
 @Composable
 fun AppHeader(
     profile: Profile?,
@@ -67,140 +63,106 @@ fun AppHeader(
     onSourceClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .drawBehind {
-                val strokeWidth = 1.dp.toPx()
-                drawLine(
-                    color = androidx.compose.ui.graphics.Color(0xFF1B1D26),
-                    start = androidx.compose.ui.geometry.Offset(0f, size.height - strokeWidth),
-                    end = androidx.compose.ui.geometry.Offset(size.width, size.height - strokeWidth),
-                    strokeWidth = strokeWidth,
-                )
-            }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // ---- Foto profil ----
-        Box(modifier = Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .size(44.dp)
                     .clip(CircleShape)
-                    .background(brandBrush())
-                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                    .background(Color(0xFF241A3A))
+                    .border(2.dp, LocalAccent.current, CircleShape)
                     .clickable(onClick = onProfileClick),
                 contentAlignment = Alignment.Center,
             ) {
-            val avatar = profile?.avatarUrl
-            if (!avatar.isNullOrBlank()) {
-                AsyncImage(
-                    model = avatar,
-                    contentDescription = "Foto profil",
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(Color(0xFF1573B8), Color(0xFF4FB3F0)))),
-                    contentAlignment = Alignment.Center,
-                ) {
+                val avatar = profile?.avatarUrl
+                if (!avatar.isNullOrBlank()) {
+                    AsyncImage(
+                        model = avatar,
+                        contentDescription = "Foto profil",
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
                     Text(
-                        text = profile?.initials ?: "S",
-                        style = MaterialTheme.typography.titleMedium,
+                        text = "M",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
                         color = Color.White,
-                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Halo, Mikdad", fontSize = 12.sp, color = Color(0xFF9A9BB0))
+                Row {
+                    Text("Mikdad", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                    Text("Stream", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = LocalAccent.current)
+                }
             }
-            // titik "online"
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(12.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF22D3EE))
-                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
-            )
+            HeaderCircleBtn(Icons.Outlined.Search) { onSearchClick() }
+            Spacer(Modifier.width(8.dp))
+            HeaderCircleBtn(Icons.Outlined.Tune) { onSourceClick() }
         }
+        SourceBar()
+    }
+}
 
-        // ---- Pencarian ----
+@Composable
+private fun HeaderCircleBtn(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(Color(0xFF161722))
+            .border(1.dp, Color(0xFF262839), CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun SourceBar(modifier: Modifier = Modifier.fillMaxWidth().padding(horizontal = 0.dp)) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
         Row(
-            modifier = Modifier
-                .weight(1f)
+            Modifier
+                .fillMaxWidth()
                 .height(44.dp)
-                .shadow(4.dp, RoundedCornerShape(999.dp), ambientColor = Color.Black.copy(alpha = 0.35f))
-                .clip(RoundedCornerShape(999.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .border(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
-                    RoundedCornerShape(999.dp),
-                )
-                .clickable(onClick = onSearchClick)
+                .clip(CircleShape)
+                .background(Color(0xFF161722))
+                .border(1.dp, Color(0xFF262839), CircleShape)
+                .clickable { open = true }
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(
-                Icons.Filled.Search,
-                contentDescription = "Cari",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
+            Icon(Icons.Filled.Movie, contentDescription = null, tint = LocalAccent.current, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Sumber Video", fontSize = 14.sp, color = Color(0xFF9A9BB0))
+            Spacer(Modifier.width(8.dp))
             Text(
-                text = "Cari film, anime, drama…",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                "Server 1 HD",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f),
             )
-        }
-
-        // ---- Tombol Sumber Video (dari API) ----
-        Box(
-            modifier = Modifier
-                .height(44.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(MaterialTheme.colorScheme.primary),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(999.dp))
-                    .clickable(onClick = onSourceClick)
-                    .padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Icon(
-                    Icons.Filled.Movie,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(17.dp),
-                )
-                Text(
-                    text = friendlySourceName(activeSource?.safeName),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Icon(Icons.Filled.ExpandMore, contentDescription = null, tint = Color(0xFF9A9BB0))
         }
     }
 }
 
-/** Bottom sheet pemilihan sumber video dari API. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SourceSheet(
@@ -213,7 +175,7 @@ fun SourceSheet(
     onDismiss: () -> Unit,
     onHide: ((SourceModel) -> Unit)? = null,
 ) {
-    val sheetFocus = remember { FocusRequester() }
+    val sheetFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     TvRequestFocusOnShow(sheetFocus, models.isNotEmpty())
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -232,7 +194,6 @@ fun SourceSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .focusRequester(sheetFocus)
                 .padding(horizontal = 18.dp)
                 .padding(bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -252,9 +213,7 @@ fun SourceSheet(
 
             when {
                 loading -> Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 140.dp),
+                    modifier = Modifier.fillMaxWidth().height(140.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                 ) {
@@ -276,9 +235,7 @@ fun SourceSheet(
                 )
 
                 else -> LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 440.dp),
+                    modifier = Modifier.fillMaxWidth().height(440.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     items(models, key = { it.safeId }) { model ->
@@ -302,7 +259,7 @@ private fun SourceRow(
     onClick: () -> Unit,
     onHide: (() -> Unit)? = null,
 ) {
-    val border = if (selected) MaterialTheme.colorScheme.primary
+    val border = if (selected) LocalAccent.current
     else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
 
     Row(
@@ -310,7 +267,7 @@ private fun SourceRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                if (selected) LocalAccent.current.copy(alpha = 0.12f)
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
             )
             .border(1.dp, border, RoundedCornerShape(18.dp))
@@ -337,7 +294,7 @@ private fun SourceRow(
                 Icon(
                     Icons.Outlined.Movie,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = LocalAccent.current,
                 )
             }
         }
@@ -375,7 +332,7 @@ private fun SourceRow(
             Icon(
                 Icons.Filled.CheckCircle,
                 contentDescription = "Aktif",
-                tint = MaterialTheme.colorScheme.primary,
+                tint = LocalAccent.current,
                 modifier = Modifier.size(22.dp),
             )
         } else if (!model.isActive) {
@@ -415,14 +372,4 @@ private fun StatusPill(status: String?) {
             maxLines = 1,
         )
     }
-}
-
-/** Nama sumber ramah tampilan: jangan tampilkan alamat/domain API. */
-private fun friendlySourceName(raw: String?): String {
-    val v = raw?.trim().orEmpty()
-    if (v.isBlank()) return "Sumber"
-    val looksLikeAddress = v.contains("://") ||
-        v.contains("www.") ||
-        Regex("^[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(/.*)?$").matches(v)
-    return if (looksLikeAddress) "Server Utama" else v.take(14)
 }

@@ -39,7 +39,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mikdadstream.app.ui.theme.StreamPrimarySoft
 import com.mikdadstream.app.ui.theme.StreamTextMuted
 
 /** Streamview screen header: back + title + optional trailing actions. */
@@ -262,8 +261,8 @@ fun StreamIconCircle(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    background: Color = StreamPrimarySoft,
-    tint: Color = Color(0xFF06283A),
+    background: Color = MaterialTheme.colorScheme.primaryContainer,
+    tint: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     size: Int = 48,
 ) {
     Box(
@@ -284,6 +283,6 @@ fun StreamDivider(modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(Color(0xFF1B1D26)),
+            .background(Color(0xFF26263A)),
     )
 }

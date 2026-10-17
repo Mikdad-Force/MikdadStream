@@ -230,7 +230,6 @@ fun PlayerScreen(
     ) -> Unit,
 ) {
     val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() as? PlayerActivity }
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val scope = rememberCoroutineScope()
 
@@ -266,7 +265,11 @@ fun PlayerScreen(
     var hudJob by remember { mutableStateOf<Job?>(null) }
     var sleepEndsAt by remember { mutableLongStateOf(0L) }
 
-    val inPip = activity?.inPipState?.value == true
+    val activityRef = remember { mutableStateOf<PlayerActivity?>(null) }
+    LaunchedEffect(LocalContext.current) {
+        activityRef.value = context.findActivity() as? PlayerActivity
+    }
+    val inPip = activityRef.value?.inPipState?.value == true
     val gesture = remember { GestureState() }
     val controlFocus = remember { FocusRequester() }
     val backFocus = remember { FocusRequester() }
@@ -406,7 +409,7 @@ fun PlayerScreen(
     }
 
     fun toggleOrientation() {
-        val act = activity ?: return
+        val act = activityRef.value ?: return
         act.requestedOrientation =
             if (act.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
                 ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -416,14 +419,16 @@ fun PlayerScreen(
     }
 
     fun setBrightness(value: Float) {
-        val w = activity?.window ?: return
+        val act = activityRef.value ?: return
+        val w = act.window ?: return
         val lp = w.attributes
         lp.screenBrightness = value.coerceIn(0.01f, 1f)
         w.attributes = lp
     }
 
     fun currentBrightness(): Float {
-        val b = activity?.window?.attributes?.screenBrightness ?: -1f
+        val act = activityRef.value ?: return 0.5f
+        val b = act.window?.attributes?.screenBrightness ?: -1f
         return if (b < 0f) 0.5f else b
     }
 
@@ -616,6 +621,9 @@ fun PlayerScreen(
         ) {
             delay(3_500)
             showControls = false
+            // Sana di sini adalah fokus yang hilang karena semi-otomatis, sehingga
+            // pemain tidak kehilangan kontrol D-pad di TV.
+            runCatching { controlFocus.requestFocus() }
         }
     }
 
@@ -976,12 +984,13 @@ fun PlayerScreen(
                             refreshSubOptions()
                             showSubMenu = true
                         }
-                        if (activity != null) {
+                        val act = activityRef.value
+                        if (act != null) {
                             CtlButton(icon = Icons.Filled.ScreenRotation, label = "Rotasi") {
                                 toggleOrientation()
                             }
                             CtlButton(icon = Icons.Filled.PictureInPicture, label = "PiP") {
-                                activity?.enterPip()
+                                act.enterPip()
                             }
                         }
                         CtlButton(

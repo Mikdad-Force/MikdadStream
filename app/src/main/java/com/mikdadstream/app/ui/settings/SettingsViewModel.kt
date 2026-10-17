@@ -37,6 +37,7 @@ class SettingsViewModel(
 
     val profile = prefs.profile
     val themeMode = prefs.themeMode
+    val accent = prefs.accent
     val serverStatus = prefs.serverStatus
     val hiddenSources = prefs.hiddenSources
 
@@ -73,6 +74,8 @@ class SettingsViewModel(
     }
 
     fun setThemeMode(mode: Int) = prefsStore.setThemeMode(mode)
+
+    fun setAccent(value: Int) = prefsStore.setAccent(value)
 
     fun refreshAccount() {
         viewModelScope.launch {

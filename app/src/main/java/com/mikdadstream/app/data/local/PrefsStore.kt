@@ -39,6 +39,7 @@ class PrefsStore(context: Context) {
     )
     private val _activeSource = MutableStateFlow(sp.getString(KEY_SOURCE, DEFAULT_SOURCE) ?: DEFAULT_SOURCE)
     private val _themeMode = MutableStateFlow(sp.getInt(KEY_THEME, THEME_SYSTEM))
+    private val _accent = MutableStateFlow(sp.getInt(KEY_ACCENT, ACCENT_PINK))
     private val _language = MutableStateFlow(sp.getString(KEY_LANGUAGE, LANG_ID) ?: LANG_ID)
     private val _premiumUnlocked = MutableStateFlow(sp.getBoolean(KEY_PREMIUM_UNLOCK, false))
     private val _serverStatus = MutableStateFlow<String?>(null)
@@ -49,6 +50,7 @@ class PrefsStore(context: Context) {
     val profile: StateFlow<Profile?> = _profile
     val activeSource: StateFlow<String> = _activeSource
     val themeMode: StateFlow<Int> = _themeMode
+    val accent: StateFlow<Int> = _accent
     val language: StateFlow<String> = _language
     val premiumUnlocked: StateFlow<Boolean> = _premiumUnlocked
     val serverStatus: StateFlow<String?> = _serverStatus
@@ -128,6 +130,11 @@ class PrefsStore(context: Context) {
         _themeMode.value = mode
     }
 
+    fun setAccent(value: Int) {
+        sp.edit { putInt(KEY_ACCENT, value) }
+        _accent.value = value
+    }
+
     fun setLanguage(code: String) {
         sp.edit { putString(KEY_LANGUAGE, code) }
         _language.value = code
@@ -176,6 +183,12 @@ class PrefsStore(context: Context) {
         const val THEME_DARK = 1
         const val THEME_LIGHT = 2
 
+        const val ACCENT_PINK = 0
+        const val ACCENT_AMBER = 1
+        const val ACCENT_TEAL = 2
+        const val ACCENT_VIOLET = 3
+        const val ACCENT_GREEN = 4
+
         const val LANG_ID = "id"
         const val LANG_EN = "en"
         const val LANG_SU = "su"
@@ -192,6 +205,7 @@ class PrefsStore(context: Context) {
         private const val KEY_PREMIUM = "premium"
         private const val KEY_SOURCE = "active_source"
         private const val KEY_THEME = "theme_mode"
+        private const val KEY_ACCENT = "accent_choice"
         private const val KEY_LANGUAGE = "app_language"
         private const val KEY_PREMIUM_UNLOCK = "premium_unlocked"
         private const val KEY_HIDDEN = "hidden_sources"

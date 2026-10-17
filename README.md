@@ -15,10 +15,8 @@ Aplikasi streaming native Android (Kotlin + Jetpack Compose) yang terhubung ke s
   - Picture-in-Picture
   - Timer tidur 15/30/45/60 menit
   - Maju/mundur otomatis antar episode
-- Pemutaran **native** (ExoPlayer/Media3) — tanpa WebView / hoster embed
+- Hoster web (Blogger, Mega, OK.ru, Rumble, dll) diputar via WebView
 - Riwayat tontonan + posisi terakhir
-
-> Peta kode lengkap untuk kontributor/AI ada di [`AGENTS.md`](AGENTS.md).
 
 ## Bangun APK
 

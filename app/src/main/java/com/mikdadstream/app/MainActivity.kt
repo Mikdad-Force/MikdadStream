@@ -70,6 +70,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by AppGraph.prefs.themeMode.collectAsState()
+            val accentIndex by AppGraph.prefs.accent.collectAsState()
+            val accent = com.mikdadstream.app.ui.theme.AccentChoice.from(accentIndex)
             val language by AppGraph.prefs.language.collectAsState()
             val darkTheme = when (themeMode) {
                 1 -> true
@@ -81,12 +83,11 @@ class MainActivity : ComponentActivity() {
                 controller.isAppearanceLightStatusBars = !darkTheme
                 controller.isAppearanceLightNavigationBars = !darkTheme
             }
-            val isTv = applicationContext.isTelevision()
-            MikdadStreamTheme(darkTheme = darkTheme, isTv = isTv) {
+            MikdadStreamTheme(darkTheme = darkTheme, accent = accent) {
                 androidx.compose.runtime.CompositionLocalProvider(
                     com.mikdadstream.app.ui.i18n.LocalStrings provides com.mikdadstream.app.ui.i18n.appStringsFor(language),
                 ) {
-                    AppRoot(isTv = isTv)
+                    AppRoot(isTv = applicationContext.isTelevision())
                 }
             }
         }
@@ -94,8 +95,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AppRoot(isTv: Boolean) {
-    val loggedIn by AppGraph.prefs.loggedIn.collectAsState()
+private fun AppRoot(isTv: Boolean) {        val loggedIn by AppGraph.prefs.loggedIn.collectAsState()
     var booting by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
     val updater = AppGraph.updater
@@ -301,10 +301,11 @@ private fun SplashScreen() {
         label = "pulse",
     )
 
+    val accent = com.mikdadstream.app.ui.theme.LocalAccent.current
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.radialGradient(listOf(Color(0xFF0A2437), Color(0xFF04080F)))),
+            .background(Brush.radialGradient(listOf(accent.copy(alpha = 0.22f), Color(0xFF0B0B12)))),
         contentAlignment = Alignment.Center,
     ) {
         Column(

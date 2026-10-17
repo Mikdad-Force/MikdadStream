@@ -56,6 +56,7 @@ import com.mikdadstream.app.data.repository.StreamRepository
 import com.mikdadstream.app.ui.components.FullScreenState
 import com.mikdadstream.app.ui.components.PosterImage
 import com.mikdadstream.app.ui.components.SectionHeader
+import com.mikdadstream.app.ui.tv.isTelevision
 import com.mikdadstream.app.ui.components.VideoCard
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -103,20 +104,21 @@ fun LibraryScreen(
             .fillMaxSize()
             .statusBarsPadding(),
     ) {
-        // ---- Streamview header ----
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = if (tab == 0) "Koleksi" else "Riwayat",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.weight(1f),
-            )
+        if (!androidx.compose.ui.platform.LocalContext.current.isTelevision()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = if (tab == 0) "Koleksi" else "Riwayat",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
 
         // ---- Segmented pill (Koleksi / Riwayat) ----

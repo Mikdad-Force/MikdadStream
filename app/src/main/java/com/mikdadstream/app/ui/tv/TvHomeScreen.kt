@@ -7,15 +7,18 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,12 +30,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -48,13 +57,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -68,133 +82,83 @@ import com.mikdadstream.app.data.remote.MediaItem
 import com.mikdadstream.app.ui.components.LoadingGrid
 import com.mikdadstream.app.ui.components.PosterImage
 import com.mikdadstream.app.ui.home.HomeViewModel
-import com.mikdadstream.app.ui.theme.Outfit
-import com.mikdadstream.app.ui.theme.Oswald
-import com.mikdadstream.app.ui.theme.Poppins
-import com.mikdadstream.app.ui.theme.StreamPrimarySoft
+import com.mikdadstream.app.ui.theme.LocalAccent
 import kotlinx.coroutines.launch
 
-private val TvBg = Color(0xFF0A0B12)
-private val TvCardBg = Color(0xFF14151F)
-private val TvAccent = Color(0xFFFA4776)
+private val TvBg = Color(0xFF0A0B10)
+private val TvSurface = Color(0xFF161722)
+private val TvStroke = Color(0xFF262839)
+private val TvMuted = Color(0xFF9A9BB0)
+private val TvHero = Color(0xFF2A1C3F)
+private val TvTrack = Color(0xFF23243A)
 private val TvStar = Color(0xFFFFC700)
-private val TvPanel = Color(0xFF676571).copy(alpha = 0.34f)
+
+fun Modifier.tvFocusable(shape: Shape, onClick: () -> Unit = {}): Modifier = composed {
+    var focused by remember { mutableStateOf(false) }
+    this.onFocusChanged { focused = it.isFocused }
+        .border(if (focused) 3.dp else 0.dp, Color.White, shape)
+        .clip(shape)
+        .clickable(onClick = onClick)
+}
 
 @Composable
-fun TvTopBar(
-    activeSourceName: String?,
-    currentRoute: String?,
-    onNavigate: (String) -> Unit,
-    onSourceClick: () -> Unit,
-) {
+private fun TvTag(text: String, bg: Color, fg: Color) {
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(listOf(Color(0xCC0A0B12), TvBg.copy(alpha = 0f)))
-            )
-            .padding(horizontal = 40.dp, vertical = 18.dp),
+        Modifier.clip(RoundedCornerShape(12.dp)).background(bg).padding(horizontal = 12.dp, vertical = 5.dp)
     ) {
-        Row(
-            modifier = Modifier.align(Alignment.CenterStart),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(34.dp),
-        ) {
-            TvTopLink("Beranda", currentRoute == "home") { onNavigate("home") }
-            TvTopLink("Cari", currentRoute == "search") { onNavigate("search") }
-            TvTopLink("Koleksi", currentRoute == "library") { onNavigate("library") }
-        }
-
-        Text(
-            text = "MIKDAD",
-            fontFamily = Oswald,
-            fontWeight = FontWeight.Bold,
-            fontSize = 30.sp,
-            letterSpacing = 3.sp,
-            color = TvAccent,
-            modifier = Modifier.align(Alignment.Center),
-        )
-
-        Row(
-            modifier = Modifier.align(Alignment.CenterEnd),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            TvTopIcon(Icons.Filled.Search, "Cari") { onNavigate("search") }
-            TvTopLink(
-                text = activeSourceName?.takeIf { it.isNotBlank() } ?: "Sumber",
-                selected = false,
-                onClick = onSourceClick,
-            )
-        }
+        Text(text, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = fg)
     }
 }
 
 @Composable
-private fun TvTopLink(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit,
+private fun TvHeaderSourceBar(
+    activeSourceName: String?,
+    onSourceClick: () -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.08f else 1f, tween(140), label = "topLink")
-    Text(
-        text = text,
-        fontFamily = Outfit,
-        fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Medium,
-        fontSize = 20.sp,
-        color = if (selected || focused) Color.White else Color(0xFFD3D3DA),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .scale(scale)
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-    )
-}
-
-@Composable
-private fun TvTopIcon(icon: ImageVector, label: String, onClick: () -> Unit) {
-    Icon(
-        icon,
-        contentDescription = label,
-        tint = Color.White,
-        modifier = Modifier
+    Row(
+        Modifier
+            .width(260.dp)
+            .height(44.dp)
             .clip(CircleShape)
-            .clickable(onClick = onClick)
-            .padding(8.dp)
-            .size(24.dp),
-    )
-}
-
-@Composable
-private fun TvCategoryPill(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(if (selected) TvAccent else Color.White.copy(alpha = 0.06f))
-            .border(
-                width = 1.dp,
-                color = if (selected) Color.Transparent else Color.White.copy(alpha = 0.22f),
-                shape = RoundedCornerShape(999.dp),
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 9.dp),
+            .background(TvSurface)
+            .border(1.dp, TvStroke, CircleShape)
+            .clickable(onClick = onSourceClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = LocalAccent.current, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Sumber Video", fontSize = 14.sp, color = TvMuted)
+        Spacer(Modifier.width(8.dp))
         Text(
-            text = label,
-            fontFamily = Outfit,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            fontSize = 15.sp,
-            color = if (selected) Color.White else Color(0xFFD3D3DA),
+            activeSourceName?.takeIf { it.isNotBlank() } ?: "Server 1 HD",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        Icon(Icons.Rounded.Settings, contentDescription = null, tint = TvMuted, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun TvSourceBar(modifier: Modifier = Modifier.fillMaxWidth()) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Row(
+            Modifier.fillMaxWidth().height(44.dp).clip(CircleShape).background(TvSurface)
+                .border(1.dp, TvStroke, CircleShape).clickable { open = true }.padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Outlined.Info, null, tint = LocalAccent.current, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Sumber Video", fontSize = 14.sp, color = TvMuted)
+            Spacer(Modifier.width(8.dp))
+            Text("Server 1 HD", fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Icon(Icons.Rounded.Settings, null, tint = TvMuted, modifier = Modifier.size(20.dp))
+        }
     }
 }
 
@@ -204,8 +168,15 @@ fun TvHomeScreen(
     contentPadding: PaddingValues,
     profile: Profile?,
     initialFocus: FocusRequester,
+    headerFocus: FocusRequester,
+    currentRoute: String? = null,
+    activeSourceName: String? = null,
+    onSourceClick: () -> Unit = {},
     onOpenItem: (item: MediaItem, modelId: String?) -> Unit,
     onContinue: (item: HistoryEntity) -> Unit,
+    onNavigate: (String) -> Unit = {},
+    railFocusRequester: FocusRequester? = null,
+    contentFocusRequester: FocusRequester? = null,
 ) {
     val state by viewModel.state.collectAsState()
     val history by viewModel.continueWatching.collectAsState()
@@ -236,20 +207,50 @@ fun TvHomeScreen(
             .fillMaxSize()
             .background(TvBg),
     ) {
+        Box(
+            modifier = Modifier.fillMaxWidth()
+                .statusBarsPadding()
+                .padding(start = 66.dp, end = 16.dp, top = 12.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            TvHeaderSourceBar(
+                activeSourceName = activeSourceName,
+                onSourceClick = onSourceClick,
+            )
+        }
+        TvSideRail(
+            currentRoute = currentRoute,
+            onNavigate = onNavigate,
+            contentFocusRequester = contentFocusRequester,
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState)
+                .padding(start = 66.dp)
                 .padding(
-                    top = contentPadding.calculateTopPadding(),
+                    top = 16.dp,
                     bottom = contentPadding.calculateBottomPadding() + 40.dp,
+                )
+                .then(
+                    if (railFocusRequester != null) Modifier.focusProperties { left = railFocusRequester }
+                    else Modifier
                 ),
             verticalArrangement = Arrangement.spacedBy(28.dp),
         ) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 36.dp, end = 16.dp, top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(Modifier.weight(1f)) {
+                    Text("Mikdad", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                    Text("Stream", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = LocalAccent.current)
+                }
+            }
+
             if (hero != null) {
                 TvHero(
                     item = hero,
-                    profile = profile,
                     playFocusRequester = initialFocus,
                     onPlay = { onOpenItem(hero, viewModel.activeSourceId()) },
                     onInfo = { onOpenItem(hero, viewModel.activeSourceId()) },
@@ -258,7 +259,7 @@ fun TvHomeScreen(
 
             if (state.categories.isNotEmpty()) {
                 LazyRow(
-                    contentPadding = PaddingValues(horizontal = 40.dp),
+                    contentPadding = PaddingValues(horizontal = 36.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.offset(y = (-18).dp),
                 ) {
@@ -274,7 +275,7 @@ fun TvHomeScreen(
 
             when {
                 state.loading && state.items.isEmpty() -> {
-                    LoadingGrid(modifier = Modifier.padding(horizontal = 40.dp))
+                    LoadingGrid(modifier = Modifier.padding(horizontal = 36.dp))
                 }
 
                 state.error != null && state.items.isEmpty() -> {
@@ -301,12 +302,7 @@ fun TvHomeScreen(
                             }
                         }
                     }
-                    TvRow(title = "Film Populer") {
-                        items(rest.take(14), key = { "rec" + it.safeId + it.hashCode() }) { item ->
-                            TvPosterCard(item) { onOpenItem(item, viewModel.activeSourceId()) }
-                        }
-                    }
-                    TvRow(title = state.activeCategory?.name ?: "Semua Konten") {
+                    TvRow(title = "Rekomendasi untukmu") {
                         items(rest, key = { it.safeId + (it.source ?: "") + it.hashCode() }) { item ->
                             TvPosterCard(item) { onOpenItem(item, viewModel.activeSourceId()) }
                         }
@@ -318,7 +314,7 @@ fun TvHomeScreen(
                         ) {
                             LinearProgressIndicator(
                                 modifier = Modifier.width(160.dp),
-                                color = TvAccent,
+                                color = LocalAccent.current,
                             )
                         }
                     }
@@ -331,7 +327,6 @@ fun TvHomeScreen(
 @Composable
 private fun TvHero(
     item: MediaItem,
-    profile: Profile?,
     playFocusRequester: FocusRequester,
     onPlay: () -> Unit,
     onInfo: () -> Unit,
@@ -339,7 +334,9 @@ private fun TvHero(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(430.dp),
+            .height(202.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(TvHero),
     ) {
         AsyncImage(
             model = item.cover,
@@ -369,120 +366,94 @@ private fun TvHero(
                     )
                 )
         )
+        Box(Modifier.align(Alignment.TopEnd)) {
+            Box(
+                Modifier.size(260.dp).clip(CircleShape).background(LocalAccent.current)
+                    .offset(x = 40.dp, y = (-30).dp)
+            )
+        }
+        Box(Modifier.align(Alignment.CenterEnd)) {
+            Box(
+                Modifier.size(112.dp).clip(CircleShape).background(Color(0xFFFFB84D))
+                    .offset(x = (-181).dp, y = 0.dp)
+            )
+        }
         Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .padding(start = 48.dp, end = 40.dp)
-                .fillMaxWidth(0.52f),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(start = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            TvTag("TOP 1 HARI INI", Color(0xFFFFB84D), Color(0xFF14101C))
             Text(
                 text = item.safeTitle,
-                fontFamily = Oswald,
-                fontWeight = FontWeight.Bold,
-                fontSize = 56.sp,
-                lineHeight = 60.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 38.sp,
+                lineHeight = 42.sp,
                 color = Color.White,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            val subtitle = item.tag?.firstOrNull { it.isNotBlank() }
-            if (subtitle != null) {
-                Text(
-                    text = subtitle.uppercase(),
-                    fontFamily = Oswald,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 30.sp,
-                    lineHeight = 34.sp,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
             Text(
-                text = item.desc?.takeIf { it.isNotBlank() }
-                    ?: "Streaming film & series favoritmu dalam kualitas terbaik.",
-                fontFamily = Outfit,
-                fontWeight = FontWeight.Medium,
-                fontSize = 18.sp,
-                lineHeight = 27.sp,
-                color = Color(0xFFE4E4EA),
-                maxLines = 3,
+                text = item.tag?.firstOrNull { it.isNotBlank() }?.uppercase() ?: "Serial · 2026 · Thriller · 8 Episode · 4K",
+                fontWeight = FontWeight.Normal,
+                fontSize = 14.sp,
+                color = Color(0xFF9A9BB0),
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            item.hotScore?.toDoubleOrNull()?.let { TvStarRating(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                TvHeroButton(
-                    text = "Putar",
-                    icon = Icons.Filled.PlayArrow,
-                    primary = true,
-                    onClick = onPlay,
-                    modifier = Modifier.focusRequester(playFocusRequester),
-                )
-                TvHeroButton("Info", Icons.Outlined.Info, primary = false, onClick = onInfo)
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    Modifier.focusRequester(playFocusRequester).height(44.dp).tvFocusable(CircleShape) { onPlay() }
+                        .background(LocalAccent.current).padding(horizontal = 28.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color(0xFF14101C), modifier = Modifier.size(18.dp))
+                        Text("Putar", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF14101C))
+                    }
+                }
+                Box(
+                    Modifier.height(44.dp).tvFocusable(CircleShape) { onInfo() }
+                        .border(1.dp, Color(0xFF6B5A8A), CircleShape).padding(horizontal = 28.dp),
+                    contentAlignment = Alignment.Center
+                ) { Text("Detail", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
+                Box(
+                    Modifier.height(44.dp).tvFocusable(CircleShape) {}
+                        .border(1.dp, Color(0xFF6B5A8A), CircleShape).padding(horizontal = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) { Text("+ Daftar", fontSize = 15.sp, fontWeight = FontWeight.Bold) }
             }
         }
-        Text(
-            text = "Selamat datang, ${profile?.displayName?.substringBefore(" ")?.ifBlank { null } ?: "Sobat"}",
-            fontFamily = Outfit,
-            fontWeight = FontWeight.Medium,
-            fontSize = 18.sp,
-            color = Color.White.copy(alpha = 0.85f),
-            modifier = Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 6.dp),
-        )
     }
 }
 
 @Composable
-private fun TvStarRating(score: Double) {
-    val rating = (if (score > 5.0) score / 2.0 else score).coerceIn(0.0, 5.0)
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        repeat(5) { index ->
-            val filled = index < rating
-            Icon(
-                Icons.Filled.Star,
-                contentDescription = null,
-                tint = if (filled) TvStar else Color.White.copy(alpha = 0.35f),
-                modifier = Modifier.size(24.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun TvHeroButton(
-    text: String,
-    icon: ImageVector,
-    primary: Boolean,
+private fun TvCategoryPill(
+    label: String,
+    selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.06f else 1f, tween(150), label = "heroBtn")
-    val bg = if (primary) TvAccent else Color.Transparent
-    val fg = Color.White
-    Row(
-        modifier = modifier
-            .scale(scale)
+    Box(
+        modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(bg)
+            .background(if (selected) LocalAccent.current else TvSurface)
             .border(
-                width = if (primary) 0.dp else 2.dp,
-                color = if (primary) Color.Transparent else Color.White.copy(alpha = 0.75f),
+                width = 1.dp,
+                color = if (selected) Color.Transparent else TvStroke,
                 shape = RoundedCornerShape(999.dp),
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 26.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 18.dp, vertical = 9.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(22.dp))
         Text(
-            text = text,
-            fontFamily = Outfit,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 18.sp,
-            color = fg,
+            text = label,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            fontSize = 15.sp,
+            color = if (selected) Color.White else Color(0xFFD3D3DA),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -497,27 +468,19 @@ private fun TvRow(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             text = title,
-            fontFamily = Poppins,
             fontWeight = FontWeight.SemiBold,
             fontSize = 20.sp,
             color = Color.White,
-            modifier = Modifier.padding(start = 40.dp),
+            modifier = Modifier.padding(start = 36.dp),
         )
         Box(modifier = Modifier.fillMaxWidth()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 34.dp)
-                    .background(TvPanel, RoundedCornerShape(24.dp))
-                    .padding(vertical = 16.dp),
-            ) {
-                LazyRow(
-                    state = listState,
-                    contentPadding = PaddingValues(horizontal = 22.dp),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
-                    content = content,
-                )
-            }
+            LazyRow(
+                state = listState,
+                contentPadding = PaddingValues(horizontal = 36.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+                content = content,
+            )
             TvRowNext(
                 onClick = {
                     scope.launch {
@@ -565,7 +528,7 @@ private fun TvPosterCard(item: MediaItem, onClick: () -> Unit) {
             .onFocusChanged { focused = it.isFocused }
             .clip(RoundedCornerShape(if (focused) 18.dp else 14.dp))
             .clickable(onClick = onClick)
-            .background(if (focused) TvCardBg else Color.Transparent)
+            .background(if (focused) TvSurface else Color.Transparent)
             .padding(6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -575,7 +538,7 @@ private fun TvPosterCard(item: MediaItem, onClick: () -> Unit) {
                 .aspectRatio(2f / 3f)
                 .clip(RoundedCornerShape(if (focused) 16.dp else 12.dp))
                 .then(
-                    if (focused) Modifier.border(2.dp, TvAccent, RoundedCornerShape(16.dp))
+                    if (focused) Modifier.border(2.dp, LocalAccent.current, RoundedCornerShape(16.dp))
                     else Modifier
                 ),
         ) {
@@ -584,7 +547,6 @@ private fun TvPosterCard(item: MediaItem, onClick: () -> Unit) {
         if (focused) {
             Text(
                 text = item.safeTitle,
-                fontFamily = Outfit,
                 fontWeight = FontWeight.Medium,
                 fontSize = 14.sp,
                 color = Color.White,
@@ -601,63 +563,24 @@ private fun TvPosterCard(item: MediaItem, onClick: () -> Unit) {
 private fun TvContinueCard(entry: HistoryEntity, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.16f else 1f, tween(160), label = "cont")
-    Column(
+    Box(
         modifier = Modifier
-            .width(214.dp)
+            .size(165.dp, 94.dp)
             .scale(scale)
-            .onFocusChanged { focused = it.isFocused }
-            .clip(RoundedCornerShape(if (focused) 18.dp else 14.dp))
-            .clickable(onClick = onClick)
-            .background(if (focused) TvCardBg else Color.Transparent)
-            .padding(6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .tvFocusable(RoundedCornerShape(14.dp), onClick)
+            .background(TvSurface),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(if (focused) 16.dp else 12.dp))
-                .then(
-                    if (focused) Modifier.border(2.dp, TvAccent, RoundedCornerShape(16.dp))
-                    else Modifier
-                ),
-        ) {
-            PosterImage(url = entry.cover, modifier = Modifier.fillMaxSize())
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(46.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xCC02050F)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Filled.PlayArrow,
-                    contentDescription = "Lanjutkan",
-                    tint = Color.White,
-                    modifier = Modifier.size(26.dp),
-                )
-            }
-            LinearProgressIndicator(
-                progress = { entry.progress },
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp),
-                color = TvAccent,
-                trackColor = Color(0x66000000),
-            )
-        }
-        if (focused) {
-            Text(
-                text = entry.title,
-                fontFamily = Outfit,
-                fontWeight = FontWeight.Medium,
-                fontSize = 14.sp,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        } else {
-            Spacer(Modifier.height(14.dp))
-        }
+        PosterImage(url = entry.cover, modifier = Modifier.fillMaxSize())
+        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(Color(0x40000000)))
+        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(entry.progress).height(3.dp).background(LocalAccent.current))
+        Text(
+            entry.title,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, bottom = 10.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -669,26 +592,104 @@ private fun TvMessage(
     onAction: (() -> Unit)? = null,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp, vertical = 60.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 36.dp, vertical = 60.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = title,
-            fontFamily = Poppins,
             fontWeight = FontWeight.SemiBold,
             fontSize = 20.sp,
             color = Color.White,
         )
         Text(
             text = subtitle,
-            fontFamily = Outfit,
             fontWeight = FontWeight.Medium,
             fontSize = 16.sp,
-            color = StreamPrimarySoft,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (actionLabel != null && onAction != null) {
-            TvHeroButton(actionLabel, Icons.Outlined.Refresh, primary = true, onClick = onAction)
+            Box(
+                Modifier.height(44.dp).tvFocusable(CircleShape) { onAction() }
+                    .background(LocalAccent.current).padding(horizontal = 28.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(actionLabel, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF14101C))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TvSideRail(
+    currentRoute: String? = null,
+    onNavigate: (String) -> Unit,
+    contentFocusRequester: FocusRequester? = null,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(66.dp)
+            .background(Color.Transparent)
+            .drawBehind {
+                drawLine(
+                    Color(0xFF1B1C28),
+                    Offset(size.width, 0f),
+                    Offset(size.width, size.height),
+                    2f,
+                )
+            }
+            .padding(vertical = 14.dp)
+            .then(
+                if (contentFocusRequester != null) Modifier.focusProperties { right = contentFocusRequester }
+                else Modifier
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF241A3A))
+                .border(2.dp, LocalAccent.current, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "M",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White,
+            )
+        }
+        Spacer(Modifier.height(26.dp))
+        val items = listOf(
+            Triple(Icons.Rounded.Search, "Cari", "search"),
+            Triple(Icons.Rounded.Home, "Home", "home"),
+            Triple(Icons.Rounded.AutoAwesome, "Rekomendasi", "recommend"),
+            Triple(Icons.Rounded.Download, "Download", "downloads"),
+            Triple(Icons.Rounded.History, "History", "history"),
+        )
+        items.forEach { (icon, label, route) ->
+            val sel = currentRoute == route
+            Box(
+                Modifier.padding(vertical = 8.dp).size(44.dp).tvFocusable(CircleShape) { onNavigate(route) }
+                    .background(if (sel) LocalAccent.current else Color.Transparent),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = label,
+                    tint = if (sel) Color(0xFF14101C) else TvMuted,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Box(
+            Modifier.size(44.dp).tvFocusable(CircleShape) { onNavigate("settings") },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Rounded.Settings, contentDescription = "Pengaturan", tint = TvMuted, modifier = Modifier.size(24.dp))
         }
     }
 }

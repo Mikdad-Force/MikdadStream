@@ -115,7 +115,7 @@ fun TvPairingScreen(onPaired: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0B12))
+            .background(Color(0xFF0B0B12))
             .padding(horizontal = 48.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

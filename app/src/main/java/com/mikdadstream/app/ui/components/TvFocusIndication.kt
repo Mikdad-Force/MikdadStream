@@ -91,5 +91,6 @@ object TvFocusIndication : IndicationNodeFactory {
         }
     }
 
-    private val FocusPrimary = Color(0xFFFA4776)
+    // Ring fokus D-pad: persis gaya mockup TV (border putih TextMain).
+    private val FocusPrimary = Color(0xFFF4F4F8)
 }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -68,7 +70,7 @@ import com.mikdadstream.app.ui.components.pressScale
 import com.mikdadstream.app.ui.components.softShadow
 import com.mikdadstream.app.ui.theme.PlusJakarta
 import com.mikdadstream.app.ui.i18n.LocalStrings
-import com.mikdadstream.app.ui.theme.StreamPrimarySoft
+import com.mikdadstream.app.ui.theme.brandBrush
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -78,6 +80,8 @@ fun HomeScreen(
     profile: Profile?,
     accountBadge: String = "Normal",
     isPremium: Boolean = false,
+    activeSourceName: String? = null,
+    onSourceClick: () -> Unit = {},
     onProfileClick: () -> Unit,
     onSearchClick: () -> Unit,
     onNotificationClick: () -> Unit,
@@ -128,6 +132,8 @@ fun HomeScreen(
                     profile = profile,
                     accountBadge = accountBadge,
                     isPremium = isPremium,
+                    activeSourceName = activeSourceName,
+                    onSourceClick = onSourceClick,
                     onProfileClick = onProfileClick,
                     onSearchClick = onSearchClick,
                     onNotificationClick = onNotificationClick,
@@ -267,85 +273,133 @@ private fun GreetingHeader(
     profile: Profile?,
     accountBadge: String,
     isPremium: Boolean,
+    activeSourceName: String? = null,
+    onSourceClick: () -> Unit = {},
     onProfileClick: () -> Unit,
     onSearchClick: () -> Unit,
     onNotificationClick: () -> Unit,
 ) {
     val ls = LocalStrings.current
-    Row(
+    val accent = MaterialTheme.colorScheme.primary
+    Column(
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(modifier = Modifier.size(50.dp)) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .align(Alignment.TopStart)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
-                    .clickable(onClick = onProfileClick),
-                contentAlignment = Alignment.Center,
-            ) {
-                val avatar = profile?.avatarUrl
-                if (!avatar.isNullOrBlank()) {
-                    AsyncImage(
-                        model = avatar,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    Text(
-                        text = profile?.initials ?: "S",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
-            if (isPremium) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            // ---- Avatar ring aksen (persis mockup) ----
+            Box(modifier = Modifier.size(48.dp)) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .size(18.dp)
+                        .size(44.dp)
+                        .align(Alignment.TopStart)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
-                        .border(2.dp, MaterialTheme.colorScheme.background, CircleShape),
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .border(2.dp, accent, CircleShape)
+                        .clickable(onClick = onProfileClick),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        Icons.Filled.Star,
-                        contentDescription = "Premium",
-                        tint = Color.White,
-                        modifier = Modifier.size(10.dp),
-                    )
+                    val avatar = profile?.avatarUrl
+                    if (!avatar.isNullOrBlank()) {
+                        AsyncImage(
+                            model = avatar,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Text(
+                            text = profile?.initials ?: "S",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                if (isPremium) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(accent)
+                            .border(2.dp, MaterialTheme.colorScheme.background, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Star,
+                            contentDescription = "Premium",
+                            tint = Color.White,
+                            modifier = Modifier.size(10.dp),
+                        )
+                    }
                 }
             }
-        }
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
                     text = "${ls.greetingPrefix} ${profile?.displayName?.substringBefore(" ")?.ifBlank { null } ?: ls.greetingFallback}",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
                 )
-                AccountBadge(label = accountBadge, highlighted = isPremium)
+                Row {
+                    Text(text = "Mikdad", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                    Text(text = "Stream", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = accent)
+                }
             }
-            Text(
-                text = ls.greetingSubtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            IconHeaderButton(Icons.Outlined.Search, onClick = onSearchClick)
+            IconHeaderButton(Icons.Outlined.Notifications, showDot = true, onClick = onNotificationClick)
         }
-        IconHeaderButton(Icons.Outlined.Search, onClick = onSearchClick)
-        IconHeaderButton(Icons.Outlined.Notifications, showDot = true, onClick = onNotificationClick)
+        // ---- Bar Sumber Video full-width (persis mockup) ----
+        SourceBarRow(name = activeSourceName, onClick = onSourceClick)
+    }
+}
+
+/** Bar "Sumber Video" full-width, persis mockup folder Theme (MikdadStreamUI.kt). */
+@Composable
+private fun SourceBarRow(name: String?, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(22.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            Icons.Filled.PlayArrow,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = "Sumber Video",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = name?.trim()?.takeIf { it.isNotBlank() } ?: "Sumber",
+            modifier = Modifier.weight(1f),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Icon(
+            Icons.Filled.ExpandMore,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
@@ -405,7 +459,7 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                 .fillMaxWidth()
                 .height(200.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF6BC1F5))))
+                .background(brandBrush())
                 .pressScale(onClick),
         ) {
             PosterImage(
@@ -424,6 +478,15 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                         )
                     )
             )
+            // Lingkaran aksen dekoratif di ujung atas — persis mockup
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 34.dp, y = (-34).dp)
+                    .size(130.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
+            )
             Column(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
@@ -431,11 +494,20 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                     .fillMaxWidth(0.62f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Text(
-                    text = ls.heroPopular,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = StreamPrimarySoft,
-                )
+                // Badge "TOP 1 HARI INI" — persis PDF hal 1
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = "TOP 1 HARI INI",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.background,
+                    )
+                }
                 Text(
                     text = item.safeTitle,
                     style = MaterialTheme.typography.headlineSmall.copy(fontFamily = PlusJakarta, fontSize = 17.sp, lineHeight = 22.sp),
@@ -446,31 +518,48 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                 Text(
                     text = item.desc?.takeIf { it.isNotBlank() } ?: "Tonton sekarang di Mikdad Stream",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = StreamPrimarySoft,
+                    color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(
-                    modifier = Modifier
-                        .softShadow(6.dp, RoundedCornerShape(999.dp))
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(Color.White)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Icon(
-                        Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        text = ls.watchNow,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .softShadow(6.dp, RoundedCornerShape(999.dp))
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.background,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            text = ls.watchNow,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.background,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color.White.copy(alpha = 0.12f))
+                            .border(1.dp, Color.White.copy(alpha = 0.6f), RoundedCornerShape(999.dp))
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "+ Daftar",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
         }

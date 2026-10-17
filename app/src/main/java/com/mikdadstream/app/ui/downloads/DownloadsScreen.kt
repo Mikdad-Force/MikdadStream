@@ -50,6 +50,7 @@ import com.mikdadstream.app.ui.components.PosterImage
 import com.mikdadstream.app.ui.i18n.LocalStrings
 import com.mikdadstream.app.ui.components.StreamPrimaryButton
 import com.mikdadstream.app.ui.components.StreamScreenHeader
+import com.mikdadstream.app.ui.tv.isTelevision
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -99,7 +100,9 @@ fun DownloadsScreen(
             .fillMaxSize()
             .statusBarsPadding(),
     ) {
-        StreamScreenHeader(title = s.dlTitle, onBack = onBack)
+        if (!androidx.compose.ui.platform.LocalContext.current.isTelevision()) {
+            StreamScreenHeader(title = s.dlTitle, onBack = onBack)
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(

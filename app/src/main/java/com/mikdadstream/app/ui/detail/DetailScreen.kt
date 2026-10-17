@@ -66,8 +66,8 @@ import com.mikdadstream.app.ui.components.PosterImage
 import com.mikdadstream.app.ui.components.SectionHeader
 import com.mikdadstream.app.ui.components.ShimmerBox
 import com.mikdadstream.app.ui.theme.StreamBg
-import com.mikdadstream.app.ui.theme.StreamPrimarySoft
 import com.mikdadstream.app.ui.tv.TvRequestFocusOnShow
+import com.mikdadstream.app.ui.tv.isTelevision
 import kotlinx.coroutines.delay
 
 @Composable
@@ -181,24 +181,26 @@ private fun DetailContent(
                         Brush.verticalGradient(listOf(Color.Transparent, StreamBg))
                     )
                 )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ScrimIcon(
-                        icon = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Kembali",
-                        onClick = onBack,
-                    )
-                    ScrimIcon(
-                        icon = if (state.inWatchlist) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = if (state.inWatchlist) "Hapus dari daftar" else "Tambah ke daftar",
-                        onClick = onToggleWatchlist,
-                    )
+                if (!androidx.compose.ui.platform.LocalContext.current.isTelevision()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ScrimIcon(
+                            icon = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Kembali",
+                            onClick = onBack,
+                        )
+                        ScrimIcon(
+                            icon = if (state.inWatchlist) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = if (state.inWatchlist) "Hapus dari daftar" else "Tambah ke daftar",
+                            onClick = onToggleWatchlist,
+                        )
+                    }
                 }
             }
         }
@@ -319,8 +321,8 @@ private fun DetailContent(
                 CircleAction(
                     icon = if (state.inWatchlist) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                     contentDescription = if (state.inWatchlist) "Hapus dari daftar" else "Tambah ke daftar",
-                    background = StreamPrimarySoft,
-                    tint = Color(0xFF06283A),
+                    background = MaterialTheme.colorScheme.primaryContainer,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     onClick = onToggleWatchlist,
                 )
                 CircleAction(

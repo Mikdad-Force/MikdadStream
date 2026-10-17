@@ -11,6 +11,7 @@ data class AppStrings(
     val navSearch: String,
     val navLibrary: String,
     val navHome: String,
+    val navRecommend: String = "Rekomendasi",
     val navDownloads: String,
     val navSettings: String,
 
