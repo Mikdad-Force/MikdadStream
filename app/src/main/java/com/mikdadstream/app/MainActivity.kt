@@ -236,7 +236,7 @@ private fun AuthFlow(isTv: Boolean) {
                     }
                 }
                 val ok = runCatching {
-                    AppGraph.apiClient.auth.loginWithGoogleAsync(email, name, avatar, sub)
+                    AppGraph.apiClient.auth.loginWithGoogleAsync(email, name, avatar, sub, account.idToken)
                 }.getOrDefault(false)
                 if (ok) finishLogin() else deviceLogin(email)
                 authBusy = false

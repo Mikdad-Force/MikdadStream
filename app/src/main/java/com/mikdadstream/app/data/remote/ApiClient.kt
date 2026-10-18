@@ -101,6 +101,7 @@ class AuthGateway(
         emailOverride: String? = null,
         avatarUrl: String? = null,
         googleSub: String? = null,
+        googleIdToken: String? = null,
         deviceType: String = "android_mobile",
     ): Boolean = synchronized(lock) {
         val instanceId = prefs.appInstanceId
@@ -124,6 +125,7 @@ class AuthGateway(
             addProperty("app_instance_id", instanceId)
             addProperty("device_type", deviceType)
             addProperty("nonce", nonce)
+            googleIdToken?.takeIf { it.isNotBlank() }?.let { addProperty("id_token", it) }
         })
         val data = data(loginRoot)
         val access = data?.get("access_token")?.takeIf { it.isJsonPrimitive }?.asString ?: return false
@@ -146,11 +148,13 @@ class AuthGateway(
         displayName: String?,
         avatarUrl: String?,
         googleSub: String?,
+        googleIdToken: String? = null,
     ): Boolean = loginBlocking(
         displayName = displayName,
         emailOverride = email,
         avatarUrl = avatarUrl,
         googleSub = googleSub,
+        googleIdToken = googleIdToken,
     )
 
     /** Pastikan ada sesi valid (token aktif / refresh / login baru). */
@@ -167,8 +171,9 @@ class AuthGateway(
         displayName: String?,
         avatarUrl: String?,
         googleSub: String?,
+        googleIdToken: String? = null,
     ): Boolean = withContext(Dispatchers.IO) {
-        loginWithGoogle(email, displayName, avatarUrl, googleSub)
+        loginWithGoogle(email, displayName, avatarUrl, googleSub, googleIdToken)
     }
 
     suspend fun loginWithEmailAsync(email: String, displayName: String? = null): Boolean =
