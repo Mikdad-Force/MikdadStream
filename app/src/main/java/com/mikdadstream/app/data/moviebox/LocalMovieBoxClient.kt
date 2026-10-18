@@ -277,8 +277,6 @@ object LocalMovieBoxClient {
             val entry = arr.optJSONObject(i) ?: continue
             val signCookie = entry.optString("signCookie", "")
             val direct = entry.optString("url", "")
-            val duration = entry.optLong("duration", 0L)
-            if (duration in 1 until MIN_DURATION_SECONDS) continue
             var finalUrl: String? = null
             var fmt = "mp4"
             manifestFromSignCookie(signCookie)?.let { (f, u) ->
