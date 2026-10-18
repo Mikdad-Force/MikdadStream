@@ -30,11 +30,16 @@ jobs:
           echo "${{ secrets.MIKDAD_KEYSTORE }}" | base64 -d > mikdadstream.keystore
           echo "Keystore decoded: $(ls -la mikdadstream.keystore)"
 
+      - name: Read version from build.gradle.kts
+        id: version
+        run: |
+          APP_VERSION=$(grep 'val appVersionName' build.gradle.kts | grep -oP '"[0-9.]+"' | tr -d '"' | tail -1)
+          echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Build Release APK
         run: >
           ./gradlew assembleRelease
           -PVERSION_CODE=${{ github.run_number }}
-          -PVERSION_NAME=2.1.${{ github.run_number }}
           -PSTREAM_STORE_PASSWORD=${{ secrets.STREAM_STORE_PASSWORD }}
           -PSTREAM_KEY_PASSWORD=${{ secrets.STREAM_KEY_PASSWORD }}
           -PSTREAM_KEY_ALIAS=${{ secrets.STREAM_KEY_ALIAS }}
@@ -46,14 +51,14 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: app-release-v${{ steps.version.outputs.version }}
           path: app/build/outputs/apk/release/*.apk
           retention-days: 3
 
       - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1.${{ github.run_number }}
-          name: Release v2.1.${{ github.run_number }}
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
           files: app/build/outputs/apk/release/*.apk
           make_latest: true
