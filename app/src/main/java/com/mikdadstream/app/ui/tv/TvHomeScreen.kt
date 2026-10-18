@@ -11,9 +11,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,9 +33,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -495,6 +494,44 @@ private fun CategoryChipsRow(
     }
 }
 
+// ───────── Grid non-lazy (aman di dalam Column.verticalScroll) ─────────
+private val TvGridPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 4.dp, bottom = 24.dp)
+
+@Composable
+private fun <T> PosterGrid(
+    items: List<T>,
+    columns: Int,
+    horizontalSpacing: Dp,
+    verticalSpacing: Dp,
+    contentPadding: PaddingValues = TvGridPadding,
+    itemContent: @Composable (T) -> Unit,
+) {
+    val direction = LocalLayoutDirection.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(
+                start = contentPadding.calculateStartPadding(direction),
+                end = contentPadding.calculateEndPadding(direction),
+                top = contentPadding.calculateTopPadding(),
+                bottom = contentPadding.calculateBottomPadding(),
+            )
+    ) {
+        items.chunked(columns).forEachIndexed { index, rowItems ->
+            if (index > 0) Spacer(Modifier.height(verticalSpacing))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(horizontalSpacing)
+            ) {
+                rowItems.forEach { item ->
+                    Box(Modifier.weight(1f)) { itemContent(item) }
+                }
+                repeat(columns - rowItems.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
 // ───────── Section judul + daftar konten (7 kolom, ke bawah seperti HP) ─────────
 @Composable
 private fun CategoryContentSection(
@@ -519,22 +556,19 @@ private fun CategoryContentSection(
                 modifier = Modifier.padding(start = 48.dp, top = 8.dp)
             )
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(7),
-                contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 4.dp, bottom = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                gridItems(displayItems, key = { it.safeId }) { item ->
-                    val poster = Poster(
-                        title = item.safeTitle,
-                        cover = item.cover,
-                        bg = Color(0xFF2B5F45),
-                        progress = null
-                    )
-                    PosterCard(poster, showTitle = true) { onItemClick(item) }
-                }
+            PosterGrid(
+                items = displayItems,
+                columns = 7,
+                horizontalSpacing = 14.dp,
+                verticalSpacing = 18.dp
+            ) { item ->
+                val poster = Poster(
+                    title = item.safeTitle,
+                    cover = item.cover,
+                    bg = Color(0xFF2B5F45),
+                    progress = null
+                )
+                PosterCard(poster, showTitle = true) { onItemClick(item) }
             }
         }
     }
@@ -542,15 +576,12 @@ private fun CategoryContentSection(
 
 @Composable
 private fun PosterRow(items: List<Poster>, showTitle: Boolean, onItemClick: (Poster) -> Unit = { _ -> }) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(4),
-        contentPadding = PaddingValues(start = 48.dp, end = 48.dp, top = 4.dp, bottom = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        gridItems(items, key = { it.title }) { PosterCard(it, showTitle) { onItemClick(it) } }
-    }
+    PosterGrid(
+        items = items,
+        columns = 4,
+        horizontalSpacing = 14.dp,
+        verticalSpacing = 16.dp
+    ) { PosterCard(it, showTitle) { onItemClick(it) } }
 }
 
 @Composable

@@ -418,10 +418,13 @@ fun AppNavGraph(isTv: Boolean = false) {
             composable(Routes.HELP) { HelpSupportScreen(back) }
             composable(Routes.LEGAL) { LegalPoliciesScreen(back) }
             composable(Routes.LOGOUT) { LogoutScreen(back, onConfirm = {
-                AppGraph.prefs.clearTokens()
-                AppGraph.prefs.setLoggedIn(false)
-                AppGraph.prefs.setPremiumUnlocked(false)
-                premiumScope.launch { AppGraph.users.signOut() }
+                premiumScope.launch {
+                    runCatching { AppGraph.apiClient.auth.logoutServerAsync() }
+                    AppGraph.prefs.clearTokens()
+                    AppGraph.prefs.setLoggedIn(false)
+                    AppGraph.prefs.setPremiumUnlocked(false)
+                    AppGraph.users.signOut()
+                }
             }) }
             composable(Routes.FAVE) { FaveCategoriesScreen(back) }
             composable(Routes.FAMILY) { FamilySharingScreen(back) }

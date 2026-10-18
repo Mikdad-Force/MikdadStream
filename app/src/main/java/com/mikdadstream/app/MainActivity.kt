@@ -60,8 +60,10 @@ import com.mikdadstream.app.ui.theme.brandBrush
 import com.mikdadstream.app.ui.tv.TvPairingScreen
 import com.mikdadstream.app.ui.tv.isTelevision
 import com.mikdadstream.app.ui.update.UpdateScreen
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import retrofit2.HttpException
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -108,15 +110,33 @@ private fun AppRoot(isTv: Boolean) {        val loggedIn by AppGraph.prefs.logge
 
     LaunchedEffect(Unit) {
         if (AppGraph.prefs.loggedIn.value) {
-            runCatching { AppGraph.apiClient.auth.ensureSession() }
-            if (FirebaseConnectivity.isReachable()) {
-                runCatching { AppGraph.users.syncNow() }
-            }
-            if (AppGraph.users.available && AppGraph.users.currentUid == null) {
+            val ok = runCatching { AppGraph.apiClient.auth.ensureSession() }.getOrDefault(false)
+            if (!ok && AppGraph.apiClient.auth.sessionRejected) {
+                AppGraph.prefs.clearTokens()
                 AppGraph.prefs.setLoggedIn(false)
+            }
+            if (!isTv && FirebaseConnectivity.isReachable()) {
+                runCatching { AppGraph.users.syncNow() }
+                if (AppGraph.users.available && AppGraph.users.currentUid == null) {
+                    AppGraph.prefs.setLoggedIn(false)
+                }
             }
         }
         booting = false
+    }
+
+    if (isTv) {
+        LaunchedEffect(loggedIn) {
+            while (loggedIn) {
+                delay(30_000L)
+                runCatching { AppGraph.apiClient.api.accountStatus() }.onFailure { err ->
+                    if (err is HttpException && err.code() == 401) {
+                        AppGraph.prefs.clearTokens()
+                        AppGraph.prefs.setLoggedIn(false)
+                    }
+                }
+            }
+        }
     }
 
     LaunchedEffect(Unit) {

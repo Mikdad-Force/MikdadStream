@@ -39,6 +39,11 @@ class AuthGateway(
     private val lock = Any()
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
 
+    /** true bila server secara eksplisit menolak refresh (sesi dicabut/logout) — bukan error jaringan. */
+    @Volatile
+    var sessionRejected: Boolean = false
+        private set
+
     private fun post(path: String, payload: JsonObject, token: String? = null): JsonObject? {
         val builder = Request.Builder()
             .url(ApiConfig.baseUrl + path)
@@ -73,6 +78,7 @@ class AuthGateway(
     fun refreshBlocking(force: Boolean = false): Boolean = synchronized(lock) {
         val refresh = prefs.refreshToken ?: return false
         if (!force && !prefs.tokenExpired() && !prefs.accessTokenValue().isNullOrBlank()) return true
+        sessionRejected = false
         val root = post("api/app/auth/refresh-token", JsonObject().apply {
             addProperty("refresh_token", refresh)
         })
@@ -84,6 +90,7 @@ class AuthGateway(
             prefs.saveTokens(access, newRefresh ?: refresh, expires)
             true
         } else {
+            if (root != null) sessionRejected = true
             false
         }
     }
@@ -151,6 +158,7 @@ class AuthGateway(
         val access = prefs.accessTokenValue()
         if (!access.isNullOrBlank() && !prefs.tokenExpired()) return@withContext true
         if (prefs.refreshToken != null && refreshBlocking()) return@withContext true
+        if (sessionRejected) return@withContext false
         loginBlocking()
     }
 
@@ -214,6 +222,13 @@ class AuthGateway(
         return status(root) == "success"
     }
 
+    /** Cabut semua sesi perangkat milik akun di server (dipanggil saat logout). */
+    fun logoutServerBlocking(): Boolean {
+        val token = prefs.accessTokenValue() ?: return false
+        val root = post("api/app/auth/logout", JsonObject(), token = token)
+        return status(root) == "success"
+    }
+
     /** Ambil profil pengguna aktif lalu simpan ke preferensi. */
     fun fetchProfileBlocking(): Boolean {
         val token = prefs.accessTokenValue() ?: return false
@@ -243,6 +258,9 @@ class AuthGateway(
     suspend fun approveDeviceAsync(userCode: String): Boolean =
         withContext(Dispatchers.IO) { approveDeviceBlocking(userCode) }
 
+    suspend fun logoutServerAsync(): Boolean =
+        withContext(Dispatchers.IO) { logoutServerBlocking() }
+
     /** Paksa login baru (dipakai bila sesi rusak). */
     suspend fun forceLogin(displayName: String? = null): Boolean =
         withContext(Dispatchers.IO) { loginBlocking(displayName) }
@@ -261,10 +279,14 @@ private class AuthInterceptor(private val auth: AuthGateway, private val prefs: 
         var response = chain.proceed(withToken(original))
         if (response.code == 401) {
             response.close()
-            val recovered = runCatching { auth.refreshBlocking(force = true) }.getOrDefault(false) ||
-                runCatching { auth.loginBlocking() }.getOrDefault(false)
+            val recovered = runCatching { auth.refreshBlocking(force = true) }.getOrDefault(false)
             if (recovered) {
                 response = chain.proceed(withToken(original))
+            } else if (!auth.sessionRejected) {
+                val anon = runCatching { auth.loginBlocking() }.getOrDefault(false)
+                if (anon) {
+                    response = chain.proceed(withToken(original))
+                }
             }
         }
         return response
