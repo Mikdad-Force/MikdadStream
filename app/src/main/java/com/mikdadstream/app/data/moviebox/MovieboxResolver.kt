@@ -324,15 +324,26 @@ object MovieboxResolver {
         return flagged
     }
 
+    /** URL moviebox tanpa token `sign` (template) perlu ditarik lewat resolver. */
+    private fun lacksSign(streams: List<MediaStream>): Boolean =
+        streams.none { s ->
+            val u = s.safeUrl ?: return@none false
+            (u.indexOf("sign=") >= 0) ||
+                (s.headers?.get("Cookie")?.contains("urlprefix=") == true) ||
+                (s.headers?.get("cookie")?.contains("urlprefix=") == true)
+        }
+
     /**
-     * Bila SourceData merupakan sumber moviebox yang kedaluwarsa, tarik
-     * stream baru via protokol Moviebox; bila gagal, SourceData asli dipakai.
+     * Bila SourceData merupakan sumber moviebox yang kedaluwarsa atau masih
+     * berupa URL template tanpa `sign`, tarik stream baru via protokol
+     * Moviebox; bila gagal, SourceData asli dipakai.
      */
     suspend fun maybeRefresh(data: SourceData): SourceData {
         val streams = data.playableStreams
         if (streams.isEmpty()) return data
         val detected = detectFromStreams(streams) ?: return data
-        if (!isExpired(streams)) return data
+        val stale = isExpired(streams)
+        if (!stale && !lacksSign(streams)) return data
         val fresh = try {
             fetchStreams(detected.first, detected.second)
         } catch (t: Throwable) {
