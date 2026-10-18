@@ -294,7 +294,7 @@ object LocalMovieBoxClient {
             hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
             out.add(
                 MediaStream(
-                    server = "Moviebox",
+                    server = "Moviebox Local",
                     format = fmt,
                     quality = entry.optString("resolution", "").takeIf { it.isNotBlank() } ?: "Auto",
                     url = url,
@@ -324,7 +324,10 @@ object LocalMovieBoxClient {
                 if (root.optInt("code", -1) != 0) continue
                 val data = root.optJSONObject("data") ?: continue
                 val streams = buildStreams(data)
-                if (streams.isNotEmpty()) return@withContext streams
+                if (streams.isNotEmpty()) {
+                    Log.i(TAG, "Moviebox Local stream count=${streams.size} subj=${subjectId.takeLast(6)}")
+                    return@withContext streams
+                }
             }
             null
         }
