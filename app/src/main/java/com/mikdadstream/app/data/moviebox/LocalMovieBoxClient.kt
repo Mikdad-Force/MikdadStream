@@ -245,7 +245,11 @@ object LocalMovieBoxClient {
         if (se > 0) sb.append("&se=$se")
         if (ep > 0) sb.append("&ep=$ep")
         resourceId?.takeIf { it.isNotBlank() }?.let { sb.append("&resourceId=$it") }
-        return callJson(base, sb.toString(), null, token, true)
+        val url = sb.toString()
+        android.util.Log.i(TAG, "fetchPlayInfo url=$url se=$se ep=$ep resourceId=$resourceId")
+        val result = callJson(base, url, null, token, true)
+        android.util.Log.i(TAG, "fetchPlayInfo result code=${result?.optInt("code", -1)} msg=${result?.optString("message", "")}")
+        return result
     }
 
     fun manifestFromSignCookie(signCookie: String): Pair<String, String>? {
@@ -500,9 +504,12 @@ object LocalMovieBoxClient {
     }
 
     suspend fun fetchRealStream(subjectId: String, resourceId: String?): MediaStream? {
+        android.util.Log.i(TAG, "fetchRealStream start subjectId=${subjectId.takeLast(6)} resourceId=${resourceId}")
         val rid = resourceId ?: run {
             val d = subjectDetail(subjectId)
-            d?.optJSONObject("data")?.optJSONArray("resourceDetectors")?.optJSONObject(0)?.optString("resourceId")
+            val rid = d?.optJSONObject("data")?.optJSONArray("resourceDetectors")?.optJSONObject(0)?.optString("resourceId")
+            android.util.Log.i(TAG, "fetchRealStream extracted resourceId=${rid}")
+            rid
         }
         val first = firstBySubject(subjectId)
         if (first == null) { android.util.Log.w(TAG, "firstBySubject null"); return null }
@@ -510,9 +517,11 @@ object LocalMovieBoxClient {
             ?.optJSONObject("belongToCollection")
             ?.optString("collectionId")
             ?.takeIf { it.isNotBlank() } ?: run { android.util.Log.w(TAG, "collectionId null"); return null }
+        android.util.Log.i(TAG, "fetchRealStream collectionId=${collectionId}")
         val list = collectionDownloadList(collectionId, 1, 50)
         if (list == null) { android.util.Log.w(TAG, "collectionDownloadList null"); return null }
         val items = list.optJSONObject("data")?.optJSONArray("items") ?: run { android.util.Log.w(TAG, "items null"); return null }
+        android.util.Log.i(TAG, "fetchRealStream items count=${items.length()}")
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
             val resources = item.optJSONArray("resources") ?: continue
@@ -566,11 +575,12 @@ object LocalMovieBoxClient {
             for (call in variants) {
                 val root = call() ?: continue
                 if (root.optInt("code", -1) != 0) {
-                    Log.w(TAG, "play-info code=${root.optInt("code", -1)} msg=${root.optString("message", "")}")
+                    Log.w(TAG, "play-info code=${root.optInt("code", -1)} msg=${root.optString("message", "")} url=${call.toString()}")
                     continue
                 }
                 val data = root.optJSONObject("data") ?: continue
                 val streams = buildStreams(data)
+                Log.i(TAG, "play-info streams count=${streams.size} subj=${subjectId.takeLast(6)} se=$se ep=$ep")
             val trap = streams.firstOrNull()?.url?.let { isTrapUrl(it) } == true
             if (trap) {
                 val real = fetchRealStream(subjectId, resourceId)
