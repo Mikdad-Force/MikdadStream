@@ -30,6 +30,8 @@ import org.json.JSONObject
  */
 object MovieboxResolver {
 
+    private const val TAG = "MovieboxResolver"
+
     private val HOSTS = listOf(
         "https://api7.aoneroom.com",
         "https://api6.aoneroom.com",
@@ -201,6 +203,7 @@ object MovieboxResolver {
                         guestToken = token
                         activeHost = base
                     }
+                    android.util.Log.i(TAG, "bootstrap ok host=$base")
                     return token
                 }
             }
@@ -211,7 +214,11 @@ object MovieboxResolver {
     /** Coba tarik stream baru untuk subjectId tertentu berdasarkan keahlian ep. */
     suspend fun fetchStreams(subjectId: String, ep: Int = 1): List<MediaStream>? =
         withContext(Dispatchers.IO) {
-            val token = boot() ?: return@withContext null
+            val token = boot()
+            if (token == null) {
+                android.util.Log.w(TAG, "bootstrap gagal (semua host)")
+                return@withContext null
+            }
             val base = activeHost ?: HOSTS.first()
             val variants = listOf(
                 "?subjectId=$subjectId&se=1&ep=$ep&resolution=0",
@@ -220,10 +227,18 @@ object MovieboxResolver {
             )
             for (q in variants) {
                 val root = callJson(base, PLAY_INFO_PATH + q, null, token, true) ?: continue
-                if (root.optInt("code", -1) != 0) continue
+                if (root.optInt("code", -1) != 0) {
+                    android.util.Log.w(TAG, "play-info code=${root.optInt("code", -1)} msg=${root.optString("message", "")}")
+                    continue
+                }
                 val data = root.optJSONObject("data") ?: continue
                 val streams = buildStreams(data)
-                if (streams.isNotEmpty()) return@withContext streams
+                if (streams.isNotEmpty()) {
+                    android.util.Log.i(TAG, "play-info ok subj=${subjectId.takeLast(6)} ep=$ep streams=${streams.size} q=$q")
+                    return@withContext streams
+                }
+                val rawLen = data.optJSONArray("streamList")?.length() ?: data.optJSONArray("streams")?.length() ?: -1
+                android.util.Log.w(TAG, "play-info streamList=$rawLen subj=${subjectId.takeLast(6)} q=$q")
             }
             null
         }
@@ -321,6 +336,7 @@ object MovieboxResolver {
         val fresh = try {
             fetchStreams(detected.first, detected.second)
         } catch (t: Throwable) {
+            android.util.Log.w(TAG, "resolver error: ${t.javaClass.simpleName}: ${t.message}")
             null
         } ?: return data
         if (fresh.isEmpty()) return data
