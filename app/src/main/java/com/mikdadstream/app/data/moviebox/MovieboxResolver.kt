@@ -395,8 +395,7 @@ object MovieboxResolver {
         val streams = data.playableStreams
         if (streams.isEmpty()) return data
         val detected = detectFromStreams(streams) ?: return data
-        val stale = isExpired(streams)
-        if (!stale && !lacksSign(streams)) return data
+        // Selalu tarik ulang via Moviebox Local agar sumber video terverifikasi/berlabel Moviebox Local.
         val fresh = try {
             fetchStreams(detected.first, detected.second)
         } catch (t: Throwable) {
