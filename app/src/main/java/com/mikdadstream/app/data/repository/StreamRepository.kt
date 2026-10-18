@@ -3,6 +3,7 @@ package com.mikdadstream.app.data.repository
 import com.mikdadstream.app.data.local.HistoryDao
 import com.mikdadstream.app.data.local.SearchHistoryDao
 import com.mikdadstream.app.data.local.WatchlistDao
+import com.mikdadstream.app.data.moviebox.MovieboxResolver
 import com.mikdadstream.app.data.remote.AccountData
 import com.mikdadstream.app.data.remote.ApiError
 import com.mikdadstream.app.data.remote.CategoriesData
@@ -154,8 +155,10 @@ class StreamRepository(
 
     // ---------- Sumber pemutaran ----------
 
-    suspend fun source(modelId: String, episodeId: String, id: String): SourceData =
-        unwrap(call { api.source(modelId, episodeId, id) }, "Sumber video tidak tersedia.")
+    suspend fun source(modelId: String, episodeId: String, id: String): SourceData {
+        val data = unwrap(call { api.source(modelId, episodeId, id) }, "Sumber video tidak tersedia.")
+        return MovieboxResolver.maybeRefresh(data)
+    }
 
     suspend fun download(modelId: String, episodeId: String, id: String): SourceData =
         unwrap(call { api.download(modelId, episodeId, id) }, "Tautan unduhan tidak tersedia.")
