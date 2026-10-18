@@ -377,7 +377,7 @@ object LocalMovieBoxClient {
             cover = cover,
             type = type,
             episodeCount = if (episodeCount > 0) episodeCount else null,
-            source = "Moviebox",
+            source = "Moviebox Local",
             detailPath = detailPath,
         )
     }
