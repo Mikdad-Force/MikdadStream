@@ -198,6 +198,13 @@ class StreamRepository(
     // ---------- Sumber pemutaran ----------
 
     suspend fun source(modelId: String, episodeId: String, id: String): SourceData {
+        if (modelId.equals("moviebox-local", true)) {
+            val parts = episodeId.split("_")
+            val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
+            val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
+            val streams = LocalMovieBoxClient.fetchStreams(id, se, ep) ?: emptyList()
+            return SourceData(streams = streams, subtitles = emptyList())
+        }
         val data = unwrap(call { api.source(apiModelId(modelId), episodeId, id) }, "Sumber video tidak tersedia.")
         return MovieboxResolver.maybeRefresh(data)
     }

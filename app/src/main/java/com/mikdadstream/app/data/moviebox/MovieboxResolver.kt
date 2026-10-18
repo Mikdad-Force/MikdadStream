@@ -330,8 +330,8 @@ object MovieboxResolver {
     }
 
     /** Coba tarik stream baru untuk subjectId tertentu berdasarkan keahlian ep. */
-    suspend fun fetchStreams(subjectId: String, ep: Int = 1): List<MediaStream>? =
-        LocalMovieBoxClient.fetchStreams(subjectId, ep)
+    suspend fun fetchStreams(subjectId: String, se: Int = 1, ep: Int = 1): List<MediaStream>? =
+        LocalMovieBoxClient.fetchStreams(subjectId, se, ep)
 
     /**
      * Turunkan `format` + URL manifest dari cookie bertanda tangan Moviebox.
@@ -397,7 +397,7 @@ object MovieboxResolver {
         val detected = detectFromStreams(streams) ?: return data
         // Selalu tarik ulang via Moviebox Local agar sumber video terverifikasi/berlabel Moviebox Local.
         val fresh = try {
-            fetchStreams(detected.first, detected.second)
+            fetchStreams(detected.first, 1, detected.second)
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "resolver error: ${t.javaClass.simpleName}: ${t.message}")
             null

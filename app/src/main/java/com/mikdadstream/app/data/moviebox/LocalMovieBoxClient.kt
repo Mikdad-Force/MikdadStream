@@ -408,25 +408,46 @@ object LocalMovieBoxClient {
 
     fun mapSeasonToEpisodes(root: JSONObject): List<EpisodeData> {
         val data = root.optJSONObject("data") ?: root
-        val arr = data.optJSONArray("episodes") ?: data.optJSONArray("list") ?: data.optJSONArray("items") ?: return emptyList()
+        val seasons = data.optJSONArray("seasons") ?: return emptyList()
         val out = ArrayList<EpisodeData>()
-        for (i in 0 until arr.length()) {
-            val o = arr.optJSONObject(i) ?: continue
-            val eid = o.optString("episodeId").ifBlank { o.optString("id") }.ifBlank { o.optString("episode_id") }
-            val num = o.optInt("episodeNumber", 0).let { if (it > 0) it else o.optInt("episode", 0) }
-                .let { if (it > 0) it else o.optInt("ep", 0) }
-            out.add(
-                EpisodeData(
-                    episodeId = eid,
-                    episodeNumber = if (num > 0) num else (i + 1),
-                    durationSeconds = o.optInt("duration", 0).takeIf { it > 0 },
+        for (si in 0 until seasons.length()) {
+            val season = seasons.optJSONObject(si) ?: continue
+            val se = season.optInt("se", 0).let { if (it > 0) it else season.optInt("season", 0) }
+                .let { if (it > 0) it else (si + 1) }
+            val maxEp = season.optInt("maxEp", 0).let { if (it > 0) it else season.optInt("maxEpisode", 0) }
+                .let { if (it > 0) it else season.optInt("epNum", 0) }
+            if (maxEp <= 0) continue
+            for (ep in 1..maxEp) {
+                out.add(
+                    EpisodeData(
+                        episodeId = "${se}_${ep}",
+                        episodeNumber = ep,
+                    )
                 )
-            )
+            }
+        }
+        if (out.isEmpty()) {
+            // fallback: jika server mengirim episodes langsung
+            val arr = data.optJSONArray("episodes") ?: data.optJSONArray("list") ?: data.optJSONArray("items")
+            if (arr != null) {
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val eid = o.optString("episodeId").ifBlank { o.optString("id") }.ifBlank { o.optString("episode_id") }
+                    val num = o.optInt("episodeNumber", 0).let { if (it > 0) it else o.optInt("episode", 0) }
+                        .let { if (it > 0) it else o.optInt("ep", 0) }
+                    out.add(
+                        EpisodeData(
+                            episodeId = eid.ifBlank { "${i + 1}" },
+                            episodeNumber = if (num > 0) num else (i + 1),
+                        )
+                    )
+                }
+            }
         }
         return out
     }
 
-    suspend fun fetchStreams(subjectId: String, ep: Int = 1): List<MediaStream>? =
+    suspend fun fetchStreams(subjectId: String, se: Int = 1, ep: Int = 1): List<MediaStream>? =
         withContext(Dispatchers.IO) {
             val token = boot() ?: return@withContext null
             val base = activeHostOrFirst()
@@ -436,7 +457,7 @@ object LocalMovieBoxClient {
                 ?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
 
             val variants = listOf(
-                { fetchPlayInfo(base, subjectId, 1, if (ep > 0) ep else 1, resourceId, token) },
+                { fetchPlayInfo(base, subjectId, if (se > 0) se else 1, if (ep > 0) ep else 1, resourceId, token) },
                 { fetchPlayInfo(base, subjectId, 1, 1, resourceId, token) },
                 { fetchPlayInfo(base, subjectId, 0, 0, resourceId, token) },
             )
