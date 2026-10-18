@@ -203,6 +203,7 @@ class StreamRepository(
             val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
             val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
             val streams = LocalMovieBoxClient.fetchStreams(id, se, ep) ?: emptyList()
+            android.util.Log.i("MovieboxLocal", "source streams=${streams.size} id=$id ep=$episodeId se=$se epNum=$ep")
             return SourceData(streams = streams, subtitles = emptyList())
         }
         val data = unwrap(call { api.source(apiModelId(modelId), episodeId, id) }, "Sumber video tidak tersedia.")
