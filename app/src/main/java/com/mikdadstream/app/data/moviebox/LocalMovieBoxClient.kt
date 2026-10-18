@@ -156,7 +156,7 @@ object LocalMovieBoxClient {
         return headers
     }
 
-    fun callJson(
+            fun callJson(
         base: String,
         pathAndQuery: String,
         body: String?,
@@ -164,14 +164,19 @@ object LocalMovieBoxClient {
         playMode: Boolean,
     ): JSONObject? {
         val method = if (body != null) "POST" else "GET"
-        val headers = signedHeaders(method, pathAndQuery, body, auth, playMode = playMode)
         val builder = Request.Builder()
             .url(base + pathAndQuery)
-        headers.forEach { (k, v) -> builder.header(k, v) }
         if (body != null) builder.post(body.toRequestBody("application/json;charset=UTF-8".toMediaType()))
         
         // Retry up to 3 times for transient failures
         repeat(3) { attempt ->
+            // Regenerate headers with fresh timestamp on each attempt
+            val headers = signedHeaders(method, pathAndQuery, body, auth, playMode = playMode)
+            val builder = Request.Builder()
+                .url(base + pathAndQuery)
+            headers.forEach { (k, v) -> builder.header(k, v) }
+            if (body != null) builder.post(body.toRequestBody("application/json;charset=UTF-8".toMediaType()))
+            
             try {
                 val response = http.newCall(builder.build()).execute()
                 return response.use { resp ->
