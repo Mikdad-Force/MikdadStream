@@ -167,47 +167,12 @@ object MovieboxResolver {
         body: String?,
         auth: String?,
         playMode: Boolean,
-    ): JSONObject? {
-        val method = if (body != null) "POST" else "GET"
-        val headers = signedHeaders(method, pathAndQuery, body, auth, playMode = playMode)
-        val builder = Request.Builder()
-            .url(base + pathAndQuery)
-            .headers(headers.toHeaders())
-        if (body != null) builder.post(body.toRequestBody("application/json".toMediaType()))
-        return try {
-            http.newCall(builder.build()).execute().use { resp ->
-                resp.header("x-user")?.let { xu ->
-                    runCatching {
-                        JSONObject(xu).optString("token", "").takeIf { it.isNotBlank() }
-                    }.getOrNull()?.let { tok ->
-                        tokenLock.withLock { guestToken = tok }
-                    }
-                }
-                resp.body?.string()?.let { JSONObject(it) }
-            }
-        } catch (t: Throwable) {
-            null
-        }
-    }
+    ): JSONObject? = LocalMovieBoxClient.callJson(base, pathAndQuery, body, auth, playMode)
 
     private fun boot(): String? {
-        tokenLock.withLock { guestToken?.let { if (it.isNotBlank()) return it } }
-        for (base in HOSTS) {
-            val root = callJson(base, "$BOOT_PATH?page=1&tabId=0&version=", null, null, false)
-                ?: continue
-            if (root.optInt("code", -1) == 0) {
-                val token = root.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
-                if (token != null) {
-                    tokenLock.withLock {
-                        guestToken = token
-                        activeHost = base
-                    }
-                    android.util.Log.i(TAG, "bootstrap ok host=$base")
-                    return token
-                }
-            }
-        }
-        return null
+        val t = LocalMovieBoxClient.boot()
+        activeHost = LocalMovieBoxClient.activeHost
+        return t
     }
 
     private const val SUBJECT_GET_PATH = "/wefeed-mobile-bff/subject-api/get"
@@ -366,48 +331,7 @@ object MovieboxResolver {
 
     /** Coba tarik stream baru untuk subjectId tertentu berdasarkan keahlian ep. */
     suspend fun fetchStreams(subjectId: String, ep: Int = 1): List<MediaStream>? =
-        withContext(Dispatchers.IO) {
-            val token = boot() ?: return@withContext null
-            val base = activeHost ?: HOSTS.first()
-
-            // Ambil detail subject (seperti /stream/{id} pada LocalMovieBoxServer)
-            // untuk mendapatkan resourceId yang dibutuhkan play-info.
-            val detailRoot = runCatching {
-                callJson(base, "$SUBJECT_GET_PATH?subject_id=$subjectId", null, token, false)
-            }.getOrNull()
-            val detailData = detailRoot?.optJSONObject("data")
-            val resourceId = detailData?.optJSONArray("resourceDetectors")
-                ?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
-
-            val se = if (ep > 0) 1 else 0
-            val epVal = if (ep > 0) ep else 0
-            val variants = listOf(
-                buildString {
-                    append("?subjectId=$subjectId")
-                    if (se > 0) append("&se=$se")
-                    if (epVal > 0) append("&ep=$epVal")
-                    resourceId?.let { append("&resourceId=$it") }
-                },
-                "?subjectId=$subjectId&se=1&ep=1" + (resourceId?.let { "&resourceId=$it" } ?: ""),
-                "?subjectId=$subjectId&se=0&ep=0" + (resourceId?.let { "&resourceId=$it" } ?: ""),
-            )
-            for (q in variants) {
-                val root = callJson(base, PLAY_INFO_PATH + q, null, token, true) ?: continue
-                if (root.optInt("code", -1) != 0) {
-                    android.util.Log.w(TAG, "play-info code=${root.optInt("code", -1)} msg=${root.optString("message", "")}")
-                    continue
-                }
-                val data = root.optJSONObject("data") ?: continue
-                val streams = buildStreams(data)
-                if (streams.isNotEmpty()) {
-                    android.util.Log.i(TAG, "play-info ok subj=${subjectId.takeLast(6)} ep=$ep streams=${streams.size} q=$q")
-                    return@withContext streams
-                }
-                val rawLen = data.optJSONArray("streamList")?.length() ?: data.optJSONArray("streams")?.length() ?: -1
-                android.util.Log.w(TAG, "play-info streamList=$rawLen subj=${subjectId.takeLast(6)} q=$q")
-            }
-            null
-        }
+        LocalMovieBoxClient.fetchStreams(subjectId, ep)
 
     /**
      * Turunkan `format` + URL manifest dari cookie bertanda tangan Moviebox.
@@ -417,85 +341,11 @@ object MovieboxResolver {
      * - `Edge-Cache-Cookie=urlprefix=<b64>`: decode menjadi direktori lalu
      *   tambahkan `index_web.mpd` (DASH) / `index.m3u8` (HLS).
      */
-    private fun manifestFromSignCookie(signCookie: String): Pair<String, String>? {
-        val cf = Regex("CloudFront-Policy=([^;]+)").find(signCookie)?.groupValues?.getOrNull(1)
-        if (!cf.isNullOrBlank()) {
-            val normalized = cf.replace('-', '+').replace('_', '=').replace('~', '/')
-                .let { it + "=".repeat((4 - it.length % 4) % 4) }
-            val json = runCatching {
-                String(Base64.getDecoder().decode(normalized), Charsets.UTF_8)
-            }.getOrNull() ?: return null
-            val resource = runCatching {
-                JSONObject(json).optJSONArray("Statement")
-                    ?.optJSONObject(0)?.optString("Resource") ?: ""
-            }.getOrNull() ?: ""
-            if (resource.isNotBlank()) {
-                val base = if (resource.endsWith("/*")) resource.dropLast(1) else resource
-                val dir = base.substringBeforeLast('/', base)
-                val fmt = if (dir.contains("/dash/") || base.contains(".mpd")) "dash" else "hls"
-                if (base.endsWith(".mpd") || base.endsWith(".m3u8")) return fmt to base
-                val index = if (fmt == "dash") "index_web.mpd" else "index.m3u8"
-                return fmt to "$dir/$index"
-            }
-        }
-        val b64 = Regex("urlprefix=([^:]+)").find(signCookie)?.groupValues?.getOrNull(1)
-        if (!b64.isNullOrBlank()) {
-            val normalized = b64.replace('-', '+').replace('_', '=').replace('~', '/')
-                .let { it + "=".repeat((4 - it.length % 4) % 4) }
-            val decoded = runCatching {
-                Base64.getDecoder().decode(normalized).toString(Charsets.UTF_8).trimEnd('/')
-            }.getOrNull()
-            if (!decoded.isNullOrBlank()) {
-                val fmt = if (decoded.contains("/dash/")) "dash" else "hls"
-                val index = if (fmt == "dash") "index_web.mpd" else "index.m3u8"
-                return fmt to "$decoded/$index"
-            }
-        }
-        return null
-    }
+    private fun manifestFromSignCookie(signCookie: String): Pair<String, String>? =
+        LocalMovieBoxClient.manifestFromSignCookie(signCookie)
 
-    private fun buildStreams(data: JSONObject): List<MediaStream> {
-        val arr = data.optJSONArray("streamList") ?: data.optJSONArray("streams") ?: return emptyList()
-        val out = ArrayList<MediaStream>()
-        val seen = HashSet<String>()
-        for (i in 0 until arr.length()) {
-            val entry = arr.optJSONObject(i) ?: continue
-            val signCookie = entry.optString("signCookie", "")
-            val direct = entry.optString("url", "")
-            val duration = entry.optLong("duration", 0L)
-            if (duration in 1 until MIN_DURATION_SECONDS) continue
-            var finalUrl: String? = null
-            var fmt = "mp4"
-            manifestFromSignCookie(signCookie)?.let { (f, u) ->
-                fmt = f
-                finalUrl = u
-            }
-            if (finalUrl == null && direct.isNotBlank()) {
-                fmt = when {
-                    direct.contains(".m3u8") -> "hls"
-                    direct.contains(".mpd") -> "dash"
-                    else -> "mp4"
-                }
-                finalUrl = direct
-            }
-            val url = finalUrl?.takeIf { it.isNotBlank() } ?: continue
-            if (!seen.add(url)) continue
-            val hdrs = LinkedHashMap<String, String>()
-            if (signCookie.isNotBlank()) hdrs["Cookie"] = signCookie
-            hdrs["Referer"] = "https://www.movieboxpro.app/"
-            hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
-            out.add(
-                MediaStream(
-                    server = "Moviebox",
-                    format = fmt,
-                    quality = entry.optString("resolution", "").takeIf { it.isNotBlank() } ?: "Auto",
-                    url = url,
-                    headers = hdrs,
-                ),
-            )
-        }
-        return out
-    }
+    private fun buildStreams(data: JSONObject): List<MediaStream> =
+        LocalMovieBoxClient.buildStreams(data)
 
     /** Deteksi sumber moviebox & subjectId/episode dari URL lama di katalog. */
     fun detectFromStreams(streams: List<MediaStream>): Pair<String, Int>? {
