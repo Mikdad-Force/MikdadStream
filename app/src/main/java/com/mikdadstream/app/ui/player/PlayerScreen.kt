@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPicture
@@ -261,6 +262,9 @@ fun PlayerScreen(
     var resizeModeIx by remember { mutableIntStateOf(0) }
     var subOptions by remember { mutableStateOf<List<SubOption>>(emptyList()) }
     var selectedSubKey by remember { mutableStateOf<String?>(null) }
+    var showQualityMenu by remember { mutableStateOf(false) }
+    var videoQualities by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var selectedVideoHeight by remember { mutableStateOf<Int?>(null) }
     var hud by remember { mutableStateOf<HudInfo?>(null) }
     var hudJob by remember { mutableStateOf<Job?>(null) }
     var sleepEndsAt by remember { mutableLongStateOf(0L) }
@@ -391,6 +395,38 @@ fun PlayerScreen(
         selectedSubKey = opt?.key
     }
 
+    fun refreshVideoQualities() {
+        val heights = LinkedHashSet<Int>()
+        player.currentTracks.groups.forEach { g ->
+            if (g.type != C.TRACK_TYPE_VIDEO) return@forEach
+            for (i in 0 until g.length) {
+                val h = g.getTrackFormat(i).height
+                if (h > 0) heights.add(h)
+            }
+        }
+        videoQualities = heights.sortedDescending()
+    }
+
+    fun selectVideoHeight(height: Int?) {
+        val bp = player.trackSelectionParameters.buildUpon()
+        bp.clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+        if (height != null) {
+            var applied = false
+            player.currentTracks.groups.forEach { g ->
+                if (applied || g.type != C.TRACK_TYPE_VIDEO) return@forEach
+                for (i in 0 until g.length) {
+                    if (g.getTrackFormat(i).height == height) {
+                        bp.setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i))
+                        applied = true
+                        break
+                    }
+                }
+            }
+        }
+        player.trackSelectionParameters = bp.build()
+        selectedVideoHeight = height
+    }
+
     fun seekTo(target: Long, show: Boolean = true) {
         val dur = player.duration.takeIf { it > 0 } ?: uiDuration
         val t = if (dur > 0) target.coerceIn(0L, dur) else target.coerceAtLeast(0L)
@@ -432,12 +468,19 @@ fun PlayerScreen(
         return if (b < 0f) 0.5f else b
     }
 
+    fun protocolRank(fmt: String?): Int = when (fmt?.lowercase()) {
+        "dash" -> 3
+        "hls" -> 2
+        "mp4", "flv" -> 1
+        else -> 0
+    }
+
     fun pickStreamIndex(list: List<MediaStream>): Int = when {
         list.isEmpty() -> 0
         list.size == 1 -> 0
         else -> list.indices.maxWithOrNull(
             compareBy<Int> { if (list[it].isEmbed) 0 else 1 }
-                .thenBy { (list[it].format ?: "").equals("hls", ignoreCase = true) }
+                .thenBy { protocolRank(list[it].format) }
                 .thenBy { list[it].qualityCode ?: 0 },
         ) ?: 0
     }
@@ -507,8 +550,10 @@ fun PlayerScreen(
                 .build()
         }
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
+        selectedVideoHeight = null
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
             .setPreferredTextLanguages("id", "in", "ind")
             .setSelectUndeterminedTextLanguage(false)
             .build()
@@ -546,6 +591,7 @@ fun PlayerScreen(
 
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
                 refreshSubOptions()
+                refreshVideoQualities()
             }
 
             override fun onTrackSelectionParametersChanged(
@@ -579,9 +625,9 @@ fun PlayerScreen(
     }
 
     // Beri fokus ke tombol putar/jeda saat kontrol tampil agar D-pad bisa menjelajah.
-    LaunchedEffect(showControls, mediaReady, inPip, showSpeedMenu, showSubMenu, showSleepMenu) {
+    LaunchedEffect(showControls, mediaReady, inPip, showSpeedMenu, showSubMenu, showSleepMenu, showQualityMenu) {
         if (showControls && mediaReady && !inPip &&
-            !showSpeedMenu && !showSubMenu && !showSleepMenu
+            !showSpeedMenu && !showSubMenu && !showSleepMenu && !showQualityMenu
         ) {
             delay(60)
             runCatching { controlFocus.requestFocus() }
@@ -615,9 +661,9 @@ fun PlayerScreen(
     }
 
     // ---- Sembunyikan kontrol otomatis ----
-    LaunchedEffect(showControls, isPlaying, showSpeedMenu, showSubMenu, showSleepMenu, showSources, showEpisodes, inPip) {
+    LaunchedEffect(showControls, isPlaying, showSpeedMenu, showSubMenu, showSleepMenu, showQualityMenu, showSources, showEpisodes, inPip) {
         if (showControls && isPlaying && !inPip &&
-            !showSpeedMenu && !showSubMenu && !showSleepMenu && !showSources && !showEpisodes
+            !showSpeedMenu && !showSubMenu && !showSleepMenu && !showQualityMenu && !showSources && !showEpisodes
         ) {
             delay(3_500)
             showControls = false
@@ -645,6 +691,7 @@ fun PlayerScreen(
             showSpeedMenu -> showSpeedMenu = false
             showSubMenu -> showSubMenu = false
             showSleepMenu -> showSleepMenu = false
+            showQualityMenu -> showQualityMenu = false
             showSources -> showSources = false
             showEpisodes -> showEpisodes = false
             showControls && mediaReady -> showControls = false
@@ -984,6 +1031,17 @@ fun PlayerScreen(
                             refreshSubOptions()
                             showSubMenu = true
                         }
+                        if (videoQualities.size > 1) {
+                            CtlButton(
+                                icon = Icons.Filled.HighQuality,
+                                label = selectedVideoHeight?.let { "${it}p" } ?: "Auto",
+                                tint = if (selectedVideoHeight != null) MaterialTheme.colorScheme.primary
+                                else Color.White,
+                            ) {
+                                refreshVideoQualities()
+                                showQualityMenu = true
+                            }
+                        }
                         val act = activityRef.value
                         if (act != null) {
                             CtlButton(icon = Icons.Filled.ScreenRotation, label = "Rotasi") {
@@ -1154,6 +1212,22 @@ fun PlayerScreen(
         )
     }
 
+    // ---- Menu kualitas video ----
+    if (showQualityMenu) {
+        val items = listOf<Pair<Int?, String>>(null to "Auto") +
+            videoQualities.map { it to "${it}p" }
+        OptionMenu(
+            title = "Kualitas Video",
+            note = if (videoQualities.size <= 1) "Sumber ini hanya menyediakan satu kualitas." else null,
+            items = items,
+            selected = { it == selectedVideoHeight },
+            onSelect = { h ->
+                selectVideoHeight(h)
+                showQualityMenu = false
+            },
+            onDismiss = { showQualityMenu = false },
+        )
+    }
     // ---- Menu timer tidur ----
     if (showSleepMenu) {
         OptionMenu(

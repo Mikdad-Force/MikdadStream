@@ -373,6 +373,51 @@ object MovieboxResolver {
             null
         }
 
+    /**
+     * Turunkan `format` + URL manifest dari cookie bertanda tangan Moviebox.
+     *
+     * - `CloudFront-Policy=<b64>` (format baru): ambil `Statement[0].Resource`
+     *   yang berakhir dengan wildcard bintang lalu ganti dengan `index_web.mpd`.
+     * - `Edge-Cache-Cookie=urlprefix=<b64>`: decode menjadi direktori lalu
+     *   tambahkan `index_web.mpd` (DASH) / `index.m3u8` (HLS).
+     */
+    private fun manifestFromSignCookie(signCookie: String): Pair<String, String>? {
+        val cf = Regex("CloudFront-Policy=([^;]+)").find(signCookie)?.groupValues?.getOrNull(1)
+        if (!cf.isNullOrBlank()) {
+            val normalized = cf.replace('-', '+').replace('_', '=').replace('~', '/')
+                .let { it + "=".repeat((4 - it.length % 4) % 4) }
+            val json = runCatching {
+                String(Base64.getDecoder().decode(normalized), Charsets.UTF_8)
+            }.getOrNull() ?: return null
+            val resource = runCatching {
+                JSONObject(json).optJSONArray("Statement")
+                    ?.optJSONObject(0)?.optString("Resource") ?: ""
+            }.getOrNull() ?: ""
+            if (resource.isNotBlank()) {
+                val base = if (resource.endsWith("/*")) resource.dropLast(1) else resource
+                val dir = base.substringBeforeLast('/', base)
+                val fmt = if (dir.contains("/dash/") || base.contains(".mpd")) "dash" else "hls"
+                if (base.endsWith(".mpd") || base.endsWith(".m3u8")) return fmt to base
+                val index = if (fmt == "dash") "index_web.mpd" else "index.m3u8"
+                return fmt to "$dir/$index"
+            }
+        }
+        val b64 = Regex("urlprefix=([^:]+)").find(signCookie)?.groupValues?.getOrNull(1)
+        if (!b64.isNullOrBlank()) {
+            val normalized = b64.replace('-', '+').replace('_', '=').replace('~', '/')
+                .let { it + "=".repeat((4 - it.length % 4) % 4) }
+            val decoded = runCatching {
+                Base64.getDecoder().decode(normalized).toString(Charsets.UTF_8).trimEnd('/')
+            }.getOrNull()
+            if (!decoded.isNullOrBlank()) {
+                val fmt = if (decoded.contains("/dash/")) "dash" else "hls"
+                val index = if (fmt == "dash") "index_web.mpd" else "index.m3u8"
+                return fmt to "$decoded/$index"
+            }
+        }
+        return null
+    }
+
     private fun buildStreams(data: JSONObject): List<MediaStream> {
         val arr = data.optJSONArray("streamList") ?: data.optJSONArray("streams") ?: return emptyList()
         val out = ArrayList<MediaStream>()
@@ -385,17 +430,9 @@ object MovieboxResolver {
             if (duration in 1 until MIN_DURATION_SECONDS) continue
             var finalUrl: String? = null
             var fmt = "mp4"
-            if (signCookie.contains("urlprefix=")) {
-                val b64 = signCookie.substringAfter("urlprefix=", "")
-                    .substringBefore(":sign=", "")
-                val decoded = runCatching {
-                    Base64.getDecoder().decode(b64).toString(Charsets.UTF_8).trimEnd('/')
-                }.getOrNull()
-                if (!decoded.isNullOrBlank()) {
-                    fmt = if (decoded.contains("/dash/")) "dash" else "hls"
-                    val index = if (fmt == "dash") "index.mpd" else "index.m3u8"
-                    finalUrl = "$decoded/$index"
-                }
+            manifestFromSignCookie(signCookie)?.let { (f, u) ->
+                fmt = f
+                finalUrl = u
             }
             if (finalUrl == null && direct.isNotBlank()) {
                 fmt = when {
