@@ -308,39 +308,39 @@ object LocalMovieBoxClient {
         return out
     }
 
-    fun trendingV2(): JSONObject? {
-        val token = boot() ?: return null
+    suspend fun trendingV2(): JSONObject? = withContext(Dispatchers.IO) {
+        val token = boot() ?: return@withContext null
         val base = activeHostOrFirst()
-        return callJson(base, "/wefeed-mobile-bff/subject-api/trending/v2", "{}", token, false)
+        callJson(base, "/wefeed-mobile-bff/subject-api/trending/v2", "{}", token, false)
     }
 
-    fun search(keyword: String, page: Int = 1): JSONObject? {
-        val token = boot() ?: return null
+    suspend fun search(keyword: String, page: Int = 1): JSONObject? = withContext(Dispatchers.IO) {
+        val token = boot() ?: return@withContext null
         val base = activeHostOrFirst()
         val body = JSONObject()
             .put("keyword", keyword)
             .put("page", page)
             .put("pageSize", 20)
             .toString()
-        return callJson(base, "/wefeed-mobile-bff/subject-api/search", body, token, false)
+        callJson(base, "/wefeed-mobile-bff/subject-api/search", body, token, false)
     }
 
-    fun subjectDetail(subjectId: String): JSONObject? {
-        val token = boot() ?: return null
+    suspend fun subjectDetail(subjectId: String): JSONObject? = withContext(Dispatchers.IO) {
+        val token = boot() ?: return@withContext null
         val base = activeHostOrFirst()
-        return callJson(base, "$SUBJECT_GET_PATH?subject_id=$subjectId", null, token, false)
+        callJson(base, "$SUBJECT_GET_PATH?subject_id=$subjectId", null, token, false)
     }
 
-    fun seasonInfo(subjectId: String): JSONObject? {
-        val token = boot() ?: return null
+    suspend fun seasonInfo(subjectId: String): JSONObject? = withContext(Dispatchers.IO) {
+        val token = boot() ?: return@withContext null
         val base = activeHostOrFirst()
-        return callJson(base, "/wefeed-mobile-bff/subject-api/season-info?subjectId=$subjectId", null, token, false)
+        callJson(base, "/wefeed-mobile-bff/subject-api/season-info?subjectId=$subjectId", null, token, false)
     }
 
-    fun topRec(): JSONObject? {
-        val token = boot() ?: return null
+    suspend fun topRec(): JSONObject? = withContext(Dispatchers.IO) {
+        val token = boot() ?: return@withContext null
         val base = activeHostOrFirst()
-        return callJson(base, "/wefeed-mobile-bff/subject-api/top-rec", "{}", token, false)
+        callJson(base, "/wefeed-mobile-bff/subject-api/top-rec", "{}", token, false)
     }
 
     fun extractList(root: JSONObject?): List<JSONObject> {
@@ -382,13 +382,13 @@ object LocalMovieBoxClient {
         )
     }
 
-    fun trendingItems(): List<MediaItem> =
+    suspend fun trendingItems(): List<MediaItem> =
         extractList(trendingV2()).mapNotNull { mapSubjectToMediaItem(it) }
 
-    fun searchItems(keyword: String, page: Int = 1): List<MediaItem> =
+    suspend fun searchItems(keyword: String, page: Int = 1): List<MediaItem> =
         extractList(search(keyword, page)).mapNotNull { mapSubjectToMediaItem(it) }
 
-    fun subjectDetailData(subjectId: String): DetailData? {
+    suspend fun subjectDetailData(subjectId: String): DetailData? {
         val root = subjectDetail(subjectId) ?: return null
         val data = root.optJSONObject("data") ?: return null
         val title = data.optString("title").ifBlank { data.optString("name") }.ifBlank { "Tanpa Judul" }
