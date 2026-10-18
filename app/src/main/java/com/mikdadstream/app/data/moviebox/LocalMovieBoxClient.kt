@@ -452,6 +452,75 @@ object LocalMovieBoxClient {
         return out
     }
 
+    private fun isTrapUrl(url: String): Boolean {
+        val u = url.lowercase()
+        return u.contains("macdn.aoneroom.com") ||
+            u.contains("please_update") ||
+            u.contains("update_app") ||
+            u.contains("b164fbfb43")
+    }
+
+    fun firstBySubject(subjectId: String): JSONObject? {
+        val token = boot() ?: return null
+        val base = activeHostOrFirst()
+        return callJson(base, "/wefeed-mobile-bff/ugc/video/first-by-subject?subjectId=$subjectId", null, token, false)
+    }
+
+    fun collectionDownloadList(collectionId: String, page: Int = 1, perPage: Int = 50): JSONObject? {
+        val token = boot() ?: return null
+        val base = activeHostOrFirst()
+        return callJson(
+            base,
+            "/wefeed-mobile-bff/ugc/collection/download-list?collectionId=$collectionId&page=$page&perPage=$perPage",
+            null,
+            token,
+            false,
+        )
+    }
+
+    fun fetchRealStream(subjectId: String, resourceId: String?): MediaStream? {
+        val first = firstBySubject(subjectId) ?: return null
+        val collectionId = first.optJSONObject("data")
+            ?.optJSONObject("belongToCollection")
+            ?.optString("collectionId")
+            ?.takeIf { it.isNotBlank() } ?: return null
+        val list = collectionDownloadList(collectionId, 1, 50) ?: return null
+        val items = list.optJSONObject("data")?.optJSONArray("items") ?: return null
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            val resources = item.optJSONArray("resources") ?: continue
+            for (r in 0 until resources.length()) {
+                val res = resources.optJSONObject(r) ?: continue
+                if (resourceId != null && resourceId.isNotBlank() && res.optString("id") != resourceId) continue
+                val url = res.optString("url").takeIf { it.isNotBlank() } ?: continue
+                val hdrs = LinkedHashMap<String, String>()
+                hdrs["Referer"] = "https://www.movieboxpro.app/"
+                hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
+                return MediaStream(
+                    server = "Moviebox Local",
+                    format = res.optString("format", "mp4").lowercase(),
+                    quality = res.optString("resolutions").takeIf { it.isNotBlank() } ?: "Auto",
+                    url = url,
+                    headers = hdrs,
+                )
+            }
+        }
+        // fallback: first resource of first item
+        val firstItem = items.optJSONObject(0) ?: return null
+        val firstRes = firstItem.optJSONArray("resources")?.optJSONObject(0) ?: return null
+        val url = firstRes.optString("url").takeIf { it.isNotBlank() } ?: return null
+        val hdrs = LinkedHashMap<String, String>()
+        hdrs["Referer"] = "https://www.movieboxpro.app/"
+        hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
+        return MediaStream(
+            server = "Moviebox Local",
+            format = firstRes.optString("format", "mp4").lowercase(),
+            quality = firstRes.optString("resolutions").takeIf { it.isNotBlank() } ?: "Auto",
+            url = url,
+            headers = hdrs,
+        )
+    }
+
     suspend fun fetchStreams(subjectId: String, se: Int = 1, ep: Int = 1): List<MediaStream>? =
         withContext(Dispatchers.IO) {
             val token = boot() ?: return@withContext null
@@ -474,10 +543,18 @@ object LocalMovieBoxClient {
                 }
                 val data = root.optJSONObject("data") ?: continue
                 val streams = buildStreams(data)
-                if (streams.isNotEmpty()) {
-                    Log.i(TAG, "Moviebox Local stream count=${streams.size} subj=${subjectId.takeLast(6)}")
-                    return@withContext streams
+            val trap = streams.firstOrNull()?.url?.let { isTrapUrl(it) } == true
+            if (trap) {
+                val real = fetchRealStream(subjectId, resourceId)
+                if (real != null) {
+                    Log.i(TAG, "Moviebox Local real stream subj=${subjectId.takeLast(6)}")
+                    return@withContext listOf(real)
                 }
+            }
+            if (streams.isNotEmpty()) {
+                Log.i(TAG, "Moviebox Local stream count=${streams.size} subj=${subjectId.takeLast(6)}")
+                return@withContext streams
+            }
             }
             null
         }
