@@ -166,8 +166,9 @@ class StreamRepository(
 
     suspend fun detail(modelId: String, id: String): DetailData {
         if (modelId.equals("moviebox-local", true)) {
-            return LocalMovieBoxClient.subjectDetailData(id)
-                ?: throw ApiError("Detail Moviebox Local tidak ditemukan.")
+            val d = LocalMovieBoxClient.subjectDetailData(id)
+            android.util.Log.i("MovieboxLocal", "detail id=$id episodes=${d?.episodeList?.size}")
+            return d ?: throw ApiError("Detail Moviebox Local tidak ditemukan.")
         }
         return unwrap(call { api.detail(apiModelId(modelId), id) }, "Detail tidak ditemukan.")
     }
