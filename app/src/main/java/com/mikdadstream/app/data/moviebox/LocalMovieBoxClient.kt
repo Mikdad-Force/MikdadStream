@@ -156,7 +156,7 @@ object LocalMovieBoxClient {
         return headers
     }
 
-            fun callJson(
+                    fun callJson(
         base: String,
         pathAndQuery: String,
         body: String?,
@@ -169,7 +169,8 @@ object LocalMovieBoxClient {
         if (body != null) builder.post(body.toRequestBody("application/json;charset=UTF-8".toMediaType()))
         
         // Retry up to 3 times for transient failures
-        repeat(3) { attempt ->
+        var attempt = 0
+        while (attempt < 3) {
             // Regenerate headers with fresh timestamp on each attempt
             val headers = signedHeaders(method, pathAndQuery, body, auth, playMode = playMode)
             val builder = Request.Builder()
@@ -179,23 +180,52 @@ object LocalMovieBoxClient {
             
             try {
                 val response = http.newCall(builder.build()).execute()
-                return response.use { resp ->
-                    resp.header("x-user")?.let { xu ->
-                        runCatching {
-                            val tok = if (xu.trim().startsWith("{")) JSONObject(xu).optString("token", "") else xu
-                            if (tok.isNotBlank()) {
-                                tokenLock.withLock { guestToken = tok }
+                val responseFinal = response
+                val result = responseFinal.use { resp ->
+                    val statusCode = resp.code
+                    val bodyString = resp.body?.string() ?: ""
+                    
+                    // Log HTTP status for debugging
+                    Log.i(TAG, "callJson HTTP $statusCode ${resp.request.url}")
+                    
+                    // Handle HTTP error status codes
+                    if (statusCode !in 200..299) {
+                        Log.w(TAG, "callJson HTTP error $statusCode: $bodyString")
+                        if (attempt == 2) {
+                            Log.w(TAG, "callJson HTTP error after 3 attempts: $statusCode $bodyString")
+                            null
+                        } else {
+                            Thread.sleep((500L * (attempt + 1))) // Exponential backoff
+                            null
+                        }
+                    } else {
+                        val bodyStringFinal = resp.body?.string() ?: ""
+                        resp.header("x-user")?.let { xu ->
+                            runCatching {
+                                val tok = if (xu.trim().startsWith("{")) JSONObject(xu).optString("token", "") else xu
+                                if (tok.isNotBlank()) {
+                                    tokenLock.withLock { guestToken = tok }
+                                }
                             }
                         }
+                        if (bodyString.isNotBlank()) JSONObject(bodyString) else null
                     }
-                    return resp.body?.string()?.let { JSONObject(it) }
                 }
+                // If result is null (HTTP error), continue to retry
+                if (result == null) {
+                    if (attempt == 2) return null
+                    Thread.sleep((500L * (attempt + 1))) // Exponential backoff
+                    attempt++
+                    continue
+                }
+                return result
             } catch (t: Throwable) {
                 if (attempt == 2) {
                     Log.w(TAG, "callJson failed after 3 attempts: ${t.javaClass.simpleName}: ${t.message}")
                     return null
                 }
                 Thread.sleep((500L * (attempt + 1))) // Exponential backoff
+                attempt++
             }
         }
         return null
