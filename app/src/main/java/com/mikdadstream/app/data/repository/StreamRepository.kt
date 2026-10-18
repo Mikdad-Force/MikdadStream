@@ -3,6 +3,7 @@ package com.mikdadstream.app.data.repository
 import com.mikdadstream.app.data.local.HistoryDao
 import com.mikdadstream.app.data.local.SearchHistoryDao
 import com.mikdadstream.app.data.local.WatchlistDao
+import com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
 import com.mikdadstream.app.data.moviebox.MovieboxResolver
 import com.mikdadstream.app.data.remote.AccountData
 import com.mikdadstream.app.data.remote.ApiError
@@ -121,6 +122,9 @@ class StreamRepository(
     // ---------- Kategori & daftar video ----------
 
     suspend fun categories(modelId: String): List<CategoryBundle> {
+        if (modelId.equals("moviebox-local", true)) {
+            return listOf(CategoryBundle("trending", "Trending"))
+        }
         val envelope: Envelope<CategoriesData> = call { api.categories(apiModelId(modelId)) }
         val data = unwrap(envelope, "Gagal memuat kategori.")
         return data.data.orEmpty()
@@ -128,8 +132,18 @@ class StreamRepository(
             .map { CategoryBundle(it.safeId, it.safeName) }
     }
 
-    suspend fun videos(modelId: String, categoryId: String, page: Int = 1): VideosData =
-        unwrap(call { api.videos(apiModelId(modelId), categoryId, page) }, "Gagal memuat daftar video.")
+    suspend fun videos(modelId: String, categoryId: String, page: Int = 1): VideosData {
+        if (modelId.equals("moviebox-local", true)) {
+            return VideosData(
+                type = "movie_tv",
+                moduleName = "Moviebox Local",
+                items = LocalMovieBoxClient.trendingItems(),
+                page = page,
+                hasMore = false,
+            )
+        }
+        return unwrap(call { api.videos(apiModelId(modelId), categoryId, page) }, "Gagal memuat daftar video.")
+    }
 
     suspend fun search(query: String, page: Int = 1): List<MediaItem> {
         val trimmed = query.trim()
@@ -142,8 +156,13 @@ class StreamRepository(
 
     // ---------- Detail ----------
 
-    suspend fun detail(modelId: String, id: String): DetailData =
-        unwrap(call { api.detail(apiModelId(modelId), id) }, "Detail tidak ditemukan.")
+    suspend fun detail(modelId: String, id: String): DetailData {
+        if (modelId.equals("moviebox-local", true)) {
+            return LocalMovieBoxClient.subjectDetailData(id)
+                ?: throw ApiError("Detail Moviebox Local tidak ditemukan.")
+        }
+        return unwrap(call { api.detail(apiModelId(modelId), id) }, "Detail tidak ditemukan.")
+    }
 
     /**
      * Detail dengan pemetaan model otomatis: bila modelId tidak diketahui
