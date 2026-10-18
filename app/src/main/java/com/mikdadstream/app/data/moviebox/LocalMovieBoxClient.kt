@@ -479,11 +479,12 @@ object LocalMovieBoxClient {
     }
 
     fun fetchRealStream(subjectId: String, resourceId: String?): MediaStream? {
-        val first = firstBySubject(subjectId) ?: return null
+        val first = firstBySubject(subjectId)
+        if (first == null) { android.util.Log.w(TAG, "firstBySubject null"); return null }
         val collectionId = first.optJSONObject("data")
             ?.optJSONObject("belongToCollection")
             ?.optString("collectionId")
-            ?.takeIf { it.isNotBlank() } ?: return null
+            ?.takeIf { it.isNotBlank() } ?: run { android.util.Log.w(TAG, "collectionId null"); return null }
         val list = collectionDownloadList(collectionId, 1, 50) ?: return null
         val items = list.optJSONObject("data")?.optJSONArray("items") ?: return null
         for (i in 0 until items.length()) {
@@ -546,6 +547,7 @@ object LocalMovieBoxClient {
             val trap = streams.firstOrNull()?.url?.let { isTrapUrl(it) } == true
             if (trap) {
                 val real = fetchRealStream(subjectId, resourceId)
+                android.util.Log.w(TAG, "fetchRealStream result=${real != null} subj=${subjectId.takeLast(6)}")
                 if (real != null) {
                     Log.i(TAG, "Moviebox Local real stream subj=${subjectId.takeLast(6)}")
                     return@withContext listOf(real)
