@@ -169,24 +169,32 @@ object LocalMovieBoxClient {
             .url(base + pathAndQuery)
         headers.forEach { (k, v) -> builder.header(k, v) }
         if (body != null) builder.post(body.toRequestBody("application/json;charset=UTF-8".toMediaType()))
-        return try {
-            http.newCall(builder.build()).execute().use { resp ->
-                resp.header("x-user")?.let { xu ->
-                    runCatching {
-                        val tok = if (xu.trim().startsWith("{")) JSONObject(xu).optString("token", "") else xu
-                        if (tok.isNotBlank()) {
-                            tokenLock.withLock { guestToken = tok }
+        
+        // Retry up to 3 times for transient failures
+        repeat(3) { attempt ->
+            try {
+                val response = http.newCall(builder.build()).execute()
+                return response.use { resp ->
+                    resp.header("x-user")?.let { xu ->
+                        runCatching {
+                            val tok = if (xu.trim().startsWith("{")) JSONObject(xu).optString("token", "") else xu
+                            if (tok.isNotBlank()) {
+                                tokenLock.withLock { guestToken = tok }
+                            }
                         }
                     }
+                    return resp.body?.string()?.let { JSONObject(it) }
                 }
-                resp.body?.string()?.let { JSONObject(it) }
+            } catch (t: Throwable) {
+                if (attempt == 2) {
+                    Log.w(TAG, "callJson failed after 3 attempts: ${t.javaClass.simpleName}: ${t.message}")
+                    return null
+                }
+                Thread.sleep((500L * (attempt + 1))) // Exponential backoff
             }
-        } catch (t: Throwable) {
-            Log.w(TAG, "callJson error: ${t.javaClass.simpleName}: ${t.message}")
-            null
         }
+        return null
     }
-
     fun boot(): String? {
         tokenLock.withLock { guestToken?.let { if (it.isNotBlank()) return it } }
         for (base in HOSTS) {
@@ -196,7 +204,8 @@ object LocalMovieBoxClient {
                 Log.w(TAG, "boot null host=$base")
                 continue
             }
-            if (root.optInt("code", -1) == 0) {
+            val code = root.optInt("code", -1)
+            if (code == 0) {
                 val token = root.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
                     ?: tokenLock.withLock { guestToken }
                 if (!token.isNullOrBlank()) {
@@ -207,6 +216,8 @@ object LocalMovieBoxClient {
                     Log.i(TAG, "bootstrap ok host=$base")
                     return token
                 }
+            } else {
+                Log.w(TAG, "boot failed host=$base code=$code msg=${root.optString("message", "")}")
             }
         }
         return null
