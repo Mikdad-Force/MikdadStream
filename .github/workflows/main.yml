@@ -33,7 +33,7 @@ jobs:
       - name: Read version from build.gradle.kts
         id: version
         run: |
-          APP_VERSION=$(grep 'val appVersionName' build.gradle.kts | grep -oP '"[0-9.]+"' | tr -d '"' | tail -1)
+          APP_VERSION=$(grep 'val appVersionName' app/build.gradle.kts | grep -oP '"[0-9.]+"' | tr -d '"' | tail -1)
           echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build Release APK
