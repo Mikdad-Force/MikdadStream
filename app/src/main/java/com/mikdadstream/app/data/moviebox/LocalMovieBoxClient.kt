@@ -478,7 +478,11 @@ object LocalMovieBoxClient {
         )
     }
 
-    fun fetchRealStream(subjectId: String, resourceId: String?): MediaStream? {
+    suspend fun fetchRealStream(subjectId: String, resourceId: String?): MediaStream? {
+        val rid = resourceId ?: run {
+            val d = subjectDetail(subjectId)
+            d?.optJSONObject("data")?.optJSONArray("resourceDetectors")?.optJSONObject(0)?.optString("resourceId")
+        }
         val first = firstBySubject(subjectId)
         if (first == null) { android.util.Log.w(TAG, "firstBySubject null"); return null }
         val collectionId = first.optJSONObject("data")
@@ -492,7 +496,7 @@ object LocalMovieBoxClient {
             val resources = item.optJSONArray("resources") ?: continue
             for (r in 0 until resources.length()) {
                 val res = resources.optJSONObject(r) ?: continue
-                if (resourceId != null && resourceId.isNotBlank() && res.optString("id") != resourceId) continue
+                if (rid != null && rid.isNotBlank() && res.optString("id") != rid) continue
                 val url = res.optString("url").takeIf { it.isNotBlank() } ?: continue
                 val hdrs = LinkedHashMap<String, String>()
                 hdrs["Referer"] = "https://www.movieboxpro.app/"
@@ -552,6 +556,8 @@ object LocalMovieBoxClient {
                     Log.i(TAG, "Moviebox Local real stream subj=${subjectId.takeLast(6)}")
                     return@withContext listOf(real)
                 }
+                // Jangan kembalikan iklan/trap; kosongkan agar tidak memutar ad.
+                return@withContext emptyList()
             }
             if (streams.isNotEmpty()) {
                 Log.i(TAG, "Moviebox Local stream count=${streams.size} subj=${subjectId.takeLast(6)}")

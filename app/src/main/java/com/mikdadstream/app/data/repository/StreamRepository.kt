@@ -208,7 +208,11 @@ class StreamRepository(
             return SourceData(streams = streams, subtitles = emptyList())
         }
         val data = unwrap(call { api.source(apiModelId(modelId), episodeId, id) }, "Sumber video tidak tersedia.")
-        return MovieboxResolver.maybeRefresh(data)
+        val refreshed = MovieboxResolver.maybeRefresh(data, id)
+        return if (refreshed.playableStreams.isEmpty() && data.playableStreams.isNotEmpty()) {
+            // Hindari memutar iklan/trap jika refresh lokal gagal.
+            data.copy(streams = emptyList())
+        } else refreshed
     }
 
     suspend fun download(modelId: String, episodeId: String, id: String): SourceData =

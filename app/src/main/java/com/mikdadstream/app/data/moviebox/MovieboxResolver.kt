@@ -391,13 +391,15 @@ object MovieboxResolver {
      * berupa URL template tanpa `sign`, tarik stream baru via protokol
      * Moviebox; bila gagal, SourceData asli dipakai.
      */
-    suspend fun maybeRefresh(data: SourceData): SourceData {
+    suspend fun maybeRefresh(data: SourceData, subjectId: String? = null): SourceData {
         val streams = data.playableStreams
         if (streams.isEmpty()) return data
-        val detected = detectFromStreams(streams) ?: return data
+        val detectedSubject = subjectId ?: detectFromStreams(streams)?.first
+        if (detectedSubject.isNullOrBlank()) return data
+        val ep = detectFromStreams(streams)?.second ?: 1
         // Selalu tarik ulang via Moviebox Local agar sumber video terverifikasi/berlabel Moviebox Local.
         val fresh = try {
-            fetchStreams(detected.first, 1, detected.second)
+            fetchStreams(detectedSubject, 1, ep)
         } catch (t: Throwable) {
             android.util.Log.w(TAG, "resolver error: ${t.javaClass.simpleName}: ${t.message}")
             null
