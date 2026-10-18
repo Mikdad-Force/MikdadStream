@@ -367,16 +367,29 @@ object MovieboxResolver {
     /** Coba tarik stream baru untuk subjectId tertentu berdasarkan keahlian ep. */
     suspend fun fetchStreams(subjectId: String, ep: Int = 1): List<MediaStream>? =
         withContext(Dispatchers.IO) {
-            val token = boot()
-            if (token == null) {
-                android.util.Log.w(TAG, "bootstrap gagal (semua host)")
-                return@withContext null
-            }
+            val token = boot() ?: return@withContext null
             val base = activeHost ?: HOSTS.first()
+
+            // Ambil detail subject (seperti /stream/{id} pada LocalMovieBoxServer)
+            // untuk mendapatkan resourceId yang dibutuhkan play-info.
+            val detailRoot = runCatching {
+                callJson(base, "$SUBJECT_GET_PATH?subject_id=$subjectId", null, token, false)
+            }.getOrNull()
+            val detailData = detailRoot?.optJSONObject("data")
+            val resourceId = detailData?.optJSONArray("resourceDetectors")
+                ?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+
+            val se = if (ep > 0) 1 else 0
+            val epVal = if (ep > 0) ep else 0
             val variants = listOf(
-                "?subjectId=$subjectId&se=1&ep=$ep&resolution=0",
-                "?subjectId=$subjectId&se=1&ep=1&resolution=0",
-                "?subjectId=$subjectId&se=0&ep=0&resolution=0",
+                buildString {
+                    append("?subjectId=$subjectId")
+                    if (se > 0) append("&se=$se")
+                    if (epVal > 0) append("&ep=$epVal")
+                    resourceId?.let { append("&resourceId=$it") }
+                },
+                "?subjectId=$subjectId&se=1&ep=1" + (resourceId?.let { "&resourceId=$it" } ?: ""),
+                "?subjectId=$subjectId&se=0&ep=0" + (resourceId?.let { "&resourceId=$it" } ?: ""),
             )
             for (q in variants) {
                 val root = callJson(base, PLAY_INFO_PATH + q, null, token, true) ?: continue
