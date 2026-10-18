@@ -395,7 +395,10 @@ object LocalMovieBoxClient {
         val desc = data.optString("description").takeIf { it.isNotBlank() }
         val cover = (data.optJSONObject("cover")?.optString("url"))
             ?: data.optString("cover").takeIf { it.isNotBlank() }
-        val episodes = seasonInfo(subjectId)?.let { mapSeasonToEpisodes(it) }
+        val totalEp = data.optJSONArray("resourceDetectors")?.optJSONObject(0)?.optInt("totalEpisode", 0) ?: 0
+        val episodes = seasonInfo(subjectId)?.let { mapSeasonToEpisodes(it) }?.takeIf { it.isNotEmpty() }
+            ?: if (totalEp > 0) (1..totalEp).map { EpisodeData(episodeId = "1_$it", episodeNumber = it) }
+            else listOf(EpisodeData(episodeId = "1_1", episodeNumber = 1))
         return DetailData(
             id = subjectId,
             title = title,
