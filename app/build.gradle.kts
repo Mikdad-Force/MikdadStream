@@ -11,7 +11,7 @@ plugins {
 val apiBaseUrl: String = (findProperty("STREAM_API_URL") as String?) ?: "https://mikdad-api.mikdadtv.workers.dev"
 
 val appVersionCode: Int = (findProperty("VERSION_CODE") as String?)?.toIntOrNull() ?: 46
-val appVersionName: String = (findProperty("VERSION_NAME") as String?) ?: "2.1.10"
+val appVersionName: String = (findProperty("VERSION_NAME") as String?) ?: "2.1.11"
 
 val googleClientId: String = (findProperty("GOOGLE_CLIENT_ID") as String?)
     ?: "350158650454-osksv8riv4q7dfpr4ff2o509l6git6ot.apps.googleusercontent.com"

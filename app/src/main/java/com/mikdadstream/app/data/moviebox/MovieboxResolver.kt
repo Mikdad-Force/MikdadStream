@@ -2,6 +2,7 @@ package com.mikdadstream.app.data.moviebox
 
 import android.os.Build
 import com.mikdadstream.app.data.remote.MediaStream
+import com.mikdadstream.app.data.remote.MovieboxEpisodeStream
 import com.mikdadstream.app.data.remote.MovieboxUpdate
 import com.mikdadstream.app.data.remote.SourceData
 import java.security.MessageDigest
@@ -237,6 +238,30 @@ object MovieboxResolver {
             val data = root?.optJSONObject("data") ?: return@withContext null
             val rd = data.optJSONArray("resourceDetectors")?.optJSONObject(0)
             try {
+                val episodes = ArrayList<MovieboxEpisodeStream>()
+                runCatching {
+                    val dets = data.optJSONArray("resourceDetectors") ?: return@runCatching
+                    for (di in 0 until dets.length()) {
+                        val det = dets.optJSONObject(di) ?: continue
+                        val detCookie = det.optString("signCookie", "")
+                        val resList = det.optJSONArray("resolutionList") ?: continue
+                        for (ri in 0 until resList.length()) {
+                            val r = resList.optJSONObject(ri) ?: continue
+                            val url = r.optString("resourceLink", "").ifBlank { r.optString("downloadUrl", "") }
+                            if (url.isBlank()) continue
+                            val epNum = r.optInt("ep", r.optInt("episode", r.optInt("epNum", 0)))
+                            if (epNum <= 0) continue
+                            episodes.add(
+                                MovieboxEpisodeStream(
+                                    episodeNumber = epNum,
+                                    url = url,
+                                    signCookie = detCookie.ifBlank { r.optString("signCookie", "") }.ifBlank { null },
+                                    resolution = r.optString("resolution", "").ifBlank { null },
+                                ),
+                            )
+                        }
+                    }
+                }
                 MovieboxUpdate(
                     subjectId = subjectId,
                     title = data.optString("title").takeIf { it.isNotBlank() },
@@ -245,6 +270,7 @@ object MovieboxResolver {
                     genre = data.optString("genre").takeIf { it.isNotBlank() },
                     totalEpisode = rd?.optInt("totalEpisode", 1)?.takeIf { it > 0 } ?: 1,
                     isNew = false,
+                    episodes = episodes.ifEmpty { null },
                 )
             } catch (t: Throwable) {
                 null

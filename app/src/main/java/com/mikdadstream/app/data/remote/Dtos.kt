@@ -299,6 +299,13 @@ data class MovieboxPlanData(
     val total: Int? = null,
 )
 
+data class MovieboxEpisodeStream(
+    @SerializedName("episode_number") val episodeNumber: Int,
+    val url: String,
+    @SerializedName("sign_cookie") val signCookie: String? = null,
+    val resolution: String? = null,
+)
+
 data class MovieboxUpdate(
     @SerializedName("subject_id") val subjectId: String,
     val vid: String? = null,
@@ -309,6 +316,7 @@ data class MovieboxUpdate(
     val genre: String? = null,
     @SerializedName("total_episode") val totalEpisode: Int? = null,
     @SerializedName("is_new") val isNew: Boolean = false,
+    val episodes: List<MovieboxEpisodeStream>? = null,
 )
 
 data class MovieboxSubmitBody(
