@@ -457,7 +457,12 @@ object LocalMovieBoxClient {
         return u.contains("macdn.aoneroom.com") ||
             u.contains("please_update") ||
             u.contains("update_app") ||
-            u.contains("b164fbfb43")
+            u.contains("b164fbfb43") ||
+            u.contains("check") ||
+            u.contains("captcha") ||
+            u.contains("verify") ||
+            u.contains("challenge") ||
+            u.contains("recaptcha")
     }
 
     fun firstBySubject(subjectId: String): JSONObject? {
@@ -489,8 +494,9 @@ object LocalMovieBoxClient {
             ?.optJSONObject("belongToCollection")
             ?.optString("collectionId")
             ?.takeIf { it.isNotBlank() } ?: run { android.util.Log.w(TAG, "collectionId null"); return null }
-        val list = collectionDownloadList(collectionId, 1, 50) ?: return null
-        val items = list.optJSONObject("data")?.optJSONArray("items") ?: return null
+        val list = collectionDownloadList(collectionId, 1, 50)
+        if (list == null) { android.util.Log.w(TAG, "collectionDownloadList null"); return null }
+        val items = list.optJSONObject("data")?.optJSONArray("items") ?: run { android.util.Log.w(TAG, "items null"); return null }
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
             val resources = item.optJSONArray("resources") ?: continue
@@ -498,6 +504,7 @@ object LocalMovieBoxClient {
                 val res = resources.optJSONObject(r) ?: continue
                 if (rid != null && rid.isNotBlank() && res.optString("id") != rid) continue
                 val url = res.optString("url").takeIf { it.isNotBlank() } ?: continue
+                android.util.Log.i(TAG, "Moviebox Local real stream found: $url")
                 val hdrs = LinkedHashMap<String, String>()
                 hdrs["Referer"] = "https://www.movieboxpro.app/"
                 hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
