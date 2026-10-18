@@ -191,7 +191,11 @@ object LocalMovieBoxClient {
         tokenLock.withLock { guestToken?.let { if (it.isNotBlank()) return it } }
         for (base in HOSTS) {
             val path = "$BOOT_PATH?host=api.inmoviebox.com&page=1&pageSize=24&tabId=1"
-            val root = callJson(base, path, null, null, false) ?: continue
+            val root = callJson(base, path, null, null, false)
+            if (root == null) {
+                Log.w(TAG, "boot null host=$base")
+                continue
+            }
             if (root.optInt("code", -1) == 0) {
                 val token = root.optJSONObject("data")?.optString("token")?.takeIf { it.isNotBlank() }
                     ?: tokenLock.withLock { guestToken }
@@ -466,7 +470,10 @@ object LocalMovieBoxClient {
             )
             for (call in variants) {
                 val root = call() ?: continue
-                if (root.optInt("code", -1) != 0) continue
+                if (root.optInt("code", -1) != 0) {
+                    Log.w(TAG, "play-info code=${root.optInt("code", -1)} msg=${root.optString("message", "")}")
+                    continue
+                }
                 val data = root.optJSONObject("data") ?: continue
                 val streams = buildStreams(data)
                 if (streams.isNotEmpty()) {
