@@ -2,6 +2,9 @@ package com.mikdadstream.app.data.moviebox
 
 import android.util.Base64
 import android.util.Log
+import com.mikdadstream.app.data.remote.DetailData
+import com.mikdadstream.app.data.remote.EpisodeData
+import com.mikdadstream.app.data.remote.MediaItem
 import com.mikdadstream.app.data.remote.MediaStream
 import java.security.MessageDigest
 import java.util.Base64 as JavaBase64
@@ -338,6 +341,89 @@ object LocalMovieBoxClient {
         val token = boot() ?: return null
         val base = activeHostOrFirst()
         return callJson(base, "/wefeed-mobile-bff/subject-api/top-rec", "{}", token, false)
+    }
+
+    fun extractList(root: JSONObject?): List<JSONObject> {
+        if (root == null) return emptyList()
+        val data = root.optJSONObject("data") ?: root
+        val arr = data.optJSONArray("list") ?: data.optJSONArray("items") ?: data.optJSONArray("subjects")
+            ?: root.optJSONArray("list") ?: root.optJSONArray("items") ?: root.optJSONArray("subjects")
+            ?: return emptyList()
+        val out = ArrayList<JSONObject>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            out.add(o.optJSONObject("subject") ?: o)
+        }
+        return out
+    }
+
+    fun mapSubjectToMediaItem(o: JSONObject): MediaItem? {
+        val id = o.optString("subjectId").ifBlank { o.optString("id") }
+            .ifBlank { o.optString("subject_id") }.ifBlank { o.optString("subjectId") }
+        if (id.isBlank()) return null
+        val title = o.optString("title").ifBlank { o.optString("name") }
+            .ifBlank { o.optString("subjectName") }.ifBlank { "Tanpa Judul" }
+        val cover = (o.optJSONObject("cover")?.optString("url"))
+            ?: o.optString("cover").takeIf { it.isNotBlank() }
+            ?: o.optString("poster").takeIf { it.isNotBlank() }
+            ?: o.optString("thumbnail").takeIf { it.isNotBlank() }
+            ?: ""
+        val type = o.optString("subjectType").ifBlank { o.optString("type") }
+        val episodeCount = o.optInt("episodeCount", 0).let { if (it > 0) it else o.optInt("totalEpisode", 0) }
+        val detailPath = o.optString("detailPath").takeIf { it.isNotBlank() }
+        return MediaItem(
+            id = id,
+            title = title,
+            cover = cover,
+            type = type,
+            episodeCount = if (episodeCount > 0) episodeCount else null,
+            source = "Moviebox",
+            detailPath = detailPath,
+        )
+    }
+
+    fun trendingItems(): List<MediaItem> =
+        extractList(trendingV2()).mapNotNull { mapSubjectToMediaItem(it) }
+
+    fun searchItems(keyword: String, page: Int = 1): List<MediaItem> =
+        extractList(search(keyword, page)).mapNotNull { mapSubjectToMediaItem(it) }
+
+    fun subjectDetailData(subjectId: String): DetailData? {
+        val root = subjectDetail(subjectId) ?: return null
+        val data = root.optJSONObject("data") ?: return null
+        val title = data.optString("title").ifBlank { data.optString("name") }.ifBlank { "Tanpa Judul" }
+        val desc = data.optString("description").takeIf { it.isNotBlank() }
+        val cover = (data.optJSONObject("cover")?.optString("url"))
+            ?: data.optString("cover").takeIf { it.isNotBlank() }
+        val episodes = seasonInfo(subjectId)?.let { mapSeasonToEpisodes(it) }
+        return DetailData(
+            id = subjectId,
+            title = title,
+            description = desc,
+            cover = cover,
+            modelId = "moviebox-local",
+            episodes = episodes,
+        )
+    }
+
+    fun mapSeasonToEpisodes(root: JSONObject): List<EpisodeData> {
+        val data = root.optJSONObject("data") ?: root
+        val arr = data.optJSONArray("episodes") ?: data.optJSONArray("list") ?: data.optJSONArray("items") ?: return emptyList()
+        val out = ArrayList<EpisodeData>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val eid = o.optString("episodeId").ifBlank { o.optString("id") }.ifBlank { o.optString("episode_id") }
+            val num = o.optInt("episodeNumber", 0).let { if (it > 0) it else o.optInt("episode", 0) }
+                .let { if (it > 0) it else o.optInt("ep", 0) }
+            out.add(
+                EpisodeData(
+                    episodeId = eid,
+                    episodeNumber = if (num > 0) num else (i + 1),
+                    durationSeconds = o.optInt("duration", 0).takeIf { it > 0 },
+                )
+            )
+        }
+        return out
     }
 
     suspend fun fetchStreams(subjectId: String, ep: Int = 1): List<MediaStream>? =

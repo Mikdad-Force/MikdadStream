@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.mikdadstream.app.data.local.SearchHistoryEntity
 import com.mikdadstream.app.data.remote.ApiError
 import com.mikdadstream.app.data.remote.MediaItem
+import com.mikdadstream.app.AppGraph
 import com.mikdadstream.app.data.repository.StreamRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -78,7 +79,7 @@ class SearchViewModel(
             searched = true,
         )
         try {
-            val results = repo.search(query, page)
+            val results = repo.search(AppGraph.prefs.activeSource.value, query, page)
             if (myToken != token) return
             val existing = if (append) _state.value.results.map { it.safeId + it.source }.toSet() else emptySet()
             val fresh = results.filter { (it.safeId + it.source) !in existing }

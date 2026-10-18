@@ -154,6 +154,14 @@ class StreamRepository(
         return unwrap(envelope, "Pencarian gagal.").items.orEmpty()
     }
 
+    /** Pencarian untuk source tertentu; Moviebox Local memakai client ported. */
+    suspend fun search(modelId: String?, query: String, page: Int = 1): List<MediaItem> {
+        if (modelId?.equals("moviebox-local", true) == true) {
+            return LocalMovieBoxClient.searchItems(query.trim(), page)
+        }
+        return search(query, page)
+    }
+
     // ---------- Detail ----------
 
     suspend fun detail(modelId: String, id: String): DetailData {
