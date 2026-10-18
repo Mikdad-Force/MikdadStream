@@ -65,17 +65,14 @@ object MovieboxResolver {
 
     private val deviceId: String = UUID.randomUUID().toString().replace("-", "").take(32)
 
-    private fun androidUa(): String {
-        val versionCode = 50020045
-        return "com.community.oneroom/$versionCode (Linux; U; Android ${Build.VERSION.RELEASE}; " +
-            "en_US; ${Build.MODEL}; Build/${Build.BRAND}_${Build.DEVICE}; Cronet/135.0.7012.3)"
-    }
+    private fun androidUa(): String =
+        "MovieBoxPro/16.2.1 (Android 14; com.community.mbox.in)"
 
     private fun clientInfo(): String {
         val info = JSONObject()
-        info.put("package_name", "com.community.oneroom")
-        info.put("version_name", "3.0.03.0529.03")
-        info.put("version_code", 50020045)
+        info.put("package_name", "com.movieboxpro.android")
+        info.put("version_name", "16.2.1")
+        info.put("version_code", 16210)
         info.put("os", "android")
         info.put("os_version", Build.VERSION.RELEASE ?: "12")
         info.put("install_ch", "ps")
