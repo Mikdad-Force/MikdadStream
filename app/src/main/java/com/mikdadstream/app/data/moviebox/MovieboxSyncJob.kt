@@ -18,8 +18,8 @@ object MovieboxSyncJob {
 
     private const val TAG = "MovieboxSync"
     private const val SP = "moviebox_sync"
-    private const val INTERVAL_MS = 60 * 60 * 1000L
-    private const val PLAN_CAP = 8
+    private const val INTERVAL_MS = 15 * 60 * 1000L
+    private const val PLAN_CAP = 12
     private const val DISCOVER_CAP = 4
 
     fun maybeRun(context: Context) {
@@ -41,8 +41,9 @@ object MovieboxSyncJob {
         try {
             val api = AppGraph.apiClient.api
 
-            // Plan lama — perbarui judul/episodes yang sudah ada di katalog.
-            if (!sp.getBoolean("plan_done", false)) {
+            // Plan — perbarui judul/episodes yang sudah ada di katalog.
+            // Kursor berputar (wrap) karena plan terus bertambah.
+            run {
                 val cursor = sp.getInt("plan_cursor", 0)
                 val plan = runCatching { api.movieboxPlan(cursor) }.getOrNull()?.data
                 val items = plan?.items.orEmpty()
@@ -54,11 +55,7 @@ object MovieboxSyncJob {
                     processed++
                 }
                 val next = plan?.cursorNext
-                if (items.isEmpty() || next == null) {
-                    sp.edit().putBoolean("plan_done", true).apply()
-                } else {
-                    sp.edit().putInt("plan_cursor", next).apply()
-                }
+                sp.edit().putInt("plan_cursor", next ?: 0).apply()
             }
 
             // Discover — judul baru dari katalog Moviebox (H5).
