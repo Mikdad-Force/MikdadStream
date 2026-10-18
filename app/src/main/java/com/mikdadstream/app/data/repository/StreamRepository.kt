@@ -80,12 +80,23 @@ class StreamRepository(
         if (envelope.status == "error" || envelope.data == null) {
             throw ApiError("Gagal memuat daftar sumber video.")
         }
-        val result = ModelsResult(envelope.data.filter { !it.safeId.isBlank() }, envelope.searchAllMovie ?: true)
+        val baseModels = envelope.data.orEmpty().filter { !it.safeId.isBlank() }
+        val localModel = SourceModel(
+            id = "moviebox-local",
+            name = "Moviebox Local",
+            status = "active",
+            contentType = "movie_tv",
+            description = "Sumber video Moviebox via client lokal aplikasi",
+        )
+        val models = baseModels + localModel
+        val result = ModelsResult(models, envelope.searchAllMovie ?: true)
         nameIndex.clear()
         result.models.forEach { model ->
             nameIndex[normalize(model.safeName)] = model.safeId
             nameIndex[normalize(model.safeId)] = model.safeId
         }
+        nameIndex[normalize("Moviebox Local")] = "moviebox-local"
+        nameIndex[normalize("movieboxlocal")] = "moviebox-local"
         modelsCache = result
         _modelsState.value = result
         return result
@@ -93,6 +104,10 @@ class StreamRepository(
 
     private fun normalize(value: String): String =
         value.lowercase().replace(Regex("[^a-z0-9]"), "")
+
+    /** Petakan source sintetis lokal ke id Moviebox untuk call API katalog. */
+    private fun apiModelId(modelId: String): String =
+        if (modelId.equals("moviebox-local", true)) "moviebox" else modelId
 
     /** Petakan nama sumber (dari hasil pencarian) ke model_id. */
     fun modelIdForSourceName(sourceName: String?): String? {
@@ -106,7 +121,7 @@ class StreamRepository(
     // ---------- Kategori & daftar video ----------
 
     suspend fun categories(modelId: String): List<CategoryBundle> {
-        val envelope: Envelope<CategoriesData> = call { api.categories(modelId) }
+        val envelope: Envelope<CategoriesData> = call { api.categories(apiModelId(modelId)) }
         val data = unwrap(envelope, "Gagal memuat kategori.")
         return data.data.orEmpty()
             .filter { !it.safeId.isBlank() }
@@ -114,7 +129,7 @@ class StreamRepository(
     }
 
     suspend fun videos(modelId: String, categoryId: String, page: Int = 1): VideosData =
-        unwrap(call { api.videos(modelId, categoryId, page) }, "Gagal memuat daftar video.")
+        unwrap(call { api.videos(apiModelId(modelId), categoryId, page) }, "Gagal memuat daftar video.")
 
     suspend fun search(query: String, page: Int = 1): List<MediaItem> {
         val trimmed = query.trim()
@@ -128,7 +143,7 @@ class StreamRepository(
     // ---------- Detail ----------
 
     suspend fun detail(modelId: String, id: String): DetailData =
-        unwrap(call { api.detail(modelId, id) }, "Detail tidak ditemukan.")
+        unwrap(call { api.detail(apiModelId(modelId), id) }, "Detail tidak ditemukan.")
 
     /**
      * Detail dengan pemetaan model otomatis: bila modelId tidak diketahui
@@ -156,12 +171,12 @@ class StreamRepository(
     // ---------- Sumber pemutaran ----------
 
     suspend fun source(modelId: String, episodeId: String, id: String): SourceData {
-        val data = unwrap(call { api.source(modelId, episodeId, id) }, "Sumber video tidak tersedia.")
+        val data = unwrap(call { api.source(apiModelId(modelId), episodeId, id) }, "Sumber video tidak tersedia.")
         return MovieboxResolver.maybeRefresh(data)
     }
 
     suspend fun download(modelId: String, episodeId: String, id: String): SourceData =
-        unwrap(call { api.download(modelId, episodeId, id) }, "Tautan unduhan tidak tersedia.")
+        unwrap(call { api.download(apiModelId(modelId), episodeId, id) }, "Tautan unduhan tidak tersedia.")
 
     // ---------- Akun ----------
 

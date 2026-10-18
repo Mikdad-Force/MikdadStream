@@ -418,7 +418,7 @@ private fun CategoryChipsRow(
         modifier = Modifier.heightIn(max = 80.dp)
     ) {
         // Chip "Semua Film" hanya tampil untuk sumber moviebox
-        if (sourceModelId == "moviebox") {
+        if (sourceModelId == "moviebox" || sourceModelId == "moviebox-local") {
             item {
                 val isActive = activeCategory == null
                 var focused by remember { mutableStateOf(false) }
