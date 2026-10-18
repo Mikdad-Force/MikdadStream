@@ -18,8 +18,8 @@ object MovieboxSyncJob {
 
     private const val TAG = "MovieboxSync"
     private const val SP = "moviebox_sync"
-    private const val INTERVAL_MS = 15 * 60 * 1000L
-    private const val PLAN_CAP = 12
+    private const val INTERVAL_MS = 10 * 60 * 1000L
+    private const val PLAN_CAP = 40
     private const val DISCOVER_CAP = 4
 
     fun maybeRun(context: Context) {
