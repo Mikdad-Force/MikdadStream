@@ -18,9 +18,9 @@ object MovieboxSyncJob {
 
     private const val TAG = "MovieboxSync"
     private const val SP = "moviebox_sync"
-    private const val INTERVAL_MS = 10 * 60 * 1000L
+    private const val INTERVAL_MS = 5 * 60 * 1000L
     private const val PLAN_CAP = 40
-    private const val DISCOVER_CAP = 4
+    private const val DISCOVER_CAP = 12
 
     fun maybeRun(context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
