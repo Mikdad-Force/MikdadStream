@@ -82,5 +82,6 @@ class MikdadStreamApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppGraph.init(this)
+        com.mikdadstream.app.data.moviebox.MovieboxSyncJob.maybeRun(this)
     }
 }

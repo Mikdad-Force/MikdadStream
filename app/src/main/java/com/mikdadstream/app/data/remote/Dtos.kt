@@ -284,3 +284,39 @@ data class DeviceStatusData(
     @SerializedName("user_code") val userCode: String? = null,
     @SerializedName("expires_in") val expiresIn: Int? = null,
 )
+
+// ---------- Moviebox auto-sync (perangkat → worker) ----------
+
+data class MovieboxPlanItem(
+    val vid: String,
+    @SerializedName("subject_id") val subjectId: String,
+    val n: Int? = null,
+)
+
+data class MovieboxPlanData(
+    val items: List<MovieboxPlanItem>,
+    @SerializedName("cursor_next") val cursorNext: Int? = null,
+    val total: Int? = null,
+)
+
+data class MovieboxUpdate(
+    @SerializedName("subject_id") val subjectId: String,
+    val vid: String? = null,
+    @SerializedName("detail_path") val detailPath: String? = null,
+    val title: String? = null,
+    val description: String? = null,
+    val cover: String? = null,
+    val genre: String? = null,
+    @SerializedName("total_episode") val totalEpisode: Int? = null,
+    @SerializedName("is_new") val isNew: Boolean = false,
+)
+
+data class MovieboxSubmitBody(
+    val updates: List<MovieboxUpdate> = emptyList(),
+)
+
+data class MovieboxSubmitResult(
+    @SerializedName("updated") val updated: Int? = null,
+    @SerializedName("added") val added: Int? = null,
+    @SerializedName("skipped") val skipped: Int? = null,
+)

@@ -69,4 +69,10 @@ interface MikdadApi {
 
     @POST("api/app/auth/device/exchange")
     suspend fun deviceExchange(@Body body: ExchangeBody): Envelope<TokenData>
+
+    @GET("api/app/moviebox/plan")
+    suspend fun movieboxPlan(@Query("cursor") cursor: Int): Envelope<MovieboxPlanData>
+
+    @POST("api/app/moviebox/submit")
+    suspend fun movieboxSubmit(@Body body: MovieboxSubmitBody): Envelope<MovieboxSubmitResult>
 }

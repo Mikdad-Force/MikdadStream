@@ -2,6 +2,7 @@ package com.mikdadstream.app.data.moviebox
 
 import android.os.Build
 import com.mikdadstream.app.data.remote.MediaStream
+import com.mikdadstream.app.data.remote.MovieboxUpdate
 import com.mikdadstream.app.data.remote.SourceData
 import java.security.MessageDigest
 import java.util.Base64
@@ -209,6 +210,135 @@ object MovieboxResolver {
             }
         }
         return null
+    }
+
+    private const val SUBJECT_GET_PATH = "/wefeed-mobile-bff/subject-api/get"
+
+    data class H5DiscoverItem(
+        val subjectId: String,
+        val title: String?,
+        val poster: String?,
+        val detailPath: String?,
+    )
+
+    /**
+     * Info subject untuk sync otomatis: dipanggil dari perangkat asli (server
+     * IP diblokir Moviebox). Hasil dikirim MovieboxSyncJob ke worker.
+     */
+    suspend fun subjectInfo(subjectId: String): MovieboxUpdate? =
+        withContext(Dispatchers.IO) {
+            val token = boot() ?: return@withContext null
+            val base = activeHost ?: HOSTS.first()
+            val root = try {
+                callJson(base, "$SUBJECT_GET_PATH?subject_id=$subjectId", null, token, false)
+            } catch (t: Throwable) {
+                null
+            }
+            val data = root?.optJSONObject("data") ?: return@withContext null
+            val rd = data.optJSONArray("resourceDetectors")?.optJSONObject(0)
+            try {
+                MovieboxUpdate(
+                    subjectId = subjectId,
+                    title = data.optString("title").takeIf { it.isNotBlank() },
+                    description = data.optString("description").takeIf { it.isNotBlank() },
+                    cover = data.optJSONObject("cover")?.optString("url")?.takeIf { it.isNotBlank() },
+                    genre = data.optString("genre").takeIf { it.isNotBlank() },
+                    totalEpisode = rd?.optInt("totalEpisode", 1)?.takeIf { it > 0 } ?: 1,
+                    isNew = false,
+                )
+            } catch (t: Throwable) {
+                null
+            }
+        }
+
+    private const val H5_API_BASE = "https://h5-api.aoneroom.com/wefeed-h5api-bff"
+    private const val H5_HOST = "moviebox.ph"
+    @Volatile private var h5Token: String = ""
+
+    private fun h5Headers(): Map<String, String> = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Linux; Android 13; id_ID; Redmi Note 12) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+        "Referer" to "https://$H5_HOST/id",
+        "Origin" to "https://$H5_HOST",
+        "X-Client-Info" to """{"timezone":"Asia/Jakarta","locale":"id_ID","country":"ID","language":"id","sp_code":"51010"}""",
+        "X-Request-Lang" to "id",
+        "Accept-Language" to "id-ID,id;q=0.9,en;q=0.5",
+        "Accept" to "application/json",
+        "Content-Type" to "application/json",
+        "Authorization" to (h5Token.takeIf { it.isNotBlank() }?.let { "Bearer $it" } ?: ""),
+    )
+
+    private fun h5TokenFromBody(res: okhttp3.Response): String {
+        val xu = res.header("x-user") ?: ""
+        return runCatching {
+            JSONTokenerStyle(xu)
+        }.getOrNull() ?: ""
+    }
+
+    private fun JSONTokenerStyle(xu: String): String {
+        val obj = runCatching { JSONObject(xu) }.getOrNull() ?: return ""
+        return obj.optString("token") ?: ""
+    }
+
+    /** Katalog terbaru Moviebox (film & tv) dari perangkat asli. */
+    suspend fun h5Discover(maxPerTab: Int = 6): List<H5DiscoverItem> = withContext(Dispatchers.IO) {
+        val out = ArrayList<H5DiscoverItem>()
+        for (tabId in intArrayOf(2, 5)) {
+            try {
+                val hdrMap = h5Headers().filter { it.value.isNotBlank() }.toHeaders()
+                if (h5Token.isBlank()) {
+                    val home = http.newCall(
+                        okhttp3.Request.Builder()
+                            .url("$H5_API_BASE/home?host=$H5_HOST/id")
+                            .headers(hdrMap)
+                            .build(),
+                    ).execute().use { res -> h5TokenFromBody(res) }
+                    if (home.isNotBlank()) h5Token = home
+                }
+                val payload = JSONObject()
+                    .put("tabId", tabId)
+                    .put("filter", JSONObject().put("sort", "UPDATE_TIME").put("genre", "ALL")
+                        .put("country", "ALL").put("year", "ALL").put("language", "ALL"))
+                    .put("page", 1)
+                    .put("perPage", 24)
+                val body = payload.toString().toRequestBody("application/json".toMediaType())
+                val resp = http.newCall(
+                    okhttp3.Request.Builder()
+                        .url("$H5_API_BASE/subject/filter")
+                        .headers(hdrMap)
+                        .post(body)
+                        .build(),
+                ).execute().use { res ->
+                    h5TokenFromBody(res)
+                    res.body?.string()
+                }
+                val root = runCatching { JSONObject(resp ?: "") }.getOrNull() ?: continue
+                val inner = root.optJSONObject("data") ?: continue
+                val arr = inner.optJSONArray("items") ?: inner.optJSONArray("subjects") ?: continue
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val sid = o.optString("subjectId").takeIf { it.isNotBlank() } ?: continue
+                    out.add(
+                        H5DiscoverItem(
+                            subjectId = sid,
+                            title = o.optString("title").takeIf { it.isNotBlank() },
+                            poster = o.optJSONObject("cover")?.optString("url"),
+                            detailPath = o.optString("detailPath").takeIf { it.isNotBlank() },
+                        ),
+                    )
+                    if (out.size >= maxPerTab * 2) break
+                }
+            } catch (t: Throwable) {
+                android.util.Log.w(TAG, "h5Discover tab=$tabId gagal: ${t.javaClass.simpleName}")
+            }
+        }
+        out.take(maxPerTab * 2)
+    }
+
+    fun slugFromDetailPath(detailPath: String?, subjectId: String): String {
+        val clean = (detailPath ?: "").trim('/').trim()
+        val last = clean.substringAfterLast('/', "")
+        return last.ifBlank { "mb-$subjectId" }
     }
 
     /** Coba tarik stream baru untuk subjectId tertentu berdasarkan keahlian ep. */
