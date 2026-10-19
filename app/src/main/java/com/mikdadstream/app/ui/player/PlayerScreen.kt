@@ -172,9 +172,13 @@ private fun subtitleMime(url: String): String? {
 private fun subtitleLangName(code: String?): String? {
     val raw = code?.trim()?.lowercase() ?: return null
     if (raw.isEmpty()) return null
+    // MovieBox memakai kode "in_id" (bukan "id") untuk Bahasa Indonesia.
+    if (raw.contains("indonesi") || raw.contains("bahasa") || raw.startsWith("in_") ||
+        raw.startsWith("id_") || raw == "in" || raw == "id"
+    ) return "Indonesia"
     val key = raw.substringBefore('-').substringBefore('_')
     return when {
-        key in setOf("id", "in", "ind", "indonesia", "bahasa", "bahasa indonesia") -> "Indonesia"
+        key in setOf("id", "in", "ind", "indonesia") -> "Indonesia"
         key in setOf("en", "eng", "english") -> "English"
         key in setOf("ms", "may", "malay", "melayu") -> "Melayu"
         key in setOf("jv", "jav", "jawa", "javanese") -> "Jawa"
@@ -554,7 +558,7 @@ fun PlayerScreen(
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-            .setPreferredTextLanguages("id", "in", "ind")
+            .setPreferredTextLanguages("in_id", "id_id", "in", "id", "ind")
             .setSelectUndeterminedTextLanguage(false)
             .build()
         player.setMediaItem(builder.build())
