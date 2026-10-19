@@ -543,7 +543,7 @@ object LocalMovieBoxClient {
             }
         val hdrs = LinkedHashMap<String, String>()
         signCookie?.let { hdrs["Cookie"] = it }
-        hdrs["Referer"] = referer
+        // PENTING: tanpa Referer — CDN (bcdn.hakunaymatata.com) memblokir request yang membawa Referer (HTTP 429/433).
         hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
         return MediaStream(
             server = "Moviebox Local",
