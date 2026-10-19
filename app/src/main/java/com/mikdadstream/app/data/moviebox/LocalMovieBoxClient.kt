@@ -936,31 +936,47 @@ object LocalMovieBoxClient {
             val dir = java.io.File(ctx.cacheDir, "subs").apply { mkdirs() }
             tracks.map { t ->
                 val url = t.url
-                if (url.isNullOrBlank() || !url.substringBefore('?').lowercase().endsWith(".srt")) {
+                if (url.isNullOrBlank()) {
                     t
                 } else {
-                    val key = java.security.MessageDigest.getInstance("MD5")
-                        .digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
-                        .take(24)
-                    val f = java.io.File(dir, "sb2_$key.vtt")
-                    val ok = if (f.exists() && f.length() > 0) true else run {
-                        try {
-                            val resp = http.newCall(
-                                okhttp3.Request.Builder().url(url).header("User-Agent", "ExoPlayerLib/2.19.1").build()
-                            ).execute()
-                            resp.use { r ->
-                                val body = r.body?.string()
-                                if (r.isSuccessful && !body.isNullOrBlank()) {
-                                    f.writeText(srtToVtt(body))
-                                    true
-                                } else false
+                    val pathLower = url.substringBefore('?').lowercase()
+                    val ext = pathLower.substringAfterLast('.', "")
+                    // Format yang sudah didukung ExoPlayer langsung.
+                    val directlySupported = ext in setOf("vtt", "ttml", "dfxp", "ass", "ssa")
+                    if (directlySupported) {
+                        t
+                    } else {
+                        // SRT atau ekstensi tak dikenal: unduh, deteksi isi, jadikan VTT lokal.
+                        val key = java.security.MessageDigest.getInstance("MD5")
+                            .digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
+                            .take(24)
+                        val f = java.io.File(dir, "sb2_$key.vtt")
+                        val ok = if (f.exists() && f.length() > 0) true else run {
+                            try {
+                                val resp = http.newCall(
+                                    okhttp3.Request.Builder().url(url).header("User-Agent", "ExoPlayerLib/2.19.1").build()
+                                ).execute()
+                                resp.use { r ->
+                                    val body = r.body?.string()
+                                    if (r.isSuccessful && !body.isNullOrBlank()) {
+                                        val clean = body.removePrefix("\uFEFF")
+                                        val vtt = if (clean.trimStart().startsWith("WEBVTT", true)) {
+                                            clean
+                                        } else {
+                                            srtToVtt(body)
+                                        }
+                                        f.writeText(vtt)
+                                        true
+                                    } else false
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.w(TAG, "subtitle fetch fail ($url): ${e.message}")
+                                false
                             }
-                        } catch (e: Exception) {
-                            android.util.Log.w(TAG, "srt fetch fail: ${e.message}")
-                            false
                         }
+                        Log.i(TAG, "prepareSubtitle ${t.lang}/${t.label} ext=$ext converted=$ok -> ${if (ok) "local vtt" else "remote"}")
+                        if (ok) t.copy(url = android.net.Uri.fromFile(f).toString()) else t
                     }
-                    if (ok) t.copy(url = android.net.Uri.fromFile(f).toString()) else t
                 }
             }
         }

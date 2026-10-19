@@ -166,7 +166,10 @@ private fun subtitleMime(url: String): String? {
         path.endsWith(".srt") -> "application/x-subrip"
         path.endsWith(".ttml") || path.endsWith(".dfxp") -> "application/ttml+xml"
         path.endsWith(".ass") || path.endsWith(".ssa") -> "text/x-ssa"
-        else -> null
+        // Ekstensi tak dikenal (mis. URL tanpa ekstensi): subtitle sudah
+        // dinormalisasi ke WebVTT saat disiapkan, jadi anggap VTT agar track
+        // Indonesia tidak pernah dibuang diam-diam.
+        else -> "text/vtt"
     }
 }
 
