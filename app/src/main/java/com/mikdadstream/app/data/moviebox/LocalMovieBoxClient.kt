@@ -199,7 +199,6 @@ object LocalMovieBoxClient {
                             null
                         }
                     } else {
-                        val bodyStringFinal = resp.body?.string() ?: ""
                         resp.header("x-user")?.let { xu ->
                             runCatching {
                                 val tok = if (xu.trim().startsWith("{")) JSONObject(xu).optString("token", "") else xu
