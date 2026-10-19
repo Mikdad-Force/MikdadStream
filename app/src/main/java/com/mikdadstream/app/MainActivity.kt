@@ -243,7 +243,15 @@ private fun AuthFlow(isTv: Boolean) {
             }
         } catch (e: ApiException) {
             authBusy = false
-            android.widget.Toast.makeText(context, "Google Sign-In gagal (kode ${e.statusCode})", android.widget.Toast.LENGTH_LONG).show()
+            val detail = when (e.statusCode) {
+                7 -> "Kesalahan jaringan"
+                10 -> "Konfigurasi salah (client ID/SHA-1 tidak terdaftar)"
+                12500, 12501 -> "Gangguan server Google"
+                8 -> "Kesalahan internal"
+                else -> "Kode ${e.statusCode}"
+            }
+            authMessage = "Google Sign-In gagal: $detail"
+            android.widget.Toast.makeText(context, authMessage, android.widget.Toast.LENGTH_LONG).show()
             deviceLogin()
         }
     }

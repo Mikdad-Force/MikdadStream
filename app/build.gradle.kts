@@ -14,7 +14,7 @@ val appVersionCode: Int = (findProperty("VERSION_CODE") as String?)?.toIntOrNull
 val appVersionName: String = (findProperty("VERSION_NAME") as String?) ?: "2.1.11"
 
 val googleClientId: String = (findProperty("GOOGLE_CLIENT_ID") as String?)
-    ?: "350158650454-osksv8riv4q7dfpr4ff2o509l6git6ot.apps.googleusercontent.com"
+    ?: "350158650454-h82139noud47hki2tmcdqhfuo9n8n35g.apps.googleusercontent.com"
 
 val forceTv: Boolean = (findProperty("FORCE_TV") as String?)?.toBoolean() ?: false
 
