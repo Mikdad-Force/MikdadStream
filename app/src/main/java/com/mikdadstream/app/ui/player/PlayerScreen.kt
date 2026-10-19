@@ -546,6 +546,9 @@ fun PlayerScreen(
         val stream = streams.getOrNull(selectedIndex) ?: return@LaunchedEffect
         val url = resolveStreamUrl(stream.safeUrl) ?: return@LaunchedEffect
         playerError = null
+        // Cegah playback ganda: hentikan media sebelumnya sebelum memuat yang baru.
+        player.stop()
+        player.clearMediaItems()
         streamHeaders.set(stream.headers.orEmpty())
         val builder = ExoMediaItem.Builder().setUri(url)
         // Normalisasi kode bahasa SEBELUM diberi ke ExoPlayer:

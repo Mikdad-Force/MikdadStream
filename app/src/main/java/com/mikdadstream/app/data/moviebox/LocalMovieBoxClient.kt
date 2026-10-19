@@ -917,8 +917,13 @@ object LocalMovieBoxClient {
                 val base = activeHostOrFirst()
                 val detailRoot = runCatching { fetchSubject(base, subjectId, token) }.getOrNull()
                 val detailData = detailRoot?.optJSONObject("data")
-                val rid = detailData?.optJSONArray("resourceDetectors")
-                    ?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+                // rid WAJIB per-episode: resourceDetectors index = episode-1.
+                // Sebelumnya selalu index 0 -> subtitle EP1 dipakai di EP2+ (tidak sinkron).
+                val rdArr = detailData?.optJSONArray("resourceDetectors")
+                val lastIdx = (rdArr?.length() ?: 1).coerceAtLeast(1) - 1
+                val rd = rdArr?.optJSONObject((ep - 1).coerceIn(0, lastIdx)) ?: rdArr?.optJSONObject(0)
+                val rid = rd?.optString("resourceId")?.takeIf { it.isNotBlank() }
+                    ?: rdArr?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
                 val type = detailData?.optString("subjectType")?.toIntOrNull() ?: detailData?.optInt("subjectType", 0) ?: 0
                 val title = detailData?.optString("title")?.takeIf { it.isNotBlank() } ?: ""
 
@@ -935,10 +940,12 @@ object LocalMovieBoxClient {
                     Log.i(TAG, "fetchSubtitles sibling candidates=${sibs.size} title=${title.take(24)}")
                     for (sib in sibs.take(3)) {
                         val sid = sib.optString("subjectId")
-                        val ridSib = sib.optJSONArray("resourceDetectors")?.optJSONObject(0)?.optString("resourceId")
-                            ?.takeIf { it.isNotBlank() }
+                        val sibArr = sib.optJSONArray("resourceDetectors")
+                        val sibLast = (sibArr?.length() ?: 1).coerceAtLeast(1) - 1
+                        val ridSib = sibArr?.optJSONObject((ep - 1).coerceIn(0, sibLast))
+                            ?.optString("resourceId")?.takeIf { it.isNotBlank() }
                             ?: subjectDetailDataForRid(sid)
-                        val subCaps = extCaptionsFor(sid, ridSib, token, 1, ep)
+                        val subCaps = extCaptionsFor(sid, ridSib, token, se, ep)
                         val all = captionsToTracks(subCaps)
                         val picked = all.filter { t ->
                             normalizedCaptionLang(t.lang ?: "") == "id" ||
@@ -959,10 +966,12 @@ object LocalMovieBoxClient {
             }
         }
 
-    private suspend fun subjectDetailDataForRid(subjectId: String): String? {
+    private suspend fun subjectDetailDataForRid(subjectId: String, ep: Int = 1): String? {
         val d = subjectDetail(subjectId)
-        return d?.optJSONObject("data")?.optJSONArray("resourceDetectors")
-            ?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+        val arr = d?.optJSONObject("data")?.optJSONArray("resourceDetectors")
+        val lastIdx = (arr?.length() ?: 1).coerceAtLeast(1) - 1
+        return arr?.optJSONObject((ep - 1).coerceIn(0, lastIdx))
+            ?.optString("resourceId")?.takeIf { it.isNotBlank() }
     }
 
     private fun streamFromUgcRes(res: JSONObject, referer: String = "https://www.movieboxpro.app/"): MediaStream? {
