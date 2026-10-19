@@ -567,35 +567,35 @@ object LocalMovieBoxClient {
         }
     }
 
-    private fun chooseBestResource(candidates: List<JSONObject>): JSONObject? {
-        if (candidates.isEmpty()) return null
-        // Pola APK: resource disortir kualitas tersendiri; ambil kualitas tertinggi yang tersedia.
-        val score = { r: JSONObject ->
-            val q = r.optString("resolutions").takeIf { it.isNotBlank() }
-                ?: r.optString("quality").takeIf { it.isNotBlank() } ?: ""
-            when {
-                q.contains("1080") -> 5
-                q.contains("720") -> 4
-                q.contains("540") -> 3
-                q.contains("480") -> 2
-                q.contains("360") -> 1
-                else -> 0
-            }
+    private fun qualityScore(r: JSONObject): Int {
+        val q = (r.optString("resolutions").takeIf { it.isNotBlank() }
+            ?: r.optString("quality").takeIf { it.isNotBlank() } ?: "")
+        return when {
+            q.contains("1080") -> 5
+            q.contains("720") -> 4
+            q.contains("540") -> 3
+            q.contains("480") -> 2
+            q.contains("360") -> 1
+            else -> 0
         }
-        return candidates.maxByOrNull { score(it) }
     }
 
-    suspend fun fetchRealStream(subjectId: String, resourceId: String?, se: Int = 1, ep: Int = 1): MediaStream? {
-        android.util.Log.i(TAG, "fetchRealStream start subj=${subjectId.takeLast(6)} rid=$resourceId se=$se ep=$ep")
+    private fun chooseBestResource(candidates: List<JSONObject>): JSONObject? {
+        // Pola APK: resource disortir kualitas tersendiri; ambil kualitas tertinggi yang tersedia.
+        return candidates.maxByOrNull { qualityScore(it) }
+    }
+
+    suspend fun fetchRealStreams(subjectId: String, resourceId: String?, se: Int = 1, ep: Int = 1): List<MediaStream> {
+        android.util.Log.i(TAG, "fetchRealStreams start subj=${subjectId.takeLast(6)} rid=$resourceId se=$se ep=$ep")
         val rid = resourceId?.takeIf { it.isNotBlank() } ?: run {
             val d = subjectDetail(subjectId)
             val r = d?.optJSONObject("data")?.optJSONArray("resourceDetectors")
                 ?.optJSONObject(0)?.optString("resourceId")
-            android.util.Log.i(TAG, "fetchRealStream extracted resourceId=${r}")
+            android.util.Log.i(TAG, "fetchRealStreams extracted resourceId=${r}")
             r
         }
         val first = firstBySubject(subjectId)
-        if (first == null) { android.util.Log.w(TAG, "firstBySubject null"); return null }
+        if (first == null) { android.util.Log.w(TAG, "firstBySubject null"); return emptyList() }
         val firstData = first.optJSONObject("data")
         val ugcVideoId = firstData?.optString("ugcVideoId")?.takeIf { it.isNotBlank() }
         val collectionId = firstData?.optJSONObject("belongToCollection")
@@ -655,7 +655,7 @@ object LocalMovieBoxClient {
 
         // Fallback APK: /ugc/video/download?ugcVideoId= saat list kosong.
         if (candidates.isEmpty() && !ugcVideoId.isNullOrBlank()) {
-            val token = boot() ?: return null
+            val token = boot() ?: return emptyList()
             val base = activeHostOrFirst()
             val dl = callJson(base, "/wefeed-mobile-bff/ugc/video/download?ugcVideoId=$ugcVideoId", null, token, false)
             val dlItems = dl?.optJSONObject("data")?.optJSONArray("items")
@@ -668,16 +668,17 @@ object LocalMovieBoxClient {
             android.util.Log.i(TAG, "fetchRealStream ugc download candidates=${candidates.size}")
         }
 
-        val picked = chooseBestResource(candidates)
-        if (picked == null) {
-            android.util.Log.w(TAG, "fetchRealStream no clean resources subj=${subjectId.takeLast(6)}")
-            return null
+        val out = ArrayList<MediaStream>()
+        val seen = HashSet<String>()
+        for (res in candidates.sortedByDescending { qualityScore(it) }) {
+            val s = streamFromUgcRes(res) ?: continue
+            // Satu sumber per kualitas, seperti MovieBox: resolusi sama dipilih URL pertama (terbaik).
+            val key = s.quality ?: "Auto"
+            if (seen.add(key)) out.add(s)
         }
-        val stream = streamFromUgcRes(picked)
-        android.util.Log.i(TAG, "Moviebox Local real stream found: ${stream?.url}")
-        return stream
+        android.util.Log.i(TAG, "Moviebox Local real streams count=${out.size} qualities=${out.joinToString { (it.quality ?: "Auto") }} subj=${subjectId.takeLast(6)}")
+        return out
     }
-
     suspend fun fetchStreams(subjectId: String, se: Int = 1, ep: Int = 1): List<MediaStream>? =
         withContext(Dispatchers.IO) {
             val token = boot() ?: return@withContext null
@@ -703,15 +704,15 @@ object LocalMovieBoxClient {
                 Log.i(TAG, "play-info streams count=${streams.size} subj=${subjectId.takeLast(6)} se=$se ep=$ep")
             val trap = streams.firstOrNull()?.url?.let { isTrapUrl(it) } == true
             if (streams.isEmpty() || trap) {
-                val real = fetchRealStream(subjectId, resourceId, if (se > 0) se else 1, if (ep > 0) ep else 1)
-                android.util.Log.w(TAG, "fetchRealStream result=${real != null} empty=${streams.isEmpty()} trap=$trap subj=${subjectId.takeLast(6)}")
-                if (real != null) {
-                    Log.i(TAG, "Moviebox Local real stream subj=${subjectId.takeLast(6)}")
-                    return@withContext listOf(real)
+                val real = fetchRealStreams(subjectId, resourceId, if (se > 0) se else 1, if (ep > 0) ep else 1)
+                android.util.Log.w(TAG, "fetchRealStreams result=${real.size} empty=${streams.isEmpty()} trap=$trap subj=${subjectId.takeLast(6)}")
+                if (real.isNotEmpty()) {
+                    Log.i(TAG, "Moviebox Local real streams=${real.size} subj=${subjectId.takeLast(6)}")
+                    return@withContext real
                 }
                 // Trap tanpa pengganti: jangan kembalikan iklan; kosongkan agar tidak memutar ad.
                 if (trap) return@withContext emptyList()
-                // Streams kosong & real null: coba varian play-info berikutnya.
+                // Streams kosong & fallback kosong: coba varian play-info berikutnya.
                 continue
             }
             if (streams.isNotEmpty()) {
