@@ -889,8 +889,14 @@ object LocalMovieBoxClient {
         val out = ArrayList<SubtitleTrack>()
         if (caps == null) return out
         val seen = HashSet<String>()
-        for (i in 0 until caps.length()) {
-            val c = caps.optJSONObject(i) ?: continue
+        // Urutkan: Indonesia asli (in_id / in / ind) lebih dulu supaya
+        // dedup per kode bahasa memilih Indonesia ASLI, bukan Melayu (ms).
+        val entries = (0 until caps.length()).mapNotNull { caps.optJSONObject(it) }
+        val sorted = entries.sortedByDescending { e ->
+            val lan = e.optString("lan").lowercase()
+            lan.startsWith("in_") || lan.startsWith("in/") || lan == "in" || lan.startsWith("ind")
+        }
+        for (c in sorted) {
             val url = c.optString("url").takeIf { it.isNotBlank() } ?: continue
             val lan = c.optString("lan").takeIf { it.isNotBlank() } ?: continue
             val norm = normalizedCaptionLang(lan)

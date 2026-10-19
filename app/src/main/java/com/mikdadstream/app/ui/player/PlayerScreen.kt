@@ -562,18 +562,24 @@ fun PlayerScreen(
                 }
             }
         val seenLang = LinkedHashSet<String>()
-        val subs = apiSubtitles.mapNotNull { s ->
+        val played = apiSubtitles.mapNotNull { s ->
             val u = s.url?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             val mime = subtitleMime(u) ?: return@mapNotNull null
             val lang = normalizedLang(s.lang ?: s.label)
             // Dedup: satu track per kode bahasa (hindari muncul dobel).
             if (!seenLang.add(lang)) return@mapNotNull null
-            ExoMediaItem.SubtitleConfiguration.Builder(Uri.parse(u))
+            lang to ExoMediaItem.SubtitleConfiguration.Builder(Uri.parse(u))
                 .setMimeType(mime)
                 .setLanguage(lang)
                 .setLabel(subtitleLangName(lang) ?: s.label ?: lang)
                 .build()
         }
+        // Melayu (ms) hanyalah SEMINI bukan Indonesia asli: bila Ada track "id"
+        // asli dari server (in_id), buang track ms agar tidak keluar Melayu.
+        val hasRealId = played.any { it.first == "id" }
+        val subs = played
+            .filter { !hasRealId || it.first != "ms" }
+            .map { it.second }
         Log.d("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.mimeType ?: "") + " " + (it.label ?: "") }}")
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
         selectedVideoHeight = null
