@@ -1036,8 +1036,11 @@ object LocalMovieBoxClient {
         android.util.Log.i(TAG, "fetchRealStreams start subj=${subjectId.takeLast(6)} rid=$resourceId se=$se ep=$ep")
         val rid = resourceId?.takeIf { it.isNotBlank() } ?: run {
             val d = subjectDetail(subjectId)
-            val r = d?.optJSONObject("data")?.optJSONArray("resourceDetectors")
-                ?.optJSONObject(0)?.optString("resourceId")
+            val arr = d?.optJSONObject("data")?.optJSONArray("resourceDetectors")
+            val last = (arr?.length() ?: 1).coerceAtLeast(1) - 1
+            val r = arr?.optJSONObject((ep - 1).coerceIn(0, last))
+                ?.optString("resourceId")
+                ?: arr?.optJSONObject(0)?.optString("resourceId")
             android.util.Log.i(TAG, "fetchRealStreams extracted resourceId=${r}")
             r
         }
@@ -1132,8 +1135,13 @@ object LocalMovieBoxClient {
             val base = activeHostOrFirst()
             val detailRoot = runCatching { fetchSubject(base, subjectId, token) }.getOrNull()
             val detailData = detailRoot?.optJSONObject("data")
-            val resourceId = detailData?.optJSONArray("resourceDetectors")
-                ?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+            // resourceId WAJIB per-episode (index = ep-1), bukan selalu index 0 —
+            // sebelumnya semua episode memutar konten episode 1.
+            val rdArr = detailData?.optJSONArray("resourceDetectors")
+            val lastIdx = (rdArr?.length() ?: 1).coerceAtLeast(1) - 1
+            val resourceId = rdArr?.optJSONObject((ep - 1).coerceIn(0, lastIdx))
+                ?.optString("resourceId")?.takeIf { it.isNotBlank() }
+                ?: rdArr?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
 
             val variants = listOf(
                 { fetchPlayInfo(base, subjectId, if (se > 0) se else 1, if (ep > 0) ep else 1, resourceId, token) },
