@@ -181,7 +181,7 @@ private fun subtitleLangName(code: String?): String? {
     return when {
         key in setOf("id", "in", "ind", "indonesia") -> "Indonesia"
         key in setOf("en", "eng", "english") -> "English"
-        key in setOf("ms", "may", "malay", "melayu") -> "Melayu"
+        key in setOf("ms", "may", "ms_my", "malay", "melayu") -> "Indonesia"
         key in setOf("jv", "jav", "jawa", "javanese") -> "Jawa"
         key in setOf("su", "sun", "sunda", "sundanese") -> "Sunda"
         raw.contains("\u4e2d") -> if (raw.contains("\u7e41")) "\u7e41\u9ad4\u4e2d\u6587" else "\u7b80\u9ad4\u4e2d\u6587"
