@@ -1357,9 +1357,20 @@ fun PlayerScreen(
     if (showSubMenu) {
         val items = listOf<Pair<SubOption?, String>>(null to "Nonaktif") +
             subOptions.map { it to it.label }
+        val apiLangs = apiSubtitles.joinToString(",") { (it.lang ?: it.label ?: "").lowercase() }
+        val apiHasIndo = apiSubtitles.any {
+            subtitleLangName(it.lang) == "Indonesia" || subtitleLangName(it.label) == "Indonesia"
+        }
+        val trackHasIndo = subOptions.any { it.label == "Indonesia" }
+        val diagNote = buildString {
+            append("v").append(com.mikdadstream.app.BuildConfig.VERSION_NAME)
+            append(" • API: ").append(if (apiLangs.isBlank()) "-" else apiLangs)
+            if (apiHasIndo && !trackHasIndo) append(" • INDONESIA TAK TERPASANG")
+        }
         OptionMenu(
             title = "Subtitle",
-            note = if (subOptions.isEmpty()) "Tidak ada subtitle tersedia untuk video ini." else null,
+            note = if (subOptions.isEmpty()) "Tidak ada subtitle tersedia untuk video ini."
+            else diagNote,
             items = items,
             selected = { it?.key == selectedSubKey },
             onSelect = { opt ->
