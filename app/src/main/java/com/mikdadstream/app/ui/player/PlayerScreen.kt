@@ -734,6 +734,17 @@ fun PlayerScreen(
                     useController = false
                     setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     resizeMode = resizeModes[resizeModeIx]
+                    // Subtitle tanpa kotak hitam: latar transparan + bayangan tipis.
+                    subtitleView?.setStyle(
+                        androidx.media3.ui.CaptionStyleCompat(
+                            android.graphics.Color.WHITE,
+                            android.graphics.Color.TRANSPARENT,
+                            android.graphics.Color.TRANSPARENT,
+                            androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,
+                            android.graphics.Color.BLACK,
+                            null,
+                        )
+                    )
                 }
             },
             update = { pv ->
