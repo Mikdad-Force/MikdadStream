@@ -693,6 +693,54 @@ object LocalMovieBoxClient {
             u.contains("b164fbfb43")
     }
 
+    /**
+     * Konversi SRT -> WebVTT ke file cache (ExoPlayer lebih andal dengan VTT).
+     * Hasil URL berupa URI file lokal "...sb_<hash>.vtt"; hasil disimpan agar tidak diunduh ulang.
+     */
+    private suspend fun prepareSubtitleFiles(tracks: List<SubtitleTrack>): List<SubtitleTrack> =
+        withContext(Dispatchers.IO) {
+            val ctx = try { com.mikdadstream.app.AppGraph.appContext } catch (e: Throwable) { null }
+            if (ctx == null) return@withContext tracks
+            val dir = java.io.File(ctx.cacheDir, "subs").apply { mkdirs() }
+            tracks.map { t ->
+                val url = t.url
+                if (url.isNullOrBlank() || !url.substringBefore('?').lowercase().endsWith(".srt")) {
+                    t
+                } else {
+                    val key = java.security.MessageDigest.getInstance("MD5")
+                        .digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
+                        .take(24)
+                    val f = java.io.File(dir, "sb_$key.vtt")
+                    val ok = if (f.exists() && f.length() > 0) true else run {
+                        try {
+                            val resp = http.newCall(
+                                okhttp3.Request.Builder().url(url).header("User-Agent", "ExoPlayerLib/2.19.1").build()
+                            ).execute()
+                            resp.use { r ->
+                                val body = r.body?.string()
+                                if (r.isSuccessful && !body.isNullOrBlank()) {
+                                    f.writeText(srtToVtt(body))
+                                    true
+                                } else false
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w(TAG, "srt fetch fail: ${e.message}")
+                            false
+                        }
+                    }
+                    if (ok) t.copy(url = android.net.Uri.fromFile(f).toString()) else t
+                }
+            }
+        }
+
+    /** Konversi konten SRT ke WebVTT: header WEBVTT + koma -> titik pada timestamp. */
+    private fun srtToVtt(srt: String): String {
+        val sb = StringBuilder("WEBVTT\n\n")
+        val ts = Regex("(\\d{1,2}):(\\d{2}):(\\d{2}),(\\d{3})")
+        sb.append(ts.replace(srt) { m -> "${m.groupValues[1]}:${m.groupValues[2]}:${m.groupValues[3]}.${m.groupValues[4]}" })
+        return sb.toString()
+    }
+
     fun firstBySubject(subjectId: String): JSONObject? {
         val token = boot() ?: return null
         val base = activeHostOrFirst()
@@ -746,7 +794,7 @@ object LocalMovieBoxClient {
                     }
                 }
                 Log.i(TAG, "fetchSubtitles count=${out.size} subj=${subjectId.takeLast(6)}")
-                out
+                prepareSubtitleFiles(out)
             } catch (e: Exception) {
                 Log.w(TAG, "fetchSubtitles error: ${e.message}")
                 emptyList()

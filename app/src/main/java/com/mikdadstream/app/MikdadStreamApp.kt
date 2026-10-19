@@ -30,6 +30,9 @@ object AppGraph {
     lateinit var updater: AppUpdater
         private set
 
+    var appContext: Context? = null
+        private set
+
     private val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -59,6 +62,7 @@ object AppGraph {
     fun init(context: Context) {
         if (::prefs.isInitialized) return
         val app = context.applicationContext
+        appContext = app
         prefs = PrefsStore(app)
         database = Room.databaseBuilder(app, AppDatabase::class.java, "mikdad_stream.db")
             .addMigrations(MIGRATION_1_2)
