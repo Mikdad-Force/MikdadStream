@@ -123,7 +123,16 @@ class StreamRepository(
 
     suspend fun categories(modelId: String): List<CategoryBundle> {
         if (modelId.equals("moviebox-local", true)) {
-            return listOf(CategoryBundle("trending", "Trending"))
+            return listOf(
+                CategoryBundle("trending", "Trending"),
+                CategoryBundle("movie", "Movie"),
+                CategoryBundle("series", "Series"),
+                CategoryBundle("indonesia", "Indonesia"),
+                CategoryBundle("anime", "Anime"),
+                CategoryBundle("hollywood", "Hollywood"),
+                CategoryBundle("asia", "Asia"),
+                CategoryBundle("horror", "Horror"),
+            )
         }
         val envelope: Envelope<CategoriesData> = call { api.categories(apiModelId(modelId)) }
         val data = unwrap(envelope, "Gagal memuat kategori.")
@@ -134,10 +143,14 @@ class StreamRepository(
 
     suspend fun videos(modelId: String, categoryId: String, page: Int = 1): VideosData {
         if (modelId.equals("moviebox-local", true)) {
+            val items = runCatching { LocalMovieBoxClient.categoryItems(categoryId) }
+                .getOrElse { emptyList() }
+                .ifEmpty { runCatching { LocalMovieBoxClient.trendingItems() }.getOrDefault(emptyList()) }
+            android.util.Log.i("MovieboxLocal", "videos cat=$categoryId items=${items.size}")
             return VideosData(
                 type = "movie_tv",
                 moduleName = "Moviebox Local",
-                items = LocalMovieBoxClient.trendingItems(),
+                items = items,
                 page = page,
                 hasMore = false,
             )

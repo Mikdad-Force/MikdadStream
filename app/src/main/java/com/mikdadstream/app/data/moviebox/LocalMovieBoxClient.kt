@@ -487,6 +487,94 @@ object LocalMovieBoxClient {
             }.awaitAll().filterNotNull()
         }
 
+    suspend fun tabOperating(tabId: Int): JSONObject? = withContext(Dispatchers.IO) {
+        val token = boot() ?: return@withContext null
+        val base = activeHostOrFirst()
+        callJson(base, "/wefeed-mobile-bff/tab-operating?host=api.inmoviebox.com&page=1&pageSize=24&tabId=$tabId", null, token, false)
+    }
+
+    private var catalogCache: Pair<Long, List<JSONObject>>? = null
+
+    /** Katalog gabungan: trending/v2 + rows tab-operating (tab 1 & 2), dedup per subjectId. */
+    suspend fun catalogSubjects(): List<JSONObject> = withContext(Dispatchers.IO) {
+        val cached = catalogCache
+        if (cached != null && System.currentTimeMillis() - cached.first < 120_000) {
+            return@withContext cached.second
+        }
+        val token = boot() ?: return@withContext emptyList()
+        val base = activeHostOrFirst()
+        val out = LinkedHashMap<String, JSONObject>()
+        fun add(subject: JSONObject?) {
+            if (subject == null) return
+            val id = subject.optString("subjectId")
+            if (id.isNotBlank() && !out.containsKey(id)) out[id] = subject
+        }
+        extractList(trendingV2()).forEach(::add)
+        android.util.Log.i(TAG, "catalogSubjects trending=${out.size}")
+        for (tab in listOf(1, 2)) {
+            val root = tabOperating(tab) ?: continue
+            val items = root.optJSONObject("data")?.optJSONArray("items") ?: continue
+            var extra = 0
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val arr = item.optJSONArray("subjects") ?: continue
+                for (j in 0 until arr.length()) {
+                    val o = arr.optJSONObject(j) ?: continue
+                    val before = out.size
+                    add(o.optJSONObject("subject") ?: o)
+                    if (out.size > before) extra++
+                }
+            }
+            android.util.Log.i(TAG, "catalogSubjects tab=$tab added=$extra")
+        }
+        val list = out.values.toList()
+        catalogCache = System.currentTimeMillis() to list
+        list
+    }
+
+    private fun subjectTypeOf(o: JSONObject): Int =
+        o.optString("subjectType").toIntOrNull() ?: o.optInt("subjectType", 0)
+
+    private fun categoryMatches(categoryId: String, o: JSONObject): Boolean {
+        val country = (o.optString("countryName") + " " + o.optString("language")).lowercase(Locale.ROOT)
+        val genre = o.optString("genre").lowercase(Locale.ROOT)
+        return when (categoryId) {
+            "movie" -> subjectTypeOf(o) == 1
+            "series" -> subjectTypeOf(o) == 2
+            "anime" -> genre.contains("anime") || genre.contains("animation")
+            "hoollywood", "hollywood" ->
+                listOf("united states", "united kingdom", "america", "canada", "hollywood")
+                    .any { country.contains(it) || o.optString("countryName").lowercase(Locale.ROOT).contains(it) }
+            "asia" -> listOf(
+                "japan", "korea", "china", "hong kong", "taiwan", "thailand", "vietnam",
+                "philippines", "india", "indonesia", "malaysia", "singapore", "nepal",
+                "sri lanka", "bangladesh",
+            ).any { country.contains(it) }
+            "horror" -> genre.contains("horror") || genre.contains("horor")
+            else -> true
+        }
+    }
+
+    /** Daftar film per kategori sintetis (moviebox-local). */
+    suspend fun categoryItems(categoryId: String): List<MediaItem> = withContext(Dispatchers.IO) {
+        val subjects = catalogSubjects()
+        if (subjects.isEmpty()) return@withContext emptyList()
+        val picked: List<JSONObject> = when (categoryId.trim().lowercase(Locale.ROOT)) {
+            "trending" -> subjects
+            "indonesia" -> filterIndoOnly(subjects, boot() ?: return@withContext emptyList())
+            else -> subjects.filter { categoryMatches(categoryId.trim().lowercase(Locale.ROOT), it) }
+        }
+        android.util.Log.i(TAG, "categoryItems $categoryId picked=${picked.size}/pool=${subjects.size}")
+        val out = ArrayList<MediaItem>()
+        val seen = HashSet<String>()
+        for (s in picked) {
+            val m = mapSubjectToMediaItem(s) ?: continue
+            if (seen.add(m.id ?: "")) out.add(m)
+            if (out.size >= 48) break
+        }
+        out
+    }
+
     suspend fun trendingItems(): List<MediaItem> =
         withContext(Dispatchers.IO) {
             val token = boot() ?: return@withContext emptyList()
