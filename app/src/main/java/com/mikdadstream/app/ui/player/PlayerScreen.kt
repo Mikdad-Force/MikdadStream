@@ -159,6 +159,29 @@ private fun resolveStreamUrl(url: String?): String? {
     return u
 }
 
+/**
+ * Normalisasi kode bahasa ke satu format agar perbandingan konsisten.
+ * Dipakai ulang di seluruh rantai subtitle (pencocokan, label, dedup, diagnostik).
+ *
+ * Aturan:
+ *  - "id", "in", "ind", "indonesia", "in_id", "id_id", "id-id", "in-id" -> "id"
+ *    (Java/Android Locale versi lama memakai "in" untuk Indonesia).
+ *  - String yang mengandung "indonesi"/"bahasa" (mis. "bahasa indonesia", "id_id") -> "id".
+ *  - Kode lain dinormalisasi ke bentuk dasar huruf kecil tanpa pemisah "_" / "-" / ".".
+ *  - String kosong -> "".
+ */
+fun normalizeLangCode(code: String?): String {
+    val raw = (code ?: "").trim().lowercase()
+    if (raw.isEmpty()) return ""
+    if (raw.contains("indonesi") || raw.contains("bahasa")) return "id"
+    val base = raw.replace('.', '_').replace('-', '_')
+        .substringBefore('_').substringBefore('-')
+    return when (base) {
+        "id", "in", "ind" -> "id"
+        else -> base
+    }
+}
+
 private fun subtitleMime(url: String): String? {
     val path = url.substringBefore('?').lowercase()
     return when {
@@ -174,32 +197,27 @@ private fun subtitleMime(url: String): String? {
 }
 
 private fun subtitleLangName(code: String?): String? {
-    val raw = code?.trim()?.lowercase() ?: return null
+    val raw = (code ?: "").trim().lowercase()
     if (raw.isEmpty()) return null
-    // MovieBox memakai kode "in_id" (bukan "id") untuk Bahasa Indonesia.
-    if (raw.contains("indonesi") || raw.contains("bahasa") || raw.startsWith("in_") ||
-        raw.startsWith("id_") || raw == "in" || raw == "id"
-    ) return "Indonesia"
-    val key = raw.substringBefore('-').substringBefore('_')
-    return when {
-        key in setOf("id", "in", "ind", "indonesia") -> "Indonesia"
-        key in setOf("en", "eng", "english") -> "English"
-        key in setOf("ms", "may", "ms_my", "malay", "melayu") -> "Melayu"
-        key in setOf("jv", "jav", "jawa", "javanese") -> "Jawa"
-        key in setOf("su", "sun", "sunda", "sundanese") -> "Sunda"
-        raw.contains("\u4e2d") -> if (raw.contains("\u7e41")) "\u7e41\u9ad4\u4e2d\u6587" else "\u7b80\u9ad4\u4e2d\u6587"
-        key in setOf("zh", "chi", "zho", "chs", "cht", "chinese") -> "\u4e2d\u6587"
-        key in setOf("ja", "jpn", "japanese") -> "\u65e5\u672c\u8a9e"
-        key in setOf("ko", "kor", "korean") -> "\ud55c\uad6d\uc5b4"
-        key in setOf("es", "spa", "spanish") -> "Espa\u00f1ol"
-        key in setOf("ar", "ara", "arabic") -> "\u0627\u0644\u0639\u0631\u0628\u064a\u0629"
-        key in setOf("pt", "por", "portuguese", "po") -> "Portugu\u00eas"
-        key in setOf("fr", "fra", "fre", "french") -> "Fran\u00e7ais"
-        key in setOf("de", "deu", "ger", "german") -> "Deutsch"
-        key in setOf("th", "tha", "thai") -> "\u0e44\u0e17\u0e22"
-        key in setOf("vi", "vie", "vietnamese") -> "Ti\u1ebfng Vi\u1ec7t"
-        key in setOf("ru", "rus", "russian") -> "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"
-        key in setOf("tl", "fil", "filipino", "tagalog") -> "Filipino"
+    if (raw.contains("\u4e2d")) return if (raw.contains("\u7e41")) "\u7e41\u9ad4\u4e2d\u6587" else "\u7b80\u9ad4\u4e2d\u6587"
+    return when (normalizeLangCode(code)) {
+        "id" -> "Indonesia"
+        "en", "eng", "english" -> "English"
+        "ms", "may", "ms_my", "malay", "melayu" -> "Melayu"
+        "jv", "jav", "jawa", "javanese" -> "Jawa"
+        "su", "sun", "sunda", "sundanese" -> "Sunda"
+        "zh", "chi", "zho", "chs", "cht", "chinese" -> "\u4e2d\u6587"
+        "ja", "jpn", "japanese" -> "\u65e5\u672c\u8a9e"
+        "ko", "kor", "korean" -> "\ud55c\uad6d\uc5b4"
+        "es", "spa", "spanish" -> "Espa\u00f1ol"
+        "ar", "ara", "arabic" -> "\u0627\u0644\u0639\u0631\u0628\u064a\u0629"
+        "pt", "por", "portuguese", "po" -> "Portugu\u00eas"
+        "fr", "fra", "fre", "french" -> "Fran\u00e7ais"
+        "de", "deu", "ger", "german" -> "Deutsch"
+        "th", "tha", "thai" -> "\u0e44\u0e17\u0e22"
+        "vi", "vie", "vietnamese" -> "Ti\u1ebfng Vi\u1ec7t"
+        "ru", "rus", "russian" -> "\u0420\u0443\u0441\u0441\u043a\u0438\u0439"
+        "tl", "fil", "filipino", "tagalog" -> "Filipino"
         else -> null
     }
 }
@@ -251,6 +269,8 @@ fun PlayerScreen(
     var selectedIndex by remember { mutableIntStateOf(0) }
     var loadingStreams by remember { mutableStateOf(true) }
     var streamError by remember { mutableStateOf<String?>(null) }
+    // Apakah kita berhasil MEMASANG track Indonesia (dibangun di SubtitleConfiguration).
+    var installedHasIndo by remember { mutableStateOf(false) }
 
     var showSources by remember { mutableStateOf(false) }
     var showEpisodes by remember { mutableStateOf(false) }
@@ -380,8 +400,7 @@ fun PlayerScreen(
             if (g.type != C.TRACK_TYPE_TEXT) return@forEach
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
-                val name = subtitleLangName(f.language) ?: subtitleLangName(f.label)
-                if (name == "Indonesia") {
+                if (normalizeLangCode(f.language) == "id" || subtitleLangName(f.label) == "Indonesia") {
                     val bp = player.trackSelectionParameters.buildUpon()
                         .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -402,21 +421,26 @@ fun PlayerScreen(
     fun refreshSubOptions() {
         val opts = mutableListOf<SubOption>()
         var selectedKey: String? = null
-        val seenLabels = mutableSetOf<String>()
-        Log.d("PlayerScreen", "text tracks: ${player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }.joinToString { g -> (0 until g.length).joinToString(",") { g.getTrackFormat(it).language + "/" + g.getTrackFormat(it).label } }}")
+        val seenCodes = mutableSetOf<String>()
+        Log.d(
+            "PlayerScreen",
+            "currentTracks text: ${player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }.joinToString { g -> (0 until g.length).joinToString(",") { g.getTrackFormat(it).language + "/" + g.getTrackFormat(it).label } }}",
+        )
         player.currentTracks.groups.forEach { g ->
             if (g.type != C.TRACK_TYPE_TEXT) return@forEach
             val tg = g.mediaTrackGroup
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
+                // Dedup per kode hasil normalisasi (bukan label): track Indonesia
+                // tidak pernah dibuang hanya karena label/name beda.
+                val code = normalizeLangCode(f.language)
+                if (!seenCodes.add(code)) continue
                 val langName = subtitleLangName(f.language) ?: subtitleLangName(f.label)
                 val label = langName
                     ?: f.label?.takeIf { it.isNotBlank() }
                     ?: f.language?.takeIf { it.isNotBlank() }
                     ?: "Subtitle ${opts.size + 1}"
-                // Dedup per label: jangan tampilkan dua track dengan nama sama.
-                if (!seenLabels.add(label)) continue
-                val key = "${ tg.id }#$i"
+                val key = "${tg.id}#$i"
                 opts.add(SubOption(tg, i, key, label))
                 if (g.isTrackSelected(i)) selectedKey = key
             }
@@ -445,7 +469,7 @@ fun PlayerScreen(
     fun refreshVideoQualities() {
         val heights = LinkedHashSet<Int>()
         player.currentTracks.groups.forEach { g ->
-            if (g.type != C.TRACK_TYPE_VIDEO) return@forEach
+            if (g.type != C.TRACK_TYPE_TEXT) return@forEach
             for (i in 0 until g.length) {
                 val h = g.getTrackFormat(i).height
                 if (h > 0) heights.add(h)
@@ -556,7 +580,7 @@ fun PlayerScreen(
         // memuat Indonesia. Bila prefetch ada tapi tanpa Indonesia (mis. metadata
         // beda/versi dub), jangan pakai jalur cepat -> lanjut fetch langsung.
         val prefetchedHasIndo = request.subtitles.any { s ->
-            subtitleLangName(s.lang) == "Indonesia" || subtitleLangName(s.label) == "Indonesia"
+            normalizeLangCode(s.lang) == "id" || subtitleLangName(s.label) == "Indonesia"
         }
         Log.i(
             "PlayerScreen",
@@ -578,8 +602,7 @@ fun PlayerScreen(
                     .fetchSubtitles(request.contentId, se, ep)
             }.getOrDefault(emptyList())
             fun indoOf(s: SubtitleTrack) =
-                s.lang?.let(::subtitleLangName) == "Indonesia" ||
-                    subtitleLangName(s.label) == "Indonesia"
+                normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia"
             apiSubtitles = when {
                 fresh.any(::indoOf) -> fresh
                 request.subtitles.any(::indoOf) -> request.subtitles
@@ -602,7 +625,7 @@ fun PlayerScreen(
             Log.i("PlayerScreen", "subtitle source: ${apiSubtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}")
             // Bila daftar tidak memuat Indonesia, coba sekali lagi langsung ke API.
             fun isIndo(s: SubtitleTrack): Boolean =
-                s.lang?.let(::subtitleLangName) == "Indonesia" || subtitleLangName(s.label) == "Indonesia"
+                normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia"
             if (apiSubtitles.none(::isIndo)) {
                 val parts = episodeId.split("_")
                 val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
@@ -638,23 +661,19 @@ fun PlayerScreen(
         player.clearMediaItems()
         streamHeaders.set(stream.headers.orEmpty())
         val builder = ExoMediaItem.Builder().setUri(url)
-        // Normalisasi kode bahasa SEBELUM diberi ke ExoPlayer:
-        // "in_id"/"id_id"/"in" (pola MovieBox) -> "id".
-        fun normalizedLang(raw: String?): String =
-            (raw ?: "").trim().lowercase().replace('.', '_').replace('-', '_').let {
-                when {
-                    it.startsWith("in_") || it.startsWith("id_") || it == "in" || it == "id" ||
-                        it.contains("indonesi") || it.contains("bahasa") -> "id"
-                    it.isBlank() -> "sub"
-                    else -> it.substringBefore('_')
-                }
-            }
+
+        // ---- DIAGNOSTIK: cetak daftar kode API, track diterima, normalisasi, cocokan "id" ----
+        val apiCodes = apiSubtitles.map { normalizeLangCode(it.lang ?: it.label ?: "") }
+        Log.d("PlayerScreen", "subtitle API codes: $apiCodes")
+        Log.d("PlayerScreen", "subtitle received: ${apiSubtitles.map { (it.lang ?: "") + "|" + (it.label ?: "") }}")
+
         val seenLang = LinkedHashSet<String>()
         val played = apiSubtitles.mapNotNull { s ->
             val u = s.url?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            val mime = subtitleMime(u) ?: return@mapNotNull null
-            val lang = normalizedLang(s.lang ?: s.label)
-            // Dedup: satu track per kode bahasa (hindari muncul dobel).
+            // mime tidak pernah null: subtitleMime berfallback "text/vtt".
+            val mime = subtitleMime(u)
+            val lang = normalizeLangCode(s.lang ?: s.label)
+            // Dedup: satu track per kode hasil normalisasi.
             if (!seenLang.add(lang)) return@mapNotNull null
             val indo = lang == "id"
             lang to ExoMediaItem.SubtitleConfiguration.Builder(Uri.parse(u))
@@ -669,7 +688,10 @@ fun PlayerScreen(
         // Indonesia dan Melayu TETAP TERPISAH (label berbeda, keduanya tersedia).
         // Indonesia diletakkan paling depan agar menjadi kandidat default pertama.
         val subs = played.sortedByDescending { it.first == "id" }.map { it.second }
-        Log.i("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.mimeType ?: "") + " " + (it.label ?: "") }}" + " dari ${apiSubtitles.size} track")
+        installedHasIndo = played.any { it.first == "id" }
+        Log.d("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.language ?: "") + "/" + (it.label ?: "") }}")
+        Log.d("PlayerScreen", "id match: api=${apiCodes.contains("id")} installed=$installedHasIndo visible=${subs.any { it.label == "Indonesia" }}")
+
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
         selectedVideoHeight = null
         subtitleUserChosen = false
@@ -1360,15 +1382,23 @@ fun PlayerScreen(
     if (showSubMenu) {
         val items = listOf<Pair<SubOption?, String>>(null to "Nonaktif") +
             subOptions.map { it to it.label }
-        val apiLangs = apiSubtitles.joinToString(",") { (it.lang ?: it.label ?: "").lowercase() }
-        val apiHasIndo = apiSubtitles.any {
-            subtitleLangName(it.lang) == "Indonesia" || subtitleLangName(it.label) == "Indonesia"
-        }
-        val trackHasIndo = subOptions.any { it.label == "Indonesia" }
+        val apiCodes = apiSubtitles.map { normalizeLangCode(it.lang ?: it.label ?: "") }
+        val apiHasIndo = apiCodes.contains("id")
+        // "Terpasang" = track Indonesia benar-benar muncul di menu pemutar.
+        val visibleHasIndo = subOptions.any { normalizeLangCode(it.label) == "id" || it.label == "Indonesia" }
         val diagNote = buildString {
             append("v").append(com.mikdadstream.app.BuildConfig.VERSION_NAME)
-            append(" • API: ").append(if (apiLangs.isBlank()) "-" else apiLangs)
-            if (apiHasIndo && !trackHasIndo) append(" • INDONESIA TAK TERPASANG")
+            append(" \u2022 API: ").append(if (apiCodes.isEmpty()) "-" else apiCodes.joinToString(","))
+            if (!apiHasIndo) {
+                // API/konten ini memang tidak punya track Indonesia sama sekali.
+                append(" \u2022 Subtitle Indonesia tidak tersedia untuk film ini")
+            } else if (!installedHasIndo) {
+                // API punya "id" tapi tidak berhasil dibangun jadi track (bug internal).
+                append(" \u2022 INDONESIA TAK TERPASANG")
+            } else if (!visibleHasIndo) {
+                // Track dibangun dan ditandai DEFAULT tapi ExoPlayer tak menampilkannya.
+                append(" \u2022 INDONESIA TAK TERPASANG (terpasang, tak terdaftar di pemutar)")
+            }
         }
         OptionMenu(
             title = "Subtitle",
@@ -1400,6 +1430,7 @@ fun PlayerScreen(
             onDismiss = { showQualityMenu = false },
         )
     }
+
     // ---- Menu timer tidur ----
     if (showSleepMenu) {
         OptionMenu(
@@ -1493,6 +1524,7 @@ fun PlayerScreen(
                                         Icons.Filled.CheckCircle,
                                         contentDescription = "Terpilih",
                                         tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp),
                                     )
                                 }
                             }
