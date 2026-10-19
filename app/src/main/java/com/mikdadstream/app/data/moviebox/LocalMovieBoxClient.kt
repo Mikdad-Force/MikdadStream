@@ -17,6 +17,11 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.concurrent.withLock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -345,7 +350,7 @@ object LocalMovieBoxClient {
             if (!seen.add(url)) continue
             val hdrs = LinkedHashMap<String, String>()
             if (signCookie.isNotBlank()) hdrs["Cookie"] = signCookie
-            hdrs["Referer"] = "https://www.movieboxpro.app/"
+            // Tanpa Referer: CDN memblokir request ber-Referer.
             hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
             out.add(
                 MediaStream(
@@ -434,11 +439,67 @@ object LocalMovieBoxClient {
         )
     }
 
+    private fun isIndoText(s: String?): Boolean {
+        if (s.isNullOrBlank()) return false
+        val t = s.lowercase(Locale.ROOT)
+        return t.contains("indonesia") || t.contains("bahasa")
+    }
+
+    private val indoCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    private suspend fun subjectQualifiesIndo(subject: JSONObject, base: String, token: String): Boolean {
+        val id = subject.optString("subjectId").ifBlank { subject.optString("id") }
+            .ifBlank { subject.optString("subject_id") }
+        if (id.isBlank()) return false
+        indoCache[id]?.let { return it }
+        val qualifies: Boolean
+        if (isIndoText(subject.optString("countryName")) || isIndoText(subject.optString("language"))) {
+            qualifies = true
+        } else {
+            val root = runCatching { fetchSubject(base, id, token) }.getOrNull()
+            val data = root?.optJSONObject("data")
+            val subStr = data?.optString("subtitles")?.takeIf { it.isNotBlank() }
+            qualifies = if (subStr != null) {
+                isIndoText(subStr)
+            } else {
+                val arr = data?.optJSONArray("subtitles")
+                if (arr != null) {
+                    (0 until arr.length()).any { isIndoText(arr.optString(it)) }
+                } else false
+            }
+        }
+        indoCache[id] = qualifies
+        return qualifies
+    }
+
+    // Filter: hanya subject berbahasa Indonesia atau ber-subtitle Indonesia.
+    // Metadata (countryName/language) dicek tanpa request; sisanya via detail (paralel, hasilnya dicache).
+    suspend fun filterIndoOnly(subjects: List<JSONObject>, token: String): List<JSONObject> =
+        coroutineScope {
+            val base = activeHostOrFirst()
+            val sem = Semaphore(permits = 6)
+            subjects.map { s ->
+                async {
+                    sem.withPermit {
+                        if (subjectQualifiesIndo(s, base, token)) s else null
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+
     suspend fun trendingItems(): List<MediaItem> =
-        extractList(trendingV2()).mapNotNull { mapSubjectToMediaItem(it) }
+        withContext(Dispatchers.IO) {
+            val token = boot() ?: return@withContext emptyList()
+            val flat = extractList(trendingV2())
+            filterIndoOnly(flat, token).mapNotNull { mapSubjectToMediaItem(it) }
+        }
 
     suspend fun searchItems(keyword: String, page: Int = 1): List<MediaItem> =
-        extractList(search(keyword, page)).mapNotNull { mapSubjectToMediaItem(it) }
+        withContext(Dispatchers.IO) {
+            val token = boot() ?: return@withContext emptyList()
+            val flat = extractList(search(keyword, page))
+            filterIndoOnly(flat, token).mapNotNull { mapSubjectToMediaItem(it) }
+        }
 
     suspend fun subjectDetailData(subjectId: String): DetailData? {
         val root = subjectDetail(subjectId) ?: return null
