@@ -1145,9 +1145,12 @@ object LocalMovieBoxClient {
                 ?: rdArr?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
 
             val variants = listOf(
-                { fetchPlayInfo(base, subjectId, if (se > 0) se else 1, if (ep > 0) ep else 1, resourceId, token) },
-                { fetchPlayInfo(base, subjectId, 1, 1, resourceId, token) },
+                // rid unik per episode: panggil play-info dengan rid dulu (SANS se/ep)
+                // supaya server MENGHORMATI episode yang dipilih (Sebelumnya varian
+                // se/ep+rid bisa diabaikan server lalu jatuh ke {1,1} -> EP1 diputar).
                 { fetchPlayInfo(base, subjectId, 0, 0, resourceId, token) },
+                { fetchPlayInfo(base, subjectId, if (se > 0) se else 1, if (ep > 0) ep else 1, resourceId, token) },
+                { fetchPlayInfo(base, subjectId, if (se > 0) se else 1, if (ep > 0) ep else 1, null, token) },
             )
             for (call in variants) {
                 val root = call() ?: continue
