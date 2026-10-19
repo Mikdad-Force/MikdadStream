@@ -137,7 +137,7 @@ object LocalMovieBoxClient {
             "Content-Type" to contentType,
             "Connection" to "keep-alive",
             "X-Client-Info" to clientInfo(),
-            "X-Client-Status" to "0",
+            "X-Client-Status" to "1",
             "X-Client-Token" to ("$ts," +
                 md5Hex(ts.toString().reversed().toByteArray(Charsets.UTF_8))),
             "x-tr-signature" to run {
@@ -506,12 +506,7 @@ object LocalMovieBoxClient {
         return u.contains("macdn.aoneroom.com") ||
             u.contains("please_update") ||
             u.contains("update_app") ||
-            u.contains("b164fbfb43") ||
-            u.contains("check") ||
-            u.contains("captcha") ||
-            u.contains("verify") ||
-            u.contains("challenge") ||
-            u.contains("recaptcha")
+            u.contains("b164fbfb43")
     }
 
     fun firstBySubject(subjectId: String): JSONObject? {
@@ -532,59 +527,155 @@ object LocalMovieBoxClient {
         )
     }
 
-    suspend fun fetchRealStream(subjectId: String, resourceId: String?): MediaStream? {
-        android.util.Log.i(TAG, "fetchRealStream start subjectId=${subjectId.takeLast(6)} resourceId=${resourceId}")
-        val rid = resourceId ?: run {
-            val d = subjectDetail(subjectId)
-            val rid = d?.optJSONObject("data")?.optJSONArray("resourceDetectors")?.optJSONObject(0)?.optString("resourceId")
-            android.util.Log.i(TAG, "fetchRealStream extracted resourceId=${rid}")
-            rid
-        }
-        val first = firstBySubject(subjectId)
-        if (first == null) { android.util.Log.w(TAG, "firstBySubject null"); return null }
-        val collectionId = first.optJSONObject("data")
-            ?.optJSONObject("belongToCollection")
-            ?.optString("collectionId")
-            ?.takeIf { it.isNotBlank() } ?: run { android.util.Log.w(TAG, "collectionId null"); return null }
-        android.util.Log.i(TAG, "fetchRealStream collectionId=${collectionId}")
-        val list = collectionDownloadList(collectionId, 1, 50)
-        if (list == null) { android.util.Log.w(TAG, "collectionDownloadList null"); return null }
-        val items = list.optJSONObject("data")?.optJSONArray("items") ?: run { android.util.Log.w(TAG, "items null"); return null }
-        android.util.Log.i(TAG, "fetchRealStream items count=${items.length()}")
-        for (i in 0 until items.length()) {
-            val item = items.optJSONObject(i) ?: continue
-            val resources = item.optJSONArray("resources") ?: continue
-            for (r in 0 until resources.length()) {
-                val res = resources.optJSONObject(r) ?: continue
-                if (rid != null && rid.isNotBlank() && res.optString("id") != rid) continue
-                val url = res.optString("url").takeIf { it.isNotBlank() } ?: continue
-                android.util.Log.i(TAG, "Moviebox Local real stream found: $url")
-                val hdrs = LinkedHashMap<String, String>()
-                hdrs["Referer"] = "https://www.movieboxpro.app/"
-                hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
-                return MediaStream(
-                    server = "Moviebox Local",
-                    format = res.optString("format", "mp4").lowercase(),
-                    quality = res.optString("resolutions").takeIf { it.isNotBlank() } ?: "Auto",
-                    url = url,
-                    headers = hdrs,
-                )
+    private fun streamFromUgcRes(res: JSONObject, referer: String = "https://www.movieboxpro.app/"): MediaStream? {
+        val url = res.optString("url").takeIf { it.isNotBlank() } ?: return null
+        val signCookie = res.optString("signCookie").takeIf { it.isNotBlank() }
+        // Pola APK: manifest bisa dikodekan di signCookie "urlprefix=..." atau CloudFront-Policy
+        val manifest = signCookie?.let { manifestFromSignCookie(it) }
+        val finalUrl = manifest?.second
+            ?: res.optString("playUrl").takeIf { it.isNotBlank() }
+            ?: url
+        val fmt = manifest?.first
+            ?: when {
+                finalUrl.contains(".m3u8") -> "hls"
+                finalUrl.contains(".mpd") -> "dash"
+                else -> res.optString("format", "mp4").ifBlank { "mp4" }.lowercase()
             }
-        }
-        // fallback: first resource of first item
-        val firstItem = items.optJSONObject(0) ?: return null
-        val firstRes = firstItem.optJSONArray("resources")?.optJSONObject(0) ?: return null
-        val url = firstRes.optString("url").takeIf { it.isNotBlank() } ?: return null
         val hdrs = LinkedHashMap<String, String>()
-        hdrs["Referer"] = "https://www.movieboxpro.app/"
+        signCookie?.let { hdrs["Cookie"] = it }
+        hdrs["Referer"] = referer
         hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
         return MediaStream(
             server = "Moviebox Local",
-            format = firstRes.optString("format", "mp4").lowercase(),
-            quality = firstRes.optString("resolutions").takeIf { it.isNotBlank() } ?: "Auto",
-            url = url,
+            format = fmt,
+            quality = res.optString("resolutions").takeIf { it.isNotBlank() }
+                ?: res.optString("quality").takeIf { it.isNotBlank() } ?: "Auto",
+            url = finalUrl,
             headers = hdrs,
         )
+    }
+
+    private fun collectCleanResources(item: JSONObject?, out: MutableList<JSONObject>) {
+        if (item == null) return
+        val resources = item.optJSONArray("resources") ?: return
+        for (r in 0 until resources.length()) {
+            val res = resources.optJSONObject(r) ?: continue
+            val url = res.optString("url")
+            if (url.isBlank()) continue
+            if (isTrapUrl(url)) continue
+            out.add(res)
+        }
+    }
+
+    private fun chooseBestResource(candidates: List<JSONObject>): JSONObject? {
+        if (candidates.isEmpty()) return null
+        // Pola APK: resource disortir kualitas tersendiri; ambil kualitas tertinggi yang tersedia.
+        val score = { r: JSONObject ->
+            val q = r.optString("resolutions").takeIf { it.isNotBlank() }
+                ?: r.optString("quality").takeIf { it.isNotBlank() } ?: ""
+            when {
+                q.contains("1080") -> 5
+                q.contains("720") -> 4
+                q.contains("540") -> 3
+                q.contains("480") -> 2
+                q.contains("360") -> 1
+                else -> 0
+            }
+        }
+        return candidates.maxByOrNull { score(it) }
+    }
+
+    suspend fun fetchRealStream(subjectId: String, resourceId: String?, se: Int = 1, ep: Int = 1): MediaStream? {
+        android.util.Log.i(TAG, "fetchRealStream start subj=${subjectId.takeLast(6)} rid=$resourceId se=$se ep=$ep")
+        val rid = resourceId?.takeIf { it.isNotBlank() } ?: run {
+            val d = subjectDetail(subjectId)
+            val r = d?.optJSONObject("data")?.optJSONArray("resourceDetectors")
+                ?.optJSONObject(0)?.optString("resourceId")
+            android.util.Log.i(TAG, "fetchRealStream extracted resourceId=${r}")
+            r
+        }
+        val first = firstBySubject(subjectId)
+        if (first == null) { android.util.Log.w(TAG, "firstBySubject null"); return null }
+        val firstData = first.optJSONObject("data")
+        val ugcVideoId = firstData?.optString("ugcVideoId")?.takeIf { it.isNotBlank() }
+        val collectionId = firstData?.optJSONObject("belongToCollection")
+            ?.optString("collectionId")?.takeIf { it.isNotBlank() }
+        android.util.Log.i(TAG, "fetchRealStream collectionId=$collectionId ugcVideoId=$ugcVideoId")
+
+        val candidates = ArrayList<JSONObject>()
+
+        if (collectionId != null) {
+            val list = collectionDownloadList(collectionId, 1, 50)
+            if (list == null) {
+                android.util.Log.w(TAG, "collectionDownloadList null")
+            } else {
+                val dataObj = list.optJSONObject("data")
+                val items = dataObj?.optJSONArray("items")
+                    ?: dataObj?.optJSONArray("list")
+                    ?: org.json.JSONArray()
+                val count = items.length()
+                android.util.Log.i(TAG, "fetchRealStream items count=$count")
+                if (count > 0) {
+                    // Pola APK: pilih episode by epTitle "S{se}EP{ep}" atau "E{ep}"; jika rid/ep kosong pakai item pertama.
+                    var matched: JSONObject? = null
+                    for (i in 0 until count) {
+                        val item = items.optJSONObject(i) ?: continue
+                        val epTitle = item.optString("epTitle").uppercase(Locale.ROOT)
+                        if (epTitle.isBlank()) continue
+                        val sEp = "S${se}_EP${ep}"
+                        val eEp = "E${ep}"
+                        if (epTitle.contains(sEp) || epTitle.contains(eEp)) { matched = item; break }
+                    }
+                    if (matched == null && rid.isNullOrBlank()) matched = items.optJSONObject(0)
+                    if (matched != null) {
+                        android.util.Log.i(TAG, "fetchRealStream matched item epTitle=${matched.optString("epTitle")}")
+                        collectCleanResources(matched, candidates)
+                    }
+                    // Jika resource item terpilih kosong dan rid diketahui, telusuri semua item by resource id.
+                    if (candidates.isEmpty() && !rid.isNullOrBlank()) {
+                        for (i in 0 until count) {
+                            val item = items.optJSONObject(i) ?: continue
+                            val resources = item.optJSONArray("resources") ?: continue
+                            for (r in 0 until resources.length()) {
+                                val res = resources.optJSONObject(r) ?: continue
+                                val resId = res.optString("id")
+                                if (resId.isNotBlank() && resId == rid) {
+                                    collectCleanResources(item, candidates)
+                                    break
+                                }
+                            }
+                            if (candidates.isNotEmpty()) break
+                        }
+                    }
+                    // Terakhir: kumpulkan resource bersih pertama dari item pertama (fallback APK).
+                    if (candidates.isEmpty()) collectCleanResources(items.optJSONObject(0), candidates)
+                }
+            }
+        }
+
+        // Fallback APK: /ugc/video/download?ugcVideoId= saat list kosong.
+        if (candidates.isEmpty() && !ugcVideoId.isNullOrBlank()) {
+            val token = boot() ?: return null
+            val base = activeHostOrFirst()
+            val dl = callJson(base, "/wefeed-mobile-bff/ugc/video/download?ugcVideoId=$ugcVideoId", null, token, false)
+            val dlItems = dl?.optJSONObject("data")?.optJSONArray("items")
+                ?: dl?.optJSONObject("data")?.optJSONArray("list")
+            if (dlItems != null) {
+                for (i in 0 until dlItems.length()) {
+                    collectCleanResources(dlItems.optJSONObject(i), candidates)
+                }
+            }
+            android.util.Log.i(TAG, "fetchRealStream ugc download candidates=${candidates.size}")
+        }
+
+        val picked = chooseBestResource(candidates)
+        if (picked == null) {
+            android.util.Log.w(TAG, "fetchRealStream no clean resources subj=${subjectId.takeLast(6)}")
+            return null
+        }
+        val stream = streamFromUgcRes(picked)
+        android.util.Log.i(TAG, "Moviebox Local real stream found: ${stream?.url}")
+        return stream
     }
 
     suspend fun fetchStreams(subjectId: String, se: Int = 1, ep: Int = 1): List<MediaStream>? =
@@ -612,7 +703,7 @@ object LocalMovieBoxClient {
                 Log.i(TAG, "play-info streams count=${streams.size} subj=${subjectId.takeLast(6)} se=$se ep=$ep")
             val trap = streams.firstOrNull()?.url?.let { isTrapUrl(it) } == true
             if (trap) {
-                val real = fetchRealStream(subjectId, resourceId)
+                val real = fetchRealStream(subjectId, resourceId, if (se > 0) se else 1, if (ep > 0) ep else 1)
                 android.util.Log.w(TAG, "fetchRealStream result=${real != null} subj=${subjectId.takeLast(6)}")
                 if (real != null) {
                     Log.i(TAG, "Moviebox Local real stream subj=${subjectId.takeLast(6)}")
