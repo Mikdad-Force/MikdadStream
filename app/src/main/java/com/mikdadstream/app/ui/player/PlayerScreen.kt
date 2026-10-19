@@ -566,6 +566,20 @@ fun PlayerScreen(
             val list = data.playableStreams
             streams = list
             apiSubtitles = data.subtitles.orEmpty()
+            // Bila daftar tidak memuat Indonesia, coba sekali lagi langsung ke API.
+            fun isIndo(s: SubtitleTrack): Boolean =
+                s.lang?.let(::subtitleLangName) == "Indonesia" || subtitleLangName(s.label) == "Indonesia"
+            if (apiSubtitles.none(::isIndo)) {
+                val parts = episodeId.split("_")
+                val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
+                val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
+                val retry = runCatching {
+                    com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
+                        .fetchSubtitles(request.contentId, se, ep)
+                }.getOrDefault(emptyList())
+                Log.i("PlayerScreen", "subtitle retry: ${retry.size} track, indo=${retry.any(::isIndo)}")
+                if (retry.any(::isIndo)) apiSubtitles = retry
+            }
             selectedIndex = pickStreamIndex(list)
             loadingStreams = false
             if (list.isEmpty()) {
@@ -608,25 +622,31 @@ fun PlayerScreen(
             val lang = normalizedLang(s.lang ?: s.label)
             // Dedup: satu track per kode bahasa (hindari muncul dobel).
             if (!seenLang.add(lang)) return@mapNotNull null
+            val indo = lang == "id"
             lang to ExoMediaItem.SubtitleConfiguration.Builder(Uri.parse(u))
                 .setMimeType(mime)
                 .setLanguage(lang)
                 .setLabel(subtitleLangName(lang) ?: s.label ?: lang)
+                // Track Indonesia ditandai DEFAULT: ExoPlayer memilihnya sendiri
+                // tanpa perlu preferred-language dan tanpa fallback ke Melayu.
+                .setSelectionFlags(if (indo) C.SELECTION_FLAG_DEFAULT else 0)
                 .build()
         }
         // Indonesia dan Melayu TETAP TERPISAH (label berbeda, keduanya tersedia).
-        val subs = played.map { it.second }
-        Log.d("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.mimeType ?: "") + " " + (it.label ?: "") }}")
+        // Indonesia diletakkan paling depan agar menjadi kandidat default pertama.
+        val subs = played.sortedByDescending { it.first == "id" }.map { it.second }
+        Log.i("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.mimeType ?: "") + " " + (it.label ?: "") }}" + " dari ${apiSubtitles.size} track")
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
         selectedVideoHeight = null
         subtitleUserChosen = false
         selectedSubKey = null
-        // Cadangan: minta ExoPlayer memilih Indonesia; tetap dipaksa eksplisit
-        // di bawah agar tidak pernah jatuh ke Melayu/bahasa lain.
+        // Bahasa Indonesia sudah ditandai DEFAULT pada SubtitleConfiguration,
+        // jadi ExoPlayer memilihnya sendiri. Preferred list dibiarkan kosong
+        // agar tidak pernah memilih Melayu/bahasa lain.
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-            .setPreferredTextLanguages("id", "in", "ind")
+            .setPreferredTextLanguages()
             .setSelectUndeterminedTextLanguage(false)
             .build()
         player.setMediaItem(builder.build())
@@ -641,7 +661,8 @@ fun PlayerScreen(
             if (applyIndonesianSubtitle()) return@LaunchedEffect
             delay(250)
         }
-        Log.i("PlayerScreen", "Tidak ada track subtitle Indonesia untuk stream ini")
+        Log.i("PlayerScreen", "Tidak ada track subtitle Indonesia untuk stream ini (${apiSubtitles.size} track)")
+        if (apiSubtitles.isNotEmpty()) showHud(null, "Subtitle Indonesia tidak tersedia")
     }
 
     // ---- Listener pemutar ----
