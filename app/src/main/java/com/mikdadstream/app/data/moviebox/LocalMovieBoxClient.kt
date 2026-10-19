@@ -714,7 +714,14 @@ object LocalMovieBoxClient {
         val cover = (data.optJSONObject("cover")?.optString("url"))
             ?: data.optString("cover").takeIf { it.isNotBlank() }
         val totalEp = data.optJSONArray("resourceDetectors")?.optJSONObject(0)?.optInt("totalEpisode", 0) ?: 0
-        val episodes = seasonInfo(subjectId)?.let { mapSeasonToEpisodes(it) }?.takeIf { it.isNotEmpty() }
+        // Seri: daftar episode diambil dari KOLEKSI UGC nyata (epTitle S{se}EP{ep}),
+        // sumber yang benar-benar bisa diputar — bukan season-info yang bisa
+        // berbeda dari isi koleksi (mis. Black Clover S2: season-info 3, koleksi 2).
+        val fromCollection = if (totalEp > 1 || data.optInt("subjectType", 0) == 2) {
+            runCatching { collectionEpisodes(subjectId) }.getOrNull()
+        } else null
+        val episodes = fromCollection?.takeIf { it.isNotEmpty() }
+            ?: seasonInfo(subjectId)?.let { mapSeasonToEpisodes(it) }?.takeIf { it.isNotEmpty() }
             ?: if (totalEp > 0) (1..totalEp).map { EpisodeData(episodeId = "1_$it", episodeNumber = it) }
             else listOf(EpisodeData(episodeId = "1_1", episodeNumber = 1))
         val score = data.optDouble("score", 0.0).let { if (it <= 0.0) data.optDouble("showScore", 0.0) else it }
@@ -846,7 +853,54 @@ object LocalMovieBoxClient {
         return callJson(base, "/wefeed-mobile-bff/ugc/video/first-by-subject?subjectId=$subjectId", null, token, false)
     }
 
+    private val collectionEpCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<EpisodeData>>>()
+
+    // Daftar episode dari koleksi UGC (download-list, 50/halaman) = episode yang
+    // benar-benar punya sumber video. epTitle: "S1EP1", "S2EP1", atau "EP1".
+    suspend fun collectionEpisodes(subjectId: String): List<EpisodeData>? = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        collectionEpCache[subjectId]?.let { (t, list) ->
+            if (now - t < 5 * 60_000L) return@withContext list
+        }
+        try {
+            val first = firstBySubject(subjectId) ?: return@withContext null
+            val cid = first.optJSONObject("data")
+                ?.optJSONObject("belongToCollection")?.optString("collectionId")
+                ?.takeIf { it.isNotBlank() } ?: return@withContext null
+            val out = ArrayList<EpisodeData>()
+            var page = 1
+            while (page <= 40) {
+                val list = collectionDownloadList(cid, page, 50) ?: break
+                val items = list.optJSONObject("data")?.optJSONArray("items") ?: break
+                if (items.length() == 0) break
+                for (i in 0 until items.length()) {
+                    val item = items.optJSONObject(i) ?: continue
+                    val t = item.optString("epTitle").trim().uppercase(Locale.ROOT)
+                    if (t.isBlank()) continue
+                    val m = Regex("^S(\\d+)EP(\\d+)$").find(t)
+                    val m2 = Regex("^EP(\\d+)$").find(t)
+                    val se = m?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 1
+                    val ep = m?.groupValues?.getOrNull(2)?.toIntOrNull()
+                        ?: m2?.groupValues?.getOrNull(1)?.toIntOrNull()
+                        ?: continue
+                    out.add(EpisodeData(episodeId = "${se}_${ep}", episodeNumber = ep))
+                }
+                if (items.length() < 50) break
+                page++
+            }
+            val episodes = out.distinctBy { it.episodeId }
+            if (episodes.isEmpty()) null else {
+                collectionEpCache[subjectId] = System.currentTimeMillis() to episodes
+                episodes
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "collectionEpisodes error: ${e.message}")
+            null
+        }
+    }
+
     fun collectionDownloadList(collectionId: String, page: Int = 1, perPage: Int = 50): JSONObject? {
+
         val token = boot() ?: return null
         val base = activeHostOrFirst()
         return callJson(
@@ -1123,7 +1177,10 @@ object LocalMovieBoxClient {
         }
 
         // Fallback APK: /ugc/video/download?ugcVideoId= saat list kosong.
-        if (candidates.isEmpty() && !ugcVideoId.isNullOrBlank()) {
+        // JANGAN dipakai untuk episode tertentu: endpoint ini mengembalikan video
+        // PERTAMA (S1EP1) sehingga episode lain akan memutar EP1.
+        val allowFirstVideo = collectionId == null || (se <= 1 && ep <= 1)
+        if (candidates.isEmpty() && allowFirstVideo && !ugcVideoId.isNullOrBlank()) {
             val token = boot() ?: return emptyList()
             val base = activeHostOrFirst()
             val dl = callJson(base, "/wefeed-mobile-bff/ugc/video/download?ugcVideoId=$ugcVideoId", null, token, false)
