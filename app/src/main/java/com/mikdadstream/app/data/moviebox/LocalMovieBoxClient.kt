@@ -986,14 +986,33 @@ object LocalMovieBoxClient {
                 var out = captionsToTracks(caps)
                 if (caps != null) Log.i(TAG, "fetchSubtitles caps=${caps.length()} out=${out.size} subj=$subjectId se=$se ep=$ep")
 
-                if (out.isEmpty() && title.isNotBlank()) {
-                    // Cari versi lain dengan judul sama yang punya caption Indonesia.
-                    val sibs = searchSubjects(title, token).filter { s ->
-                        s.optString("subjectId").let { it.isNotBlank() && it != subjectId } &&
-                            (s.optString("subjectType").toIntOrNull() ?: 0) == type
+                val hasIndo = { list: List<SubtitleTrack> ->
+                    list.any {
+                        normalizedCaptionLang(it.lang ?: "") == "id" ||
+                            it.label?.lowercase()?.contains("indonesi") == true
                     }
-                    Log.i(TAG, "fetchSubtitles sibling candidates=${sibs.size} title=${title.take(24)}")
-                    for (sib in sibs.take(3)) {
+                }
+
+                if (!hasIndo(out) && title.isNotBlank()) {
+                    // Versi ini tidak punya caption Indonesia (mis. Doctor X US/UK:
+                    // server 0 caption). Cari versi lain berjudul sama yang punya
+                    // Indonesia — JANGAN dibatasi tipe yang sama, karena versi film
+                    // (type 1) sering hanya ada di versi serial (type 2) berbahasa lain.
+                    val keyWords = title.lowercase().replace(Regex("[^a-z0-9 ]"), " ")
+                        .split(" ").filter { it.length >= 3 }.take(4)
+                    val sibs = searchSubjects(title, token)
+                        .filter { s ->
+                            val sid = s.optString("subjectId")
+                            if (sid.isBlank() || sid == subjectId) return@filter false
+                            val st = s.optString("title").lowercase()
+                            keyWords.isNotEmpty() && keyWords.all { st.contains(it) }
+                        }
+                        .sortedBy { s ->
+                            val t = s.optString("subjectType").toIntOrNull() ?: 0
+                            if (t == type) 0 else 1
+                        }
+                    Log.i(TAG, "fetchSubtitles sibling candidates=${sibs.size} ownOut=${out.size} title=${title.take(28)}")
+                    for (sib in sibs.take(4)) {
                         val sid = sib.optString("subjectId")
                         val sibArr = sib.optJSONArray("resourceDetectors")
                         val sibLast = (sibArr?.length() ?: 1).coerceAtLeast(1) - 1
@@ -1007,7 +1026,10 @@ object LocalMovieBoxClient {
                                 t.label?.lowercase()?.contains("indonesi") == true
                         }
                         if (picked.isNotEmpty()) {
-                            out = picked  // satu-satunya decode Indonesian dari versi lain
+                            // Gabungkan: bahasa versi ini tetap ada + Indonesia dari versi lain.
+                            out = (out + picked).distinctBy {
+                                normalizedCaptionLang(it.lang ?: it.label ?: "")
+                            }
                             Log.i(TAG, "fetchSubtitles sibling Indonesian from $sid n=${picked.size}")
                             break
                         }
