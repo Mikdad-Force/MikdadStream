@@ -389,6 +389,20 @@ fun PlayerScreen(
         }
         subOptions = opts.sortedBy { if (it.label == "Indonesia") 0 else 1 }
         selectedSubKey = selectedKey
+        // Pilih subtitle Indonesia secara EKSPLISIT. Tidak ada fallback ke
+        // Melayu/bahasa lain: kalau Indonesia tidak ada, subtitle tetap mati.
+        if (selectedKey == null) {
+            val indo = opts.firstOrNull { it.label == "Indonesia" }
+            if (indo != null) {
+                Log.d("PlayerScreen", "auto-select Indonesia track ${indo.key}")
+                val bp = player.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setOverrideForType(TrackSelectionOverride(indo.group, indo.index))
+                player.trackSelectionParameters = bp.build()
+                selectedSubKey = indo.key
+            }
+        }
     }
 
     fun selectSubtitle(opt: SubOption?) {
@@ -556,11 +570,12 @@ fun PlayerScreen(
         streamHeaders.set(stream.headers.orEmpty())
         val builder = ExoMediaItem.Builder().setUri(url)
         // Normalisasi kode bahasa SEBELUM diberi ke ExoPlayer:
-        // "in_id"/"id_id" (ng- MovieBox) -> "id", hindari normalisasi acak Exo ("Melayu").
+        // "in_id"/"id_id"/"in" (pola MovieBox) -> "id".
         fun normalizedLang(raw: String?): String =
-            (raw ?: "").trim().lowercase().replace('.', '_').let {
+            (raw ?: "").trim().lowercase().replace('.', '_').replace('-', '_').let {
                 when {
-                    it.startsWith("in_") || it.startsWith("id_") || it == "in" -> "id"
+                    it.startsWith("in_") || it.startsWith("id_") || it == "in" || it == "id" ||
+                        it.contains("indonesi") || it.contains("bahasa") -> "id"
                     it.isBlank() -> "sub"
                     else -> it.substringBefore('_')
                 }
@@ -583,12 +598,14 @@ fun PlayerScreen(
         Log.d("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.mimeType ?: "") + " " + (it.label ?: "") }}")
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
         selectedVideoHeight = null
+        // JANGAN biarkan ExoPlayer memilih sendiri: track lain (mis. Melayu)
+        // sering terpilih otomatis. Kita matikan auto-select lalu pilih track
+        // Indonesia secara eksplisit di refreshSubOptions().
+        selectedSubKey = null
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-            // Tampilkan subtitle Indonesia OTOMATIS bila tersedia (tanpa
-            // menggabungkan/menggeser urutan; Melayu tetap terpisah).
-            .setPreferredTextLanguages("id", "in", "ind")
+            .setPreferredTextLanguages()
             .setSelectUndeterminedTextLanguage(false)
             .build()
         player.setMediaItem(builder.build())

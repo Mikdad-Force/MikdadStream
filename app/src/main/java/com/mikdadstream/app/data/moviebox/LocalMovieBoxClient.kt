@@ -452,6 +452,7 @@ object LocalMovieBoxClient {
         val ts: Long,
         val indoProd: Boolean,
         val indoSub: Boolean,
+        val hindi: Boolean,
         val canonical: String?,
     )
 
@@ -460,6 +461,13 @@ object LocalMovieBoxClient {
 
     private fun subjectIdOf(s: JSONObject): String =
         s.optString("subjectId").ifBlank { s.optString("id") }.ifBlank { s.optString("subject_id") }
+
+    /** Judul / metadata bertanda Hindi. */
+    private fun isHindiText(s: String?): Boolean {
+        val t = s?.lowercase() ?: return false
+        return t.contains("hindi") || t.contains("[hin]") || t.contains("hindia") ||
+            t.split(',', '/', '|').map { it.trim() }.any { it == "hi" || it == "hin" }
+    }
 
     private suspend fun subtitleInfo(subject: JSONObject, token: String): SubInfo? {
         val id = subjectIdOf(subject)
@@ -477,13 +485,20 @@ object LocalMovieBoxClient {
             is org.json.JSONArray -> (0 until f.length()).any { isIndoText(f.optString(it)) }
             else -> false
         }
-        // ID film asal (semua versi dub/Hindi berbagi ID ini).
-        val canonical = data.optJSONArray("dubs")?.let { arr ->
+        // ID film asal + bahasa audio asli (semua versi dub/Hindi berbagi ID ini).
+        val dubs = data.optJSONArray("dubs")
+        val origDub = dubs?.let { arr ->
             (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
                 .firstOrNull { it.optBoolean("original", false) }
-                ?.optString("subjectId")?.takeIf { it.isNotBlank() }
-        } ?: id
-        val info = SubInfo(System.currentTimeMillis(), indoProd, hasIndoSub, canonical)
+        }
+        val canonical = origDub?.optString("subjectId")?.takeIf { it.isNotBlank() } ?: id
+        val origAudio = origDub?.optString("lanCode")?.ifBlank { null }
+            ?: origDub?.optString("lanName")?.ifBlank { null }
+            ?: data.optString("language")
+        // Film Hindi (asli maupun versi dub berlabel Hindi) tidak ditampilkan.
+        val hindi = isHindiText(origAudio) || isHindiText(data.optString("language")) ||
+            isHindiText(subject.optString("language")) || isHindiText(subject.optString("title"))
+        val info = SubInfo(System.currentTimeMillis(), indoProd, hasIndoSub, hindi, canonical)
         subInfoCache[id] = info
         return info
     }
@@ -512,6 +527,8 @@ object LocalMovieBoxClient {
             val out = ArrayList<JSONObject>()
             for ((canonical, group) in groups) {
                 val qualified = group.filter { (_, info) ->
+                    // Versi Hindi (dub [Hindi] / audio Hindi) tidak ditampilkan sama sekali.
+                    if (info?.hindi == true) return@filter false
                     info == null || info.indoProd || info.indoSub
                 }
                 if (qualified.isEmpty()) continue
@@ -1023,63 +1040,13 @@ object LocalMovieBoxClient {
                 val rd = rdArr?.optJSONObject((ep - 1).coerceIn(0, lastIdx)) ?: rdArr?.optJSONObject(0)
                 val rid = rd?.optString("resourceId")?.takeIf { it.isNotBlank() }
                     ?: rdArr?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
-                val type = detailData?.optString("subjectType")?.toIntOrNull() ?: detailData?.optInt("subjectType", 0) ?: 0
-                val title = detailData?.optString("title")?.takeIf { it.isNotBlank() } ?: ""
 
+                // HANYA sumber langsung (subjek + resourceId milik video ini).
+                // Tidak meminjam caption dari versi lain: subtitle versi lain
+                // ditempel ke video berbeda potongan -> tidak sinkron.
                 val caps = extCaptionsFor(subjectId, rid, token, se, ep)
-                var out = captionsToTracks(caps)
-                if (caps != null) Log.i(TAG, "fetchSubtitles caps=${caps.length()} out=${out.size} subj=$subjectId se=$se ep=$ep")
-
-                val hasIndo = { list: List<SubtitleTrack> ->
-                    list.any {
-                        normalizedCaptionLang(it.lang ?: "") == "id" ||
-                            it.label?.lowercase()?.contains("indonesi") == true
-                    }
-                }
-
-                if (!hasIndo(out) && title.isNotBlank()) {
-                    // Versi ini tidak punya caption Indonesia (mis. Doctor X US/UK:
-                    // server 0 caption). Cari versi lain berjudul sama yang punya
-                    // Indonesia — JANGAN dibatasi tipe yang sama, karena versi film
-                    // (type 1) sering hanya ada di versi serial (type 2) berbahasa lain.
-                    val keyWords = title.lowercase().replace(Regex("[^a-z0-9 ]"), " ")
-                        .split(" ").filter { it.length >= 3 }.take(4)
-                    val sibs = searchSubjects(title, token)
-                        .filter { s ->
-                            val sid = s.optString("subjectId")
-                            if (sid.isBlank() || sid == subjectId) return@filter false
-                            val st = s.optString("title").lowercase()
-                            keyWords.isNotEmpty() && keyWords.all { st.contains(it) }
-                        }
-                        .sortedBy { s ->
-                            val t = s.optString("subjectType").toIntOrNull() ?: 0
-                            if (t == type) 0 else 1
-                        }
-                    Log.i(TAG, "fetchSubtitles sibling candidates=${sibs.size} ownOut=${out.size} title=${title.take(28)}")
-                    for (sib in sibs.take(4)) {
-                        val sid = sib.optString("subjectId")
-                        val sibArr = sib.optJSONArray("resourceDetectors")
-                        val sibLast = (sibArr?.length() ?: 1).coerceAtLeast(1) - 1
-                        val ridSib = sibArr?.optJSONObject((ep - 1).coerceIn(0, sibLast))
-                            ?.optString("resourceId")?.takeIf { it.isNotBlank() }
-                            ?: subjectDetailDataForRid(sid)
-                        val subCaps = extCaptionsFor(sid, ridSib, token, se, ep)
-                        val all = captionsToTracks(subCaps)
-                        val picked = all.filter { t ->
-                            normalizedCaptionLang(t.lang ?: "") == "id" ||
-                                t.label?.lowercase()?.contains("indonesi") == true
-                        }
-                        if (picked.isNotEmpty()) {
-                            // Gabungkan: bahasa versi ini tetap ada + Indonesia dari versi lain.
-                            out = (out + picked).distinctBy {
-                                normalizedCaptionLang(it.lang ?: it.label ?: "")
-                            }
-                            Log.i(TAG, "fetchSubtitles sibling Indonesian from $sid n=${picked.size}")
-                            break
-                        }
-                    }
-                }
-                Log.i(TAG, "fetchSubtitles final=${out.size} subj=$subjectId")
+                val out = captionsToTracks(caps)
+                Log.i(TAG, "fetchSubtitles caps=${caps?.length() ?: 0} out=${out.size} subj=$subjectId se=$se ep=$ep direct")
                 prepareSubtitleFiles(out)
             } catch (e: Exception) {
                 Log.w(TAG, "fetchSubtitles error: ${e.message}")
