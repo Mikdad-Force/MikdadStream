@@ -593,22 +593,47 @@ object LocalMovieBoxClient {
     private fun subjectTypeOf(o: JSONObject): Int =
         o.optString("subjectType").toIntOrNull() ?: o.optInt("subjectType", 0)
 
+    private fun countryBlob(o: JSONObject): String =
+        (o.optString("countryName") + " " + o.optString("language")).lowercase(Locale.ROOT)
+
+    private fun genreBlob(o: JSONObject): String =
+        (o.optString("genre") + " " + o.optString("genreList")).lowercase(Locale.ROOT)
+
     private fun categoryMatches(categoryId: String, o: JSONObject): Boolean {
-        val country = (o.optString("countryName") + " " + o.optString("language")).lowercase(Locale.ROOT)
-        val genre = o.optString("genre").lowercase(Locale.ROOT)
+        val country = countryBlob(o)
+        val genre = genreBlob(o)
+        val type = subjectTypeOf(o)
+        fun c(vararg keys: String) = keys.any { country.contains(it) }
+        fun g(vararg keys: String) = keys.any { genre.contains(it) }
         return when (categoryId) {
-            "movie" -> subjectTypeOf(o) == 1
-            "series" -> subjectTypeOf(o) == 2
-            "anime" -> genre.contains("anime") || genre.contains("animation")
+            // --- 12 kategori utama ---
+            "kdrama" -> type == 2 && c("korea", "korean")
+            "indodrama" -> type == 2 && c("indonesia")
+            "cdrama" -> type == 2 && c("china", "chinese", "mandarin", "hong kong", "taiwan")
+            "anime" -> g("anime")
+            "thaidrama" -> type == 2 && c("thailand", "thai")
+            "western" -> c(
+                "united states", "united kingdom", "america", "canada", "australia",
+                "new zealand", "ireland", "hollywood", "western",
+            )
+            "reality" -> g("reality", "variety", "talk show", "game show", "competition")
+            "jdrama" -> type == 2 && c("japan", "japanese")
+            "malaydrama" -> type == 2 && c("malaysia", "malay")
+            "romance" -> g("romance", "romantic")
+            "action" -> g("action")
+            "mystery" -> g("mystery", "misteri")
+            // --- alias lama (kompatibilitas) ---
+            "movie" -> type == 1
+            "series" -> type == 2
             "hoollywood", "hollywood" ->
-                listOf("united states", "united kingdom", "america", "canada", "hollywood")
-                    .any { country.contains(it) || o.optString("countryName").lowercase(Locale.ROOT).contains(it) }
-            "asia" -> listOf(
+                c("united states", "united kingdom", "america", "canada", "hollywood")
+            "asia" -> c(
                 "japan", "korea", "china", "hong kong", "taiwan", "thailand", "vietnam",
                 "philippines", "india", "indonesia", "malaysia", "singapore", "nepal",
                 "sri lanka", "bangladesh",
-            ).any { country.contains(it) }
-            "horror" -> genre.contains("horror") || genre.contains("horor")
+            )
+            "horror" -> g("horror", "horor")
+            "indonesia" -> c("indonesia")
             else -> true
         }
     }
@@ -645,7 +670,7 @@ object LocalMovieBoxClient {
             }
         }
         // 2. Dari pencarian: keyword generik + sort terbaru (filter negara tetap ketat di bawah).
-        for (q in listOf("indonesia", "horor", "komedi indonesia")) {
+        for (q in listOf("indonesia", "horor", "komedi indonesia", "drama indonesia", "sinetron", "series indonesia")) {
             val body = org.json.JSONObject()
                 .put("keyword", q)
                 .put("page", 1)
@@ -674,7 +699,29 @@ object LocalMovieBoxClient {
     }
 
     private val categoryQueries = mapOf(
-        "anime" to listOf("anime", "one piece", "demon slayer"),
+        "kdrama" to listOf("drama korea", "korean drama"),
+        "indodrama" to listOf("drama indonesia", "sinetron indonesia"),
+        "cdrama" to listOf("drama china", "chinese drama"),
+        "anime" to listOf(
+            "anime", "naruto", "one piece", "jujutsu kaisen", "solo leveling",
+            "demon slayer", "attack on titan",
+        ),
+        "thaidrama" to listOf("drama thailand", "thai drama"),
+        "jdrama" to listOf(
+            "japanese drama", "j drama", "japan drama", "japanese series",
+            "japanese tv drama", "alice in borderland", "midnight diner", "first love",
+        ),
+        "malaydrama" to listOf(
+            "drama malaysia", "melayu drama", "malay drama", "drama melayu",
+            "malaysian drama", "rindu", "cinta melayu",
+        ),
+        "western" to listOf("hollywood", "marvel", "netflix", "english movie", "top gun"),
+        "reality" to listOf(
+            "reality show", "variety show", "running man", "tempting island", "singles inferno",
+        ),
+        "romance" to listOf("romance movie", "romantic movie", "romance drama", "love story"),
+        "action" to listOf("action movie", "john wick", "mission impossible"),
+        "mystery" to listOf("mystery movie", "detective", "murder mystery", "thriller"),
         "hollywood" to listOf("hollywood", "marvel", "superhero"),
         "asia" to listOf("korea", "japan", "thailand"),
         "horror" to listOf("horror", "horor"),
@@ -710,16 +757,17 @@ object LocalMovieBoxClient {
         val subjects = catalogSubjects()
         val token = boot() ?: return@withContext emptyList()
         val picked: ArrayList<JSONObject>
-        if (cat == "indonesia") {
-            // Indonesia = film asli buatan Indonesia; pengayaan via keyword di dalam fungsi.
-            picked = ArrayList(indonesiaSubjects(subjects, token))
+        if (cat == "indonesia" || cat == "indodrama") {
+            // Indonesia = film asli buatan Indonesia; Indo Drama = serialnya saja.
+            val indo = indonesiaSubjects(subjects, token)
+            picked = ArrayList(if (cat == "indodrama") indo.filter { subjectTypeOf(it) == 2 } else indo)
         } else {
             picked = ArrayList(
                 if (cat == "trending") subjects
                 else subjects.filter { categoryMatches(cat, it) }
             )
             // enrichment: kategori wajib ada isinya -> tambah hasil pencarian yang lolos predikat
-            if (cat != "trending" && picked.size < 16) {
+            if (cat != "trending" && picked.size < 24) {
                 val queries = categoryQueries[cat] ?: emptyList()
                 for (q in queries) {
                     for (s in searchSubjects(q, token)) {
@@ -728,7 +776,7 @@ object LocalMovieBoxClient {
                             if (id.isNotBlank() && picked.none { it.optString("subjectId") == id }) picked.add(s)
                         }
                     }
-                    if (picked.size >= 24) break
+                    if (picked.size >= 32) break
                 }
                 // fallback terakhir: jika strict tetap kosong, ambil hasil pencarian mentah agar kategori tidak kosong
                 if (picked.isEmpty()) {
@@ -738,9 +786,10 @@ object LocalMovieBoxClient {
                 }
             }
         }
-        // Kategori Indonesia = produksi Indonesia (selalu tampil). Kategori lain
-        // wajib ber-subtitle Indonesia & digabung per film (versi dub/Hindi hilang).
-        val qualified = if (cat == "indonesia") picked else filterIndoOnly(picked, token)
+        // Indonesian production selalu tampil; kategori lain wajib ber-subtitle
+        // Indonesia & digabung per film (versi dub/Hindi hilang).
+        val needsFilter = cat != "indonesia" && cat != "indodrama"
+        val qualified = if (needsFilter) filterIndoOnly(picked, token) else picked
         val out = ArrayList<MediaItem>()
         val seen = HashSet<String>()
         for (s in qualified) {

@@ -124,14 +124,18 @@ class StreamRepository(
     suspend fun categories(modelId: String): List<CategoryBundle> {
         if (modelId.equals("moviebox-local", true)) {
             return listOf(
-                CategoryBundle("trending", "Trending"),
-                CategoryBundle("movie", "Movie"),
-                CategoryBundle("series", "Series"),
-                CategoryBundle("indonesia", "Indonesia"),
+                CategoryBundle("kdrama", "K-Drama"),
+                CategoryBundle("indodrama", "Indo Drama"),
+                CategoryBundle("cdrama", "C-Drama"),
                 CategoryBundle("anime", "Anime"),
-                CategoryBundle("hollywood", "Hollywood"),
-                CategoryBundle("asia", "Asia"),
-                CategoryBundle("horror", "Horror"),
+                CategoryBundle("thaidrama", "Thai-Drama"),
+                CategoryBundle("western", "Western"),
+                CategoryBundle("reality", "Reality"),
+                CategoryBundle("jdrama", "J-Drama"),
+                CategoryBundle("malaydrama", "Malay Drama"),
+                CategoryBundle("romance", "Romance"),
+                CategoryBundle("action", "Action"),
+                CategoryBundle("mystery", "Mystery"),
             )
         }
         val envelope: Envelope<CategoriesData> = call { api.categories(apiModelId(modelId)) }
