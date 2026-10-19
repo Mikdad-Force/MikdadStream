@@ -560,13 +560,33 @@ fun PlayerScreen(
             "masuk player: episode=$episodeId prefetchStreams=${request.streams.size} " +
                 "prefetchSubs=${request.subtitles.size} prefetchIndo=$prefetchedHasIndo",
         )
-        if (reload == 0 && episodeId == request.episodeId && request.streams.isNotEmpty() &&
-            request.subtitles.isNotEmpty() && prefetchedHasIndo
-        ) {
+        if (reload == 0 && episodeId == request.episodeId && request.streams.isNotEmpty()) {
             val list = request.streams
             streams = list
-            apiSubtitles = request.subtitles
-            Log.i("PlayerScreen", "subtitle prefetch: ${request.subtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}")
+            // Subtitle JANGAN dipakai dari prefetch: prefetch bisa berasal dari
+            // metadata/versi tanpa caption Indonesia, sehingga subtitle tidak
+            // termuat. Selalu ambil ulang daftar segar dari API untuk subjek yang
+            // benar-benar diputar; prefetch hanya dipakai sebagai cadangan.
+            val parts = episodeId.split("_")
+            val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
+            val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
+            val fresh = runCatching {
+                com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
+                    .fetchSubtitles(request.contentId, se, ep)
+            }.getOrDefault(emptyList())
+            fun indoOf(s: SubtitleTrack) =
+                s.lang?.let(::subtitleLangName) == "Indonesia" ||
+                    subtitleLangName(s.label) == "Indonesia"
+            apiSubtitles = when {
+                fresh.any(::indoOf) -> fresh
+                request.subtitles.any(::indoOf) -> request.subtitles
+                fresh.isNotEmpty() -> fresh
+                else -> request.subtitles
+            }
+            Log.i(
+                "PlayerScreen",
+                "subtitle segar: ${apiSubtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}",
+            )
             selectedIndex = pickStreamIndex(list)
             loadingStreams = false
             return@LaunchedEffect
