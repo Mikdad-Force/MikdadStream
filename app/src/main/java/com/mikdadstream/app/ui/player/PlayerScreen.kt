@@ -181,7 +181,7 @@ private fun subtitleLangName(code: String?): String? {
     return when {
         key in setOf("id", "in", "ind", "indonesia") -> "Indonesia"
         key in setOf("en", "eng", "english") -> "English"
-        key in setOf("ms", "may", "ms_my", "malay", "melayu") -> "Indonesia"
+        key in setOf("ms", "may", "ms_my", "malay", "melayu") -> "Melayu"
         key in setOf("jv", "jav", "jawa", "javanese") -> "Jawa"
         key in setOf("su", "sun", "sunda", "sundanese") -> "Sunda"
         raw.contains("\u4e2d") -> if (raw.contains("\u7e41")) "\u7e41\u9ad4\u4e2d\u6587" else "\u7b80\u9ad4\u4e2d\u6587"
@@ -574,19 +574,14 @@ fun PlayerScreen(
                 .setLabel(subtitleLangName(lang) ?: s.label ?: lang)
                 .build()
         }
-        // Melayu (ms) hanyalah SEMINI bukan Indonesia asli: bila Ada track "id"
-        // asli dari server (in_id), buang track ms agar tidak keluar Melayu.
-        val hasRealId = played.any { it.first == "id" }
-        val subs = played
-            .filter { !hasRealId || it.first != "ms" }
-            .map { it.second }
+        // Indonesia dan Melayu TETAP TERPISAH (label berbeda, keduanya tersedia).
+        val subs = played.map { it.second }
         Log.d("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.mimeType ?: "") + " " + (it.label ?: "") }}")
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
         selectedVideoHeight = null
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-            .setPreferredTextLanguages("id", "in", "ind")
             .setSelectUndeterminedTextLanguage(false)
             .build()
         player.setMediaItem(builder.build())

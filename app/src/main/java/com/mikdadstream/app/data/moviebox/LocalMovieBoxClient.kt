@@ -889,14 +889,10 @@ object LocalMovieBoxClient {
         val out = ArrayList<SubtitleTrack>()
         if (caps == null) return out
         val seen = HashSet<String>()
-        // Urutkan: Indonesia asli (in_id / in / ind) lebih dulu supaya
-        // dedup per kode bahasa memilih Indonesia ASLI, bukan Melayu (ms).
-        val entries = (0 until caps.length()).mapNotNull { caps.optJSONObject(it) }
-        val sorted = entries.sortedByDescending { e ->
-            val lan = e.optString("lan").lowercase()
-            lan.startsWith("in_") || lan.startsWith("in/") || lan == "in" || lan.startsWith("ind")
-        }
-        for (c in sorted) {
+        // Indonesia & Melayu TERPISAH: tidak ada priorisasi/penggabungan,
+        // setiap kode bahasa jadi track masing-masing.
+        for (i in 0 until caps.length()) {
+            val c = caps.optJSONObject(i) ?: continue
             val url = c.optString("url").takeIf { it.isNotBlank() } ?: continue
             val lan = c.optString("lan").takeIf { it.isNotBlank() } ?: continue
             val norm = normalizedCaptionLang(lan)
@@ -905,13 +901,12 @@ object LocalMovieBoxClient {
             out.add(
                 SubtitleTrack(
                     label = c.optString("lanName").takeIf { it.isNotBlank() } ?: lan,
-                    lang = if (norm == "id") "in_id" else lan,
+                    lang = lan,
                     url = url,
                 )
             )
         }
-        // Bahasa Indonesia paling atas.
-        return out.sortedBy { if (it.lang == "in_id" || it.lang == "id") 0 else 1 }
+        return out
     }
 
     // Subtitle eksternal: /subject-api/get-ext-captions (pola APK: subjectId + resourceId [+ se/ep] -> data.extCaptions).
