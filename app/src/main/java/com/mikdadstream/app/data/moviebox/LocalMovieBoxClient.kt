@@ -586,9 +586,20 @@ object LocalMovieBoxClient {
                 out[s.optString("subjectId")] = s
             }
         }
-        // 2. Dari pencarian: keyword khas Indonesia agar kategori selalu ada isinya.
-        for (q in listOf("pocong", "horor", "film indonesia")) {
-            val arr = extractList(search(q, 1))
+        // 2. Dari pencarian: keyword generik + sort terbaru (filter negara tetap ketat di bawah).
+        for (q in listOf("indonesia", "horor", "komedi indonesia")) {
+            val body = org.json.JSONObject()
+                .put("keyword", q)
+                .put("page", 1)
+                .put("pageSize", 20)
+                .put("sort", "Latest")
+            val root = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val base0 = activeHostOrFirst()
+                    callJson(base0, "/wefeed-mobile-bff/subject-api/search", body.toString(), token, false)
+                }
+            }.getOrNull()
+            val arr = extractList(root)
             for (s in arr) {
                 if (isIndoText(s.optString("countryName")) || isIndoText(s.optString("language"))) {
                     val id = s.optString("subjectId")
