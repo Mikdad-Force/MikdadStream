@@ -555,16 +555,47 @@ object LocalMovieBoxClient {
         }
     }
 
+    private var indonesiaCache: Pair<Long, List<JSONObject>>? = null
+
+    /** Kategori Indonesia: film asli produksi Indonesia. Katalog metadata + pencarian keyword khas Indonesia. */
+    private suspend fun indonesiaSubjects(subjects: List<JSONObject>, token: String): List<JSONObject> {
+        val cached = indonesiaCache
+        if (cached != null && System.currentTimeMillis() - cached.first < 600_000) {
+            return cached.second
+        }
+        val base = activeHostOrFirst()
+        val out = LinkedHashMap<String, JSONObject>()
+        // 1. Dari katalog: produksi Indonesia berdasar negara/bahasa.
+        for (s in subjects) {
+            if (isIndoText(s.optString("countryName")) || isIndoText(s.optString("language"))) {
+                out[s.optString("subjectId")] = s
+            }
+        }
+        // 2. Dari pencarian: keyword khas Indonesia agar kategori selalu ada isinya.
+        for (q in listOf("pocong", "horor", "film indonesia")) {
+            val arr = extractList(search(q, 1))
+            for (s in arr) {
+                if (isIndoText(s.optString("countryName")) || isIndoText(s.optString("language"))) {
+                    val id = s.optString("subjectId")
+                    if (id.isNotBlank()) out[id] = s
+                }
+            }
+        }
+        val list = out.values.toList()
+        android.util.Log.i(TAG, "indonesiaSubjects count=${list.size}")
+        indonesiaCache = System.currentTimeMillis() to list
+        return list
+    }
+
     /** Daftar film per kategori sintetis (moviebox-local). */
     suspend fun categoryItems(categoryId: String): List<MediaItem> = withContext(Dispatchers.IO) {
         val subjects = catalogSubjects()
         if (subjects.isEmpty()) return@withContext emptyList()
+        val token = boot() ?: return@withContext emptyList()
         val picked: List<JSONObject> = when (categoryId.trim().lowercase(Locale.ROOT)) {
             "trending" -> subjects
             // Indonesia = film asli buatan Indonesia (negara/bahasa produksi), bukan sekadar ber-subtitle Indonesia.
-            "indonesia" -> subjects.filter {
-                isIndoText(it.optString("countryName")) || isIndoText(it.optString("language"))
-            }
+            "indonesia" -> indonesiaSubjects(subjects, token)
             else -> subjects.filter { categoryMatches(categoryId.trim().lowercase(Locale.ROOT), it) }
         }
         android.util.Log.i(TAG, "categoryItems $categoryId picked=${picked.size}/pool=${subjects.size}")
