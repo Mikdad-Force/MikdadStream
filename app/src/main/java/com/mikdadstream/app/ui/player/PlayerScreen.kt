@@ -267,6 +267,7 @@ fun PlayerScreen(
     var resizeModeIx by remember { mutableIntStateOf(0) }
     var subOptions by remember { mutableStateOf<List<SubOption>>(emptyList()) }
     var selectedSubKey by remember { mutableStateOf<String?>(null) }
+    var subtitleUserChosen by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
     var videoQualities by remember { mutableStateOf<List<Int>>(emptyList()) }
     var selectedVideoHeight by remember { mutableStateOf<Int?>(null) }
@@ -365,6 +366,36 @@ fun PlayerScreen(
         }
     }
 
+    /**
+     * Pilih track subtitle Indonesia langsung dari currentTracks.
+     * Tidak bergantung pada event onTracksChanged / pilihan otomatis ExoPlayer,
+     * sehingga tidak pernah jatuh ke Melayu/English.
+     */
+    fun applyIndonesianSubtitle(force: Boolean = false): Boolean {
+        if (subtitleUserChosen && !force) return false
+        player.currentTracks.groups.forEach { g ->
+            if (g.type != C.TRACK_TYPE_TEXT) return@forEach
+            for (i in 0 until g.length) {
+                val f = g.getTrackFormat(i)
+                val name = subtitleLangName(f.language) ?: subtitleLangName(f.label)
+                if (name == "Indonesia") {
+                    val bp = player.trackSelectionParameters.buildUpon()
+                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i))
+                    player.trackSelectionParameters = bp.build()
+                    selectedSubKey = "${g.mediaTrackGroup.id}#$i"
+                    Log.i(
+                        "PlayerScreen",
+                        "Pilih subtitle Indonesia: lang=${f.language} label=${f.label} idx=$i",
+                    )
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     fun refreshSubOptions() {
         val opts = mutableListOf<SubOption>()
         var selectedKey: String? = null
@@ -389,23 +420,13 @@ fun PlayerScreen(
         }
         subOptions = opts.sortedBy { if (it.label == "Indonesia") 0 else 1 }
         selectedSubKey = selectedKey
-        // Pilih subtitle Indonesia secara EKSPLISIT. Tidak ada fallback ke
-        // Melayu/bahasa lain: kalau Indonesia tidak ada, subtitle tetap mati.
-        if (selectedKey == null) {
-            val indo = opts.firstOrNull { it.label == "Indonesia" }
-            if (indo != null) {
-                Log.d("PlayerScreen", "auto-select Indonesia track ${indo.key}")
-                val bp = player.trackSelectionParameters.buildUpon()
-                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                    .setOverrideForType(TrackSelectionOverride(indo.group, indo.index))
-                player.trackSelectionParameters = bp.build()
-                selectedSubKey = indo.key
-            }
-        }
+        // Pilih Indonesia eksplisit bila belum ada yang terpilih.
+        if (selectedKey == null) applyIndonesianSubtitle()
     }
 
     fun selectSubtitle(opt: SubOption?) {
+        // Pilihan manual pengguna: jangan ditimpa auto-select Indonesia.
+        subtitleUserChosen = true
         val bp = player.trackSelectionParameters.buildUpon()
         bp.clearOverridesOfType(C.TRACK_TYPE_TEXT)
         if (opt != null) {
@@ -560,7 +581,7 @@ fun PlayerScreen(
     }
 
     // ---- Terapkan stream terpilih ke ExoPlayer (pemutar native) ----
-    LaunchedEffect(selectedIndex, episodeId) {
+    LaunchedEffect(selectedIndex, episodeId, apiSubtitles) {
         val stream = streams.getOrNull(selectedIndex) ?: return@LaunchedEffect
         val url = resolveStreamUrl(stream.safeUrl) ?: return@LaunchedEffect
         playerError = null
@@ -598,14 +619,14 @@ fun PlayerScreen(
         Log.d("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.mimeType ?: "") + " " + (it.label ?: "") }}")
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
         selectedVideoHeight = null
-        // JANGAN biarkan ExoPlayer memilih sendiri: track lain (mis. Melayu)
-        // sering terpilih otomatis. Kita matikan auto-select lalu pilih track
-        // Indonesia secara eksplisit di refreshSubOptions().
+        subtitleUserChosen = false
         selectedSubKey = null
+        // Cadangan: minta ExoPlayer memilih Indonesia; tetap dipaksa eksplisit
+        // di bawah agar tidak pernah jatuh ke Melayu/bahasa lain.
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-            .setPreferredTextLanguages()
+            .setPreferredTextLanguages("id", "in", "ind")
             .setSelectUndeterminedTextLanguage(false)
             .build()
         player.setMediaItem(builder.build())
@@ -614,6 +635,13 @@ fun PlayerScreen(
         player.prepare()
         player.playWhenReady = true
         showControls = true
+        // Track subtitle baru tersedia beberapa saat setelah prepare; jangan
+        // hanya bergantung pada onTracksChanged (bisa terlewat).
+        repeat(24) {
+            if (applyIndonesianSubtitle()) return@LaunchedEffect
+            delay(250)
+        }
+        Log.i("PlayerScreen", "Tidak ada track subtitle Indonesia untuk stream ini")
     }
 
     // ---- Listener pemutar ----

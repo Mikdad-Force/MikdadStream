@@ -926,7 +926,7 @@ object LocalMovieBoxClient {
                     val key = java.security.MessageDigest.getInstance("MD5")
                         .digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
                         .take(24)
-                    val f = java.io.File(dir, "sb_$key.vtt")
+                    val f = java.io.File(dir, "sb2_$key.vtt")
                     val ok = if (f.exists() && f.length() > 0) true else run {
                         try {
                             val resp = http.newCall(
@@ -951,9 +951,10 @@ object LocalMovieBoxClient {
 
     /** Konversi konten SRT ke WebVTT: header WEBVTT + koma -> titik pada timestamp. */
     private fun srtToVtt(srt: String): String {
+        val clean = srt.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
         val sb = StringBuilder("WEBVTT\n\n")
         val ts = Regex("(\\d{1,2}):(\\d{2}):(\\d{2}),(\\d{3})")
-        sb.append(ts.replace(srt) { m -> "${m.groupValues[1]}:${m.groupValues[2]}:${m.groupValues[3]}.${m.groupValues[4]}" })
+        sb.append(ts.replace(clean) { m -> "${m.groupValues[1]}:${m.groupValues[2]}:${m.groupValues[3]}.${m.groupValues[4]}" })
         return sb.toString()
     }
 
@@ -1064,8 +1065,11 @@ object LocalMovieBoxClient {
             if (!seen.add(norm)) continue
             out.add(
                 SubtitleTrack(
-                    label = c.optString("lanName").takeIf { it.isNotBlank() } ?: lan,
-                    lang = lan,
+                    label = c.optString("lanName").takeIf { it.isNotBlank() }
+                        ?: if (norm == "id") "Indonesian" else lan,
+                    // Simpan kode yang sudah dinormalisasi ("in_id" -> "id") agar
+                    // pemutar tidak salah mengenali sebagai Melayu.
+                    lang = norm,
                     url = url,
                 )
             )
