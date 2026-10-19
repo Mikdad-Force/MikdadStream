@@ -442,7 +442,9 @@ object LocalMovieBoxClient {
     private fun isIndoText(s: String?): Boolean {
         if (s.isNullOrBlank()) return false
         val t = s.lowercase(Locale.ROOT)
-        return t.contains("indonesia") || t.contains("bahasa")
+        // "Bahasa Melayu"/"Malaysia" bukan Indonesia meski sama-sama "bahasa".
+        if (t.contains("melayu") || t.contains("malaysia")) return false
+        return t.contains("indonesia") || t.contains("bahasa") || t.trim() == "indo"
     }
 
     private val indoCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
@@ -480,10 +482,24 @@ object LocalMovieBoxClient {
         val indoProd = isIndoText(data.optString("countryName")) || isIndoText(data.optString("language")) ||
             isIndoText(subject.optString("countryName")) || isIndoText(subject.optString("language"))
         // Subtitle Indonesia: field detail bertipe string koma atau array.
-        val hasIndoSub = when (val f = data.opt("subtitles")) {
+        var hasIndoSub = when (val f = data.opt("subtitles")) {
             is String -> isIndoText(f)
             is org.json.JSONArray -> (0 until f.length()).any { isIndoText(f.optString(it)) }
             else -> false
+        }
+        // Verifikasi ke endpoint yang dipakai pemutar. Metadata detail kadang
+        // mengklaim "Indonesian" padahal extCaptions kosong -> film tampil tapi
+        // subtitle tidak pernah muncul. Hanya untuk film non-Indonesia.
+        if (!indoProd && hasIndoSub) {
+            val rdArr = data.optJSONArray("resourceDetectors")
+            val rid = rdArr?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+            val caps = if (rid != null) extCaptionsFor(id, rid, token, 1, 1) else null
+            val capsIndo = caps != null && (0 until caps.length()).any { i ->
+                val c = caps.optJSONObject(i) ?: return@any false
+                normalizedCaptionLang(c.optString("lan")) == "id" ||
+                    isIndoText(c.optString("lanName"))
+            }
+            if (!capsIndo) hasIndoSub = false
         }
         // ID film asal + bahasa audio asli (semua versi dub/Hindi berbagi ID ini).
         val dubs = data.optJSONArray("dubs")
