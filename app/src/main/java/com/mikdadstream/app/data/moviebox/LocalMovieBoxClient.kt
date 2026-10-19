@@ -842,47 +842,112 @@ object LocalMovieBoxClient {
         )
     }
 
+    private fun normalizedCaptionLang(lan: String): String {
+        val raw = lan.trim().lowercase()
+        return when {
+            raw.startsWith("in_") || raw.startsWith("id_") || raw == "in" || raw == "id" || raw.contains("indonesi") || raw.contains("bahasa") -> "id"
+            raw.isBlank() -> raw
+            else -> raw.substringBefore('_').substringBefore('-')
+        }
+    }
+
+    /** Panggil get-ext-captions di beberapa host sampai dapat list tidak kosong. */
+    private fun extCaptionsFor(subjectId: String, rid: String?, token: String, se: Int, ep: Int): org.json.JSONArray? {
+        val base = activeHostOrFirst()
+        val hostOrder = (listOf(base) + HOSTS).distinct()
+        for (h in hostOrder) {
+            var pq = "/wefeed-mobile-bff/subject-api/get-ext-captions?subjectId=$subjectId"
+            if (!rid.isNullOrBlank()) pq += "&resourceId=$rid"
+            if (ep > 1) pq += "&se=${if (se > 0) se else 1}&ep=$ep"
+            val root = runCatching { callJson(h, pq, null, token, false) }.getOrNull()
+            val data = root?.optJSONObject("data")
+            val caps = data?.optJSONArray("extCaptions")
+                ?: data?.optJSONArray("subTitleList")
+                ?: data?.optJSONArray("captions")
+            if (caps != null && caps.length() > 0) return caps
+        }
+        return null
+    }
+
+    private fun captionsToTracks(caps: org.json.JSONArray?): List<SubtitleTrack> {
+        val out = ArrayList<SubtitleTrack>()
+        if (caps == null) return out
+        val seen = HashSet<String>()
+        for (i in 0 until caps.length()) {
+            val c = caps.optJSONObject(i) ?: continue
+            val url = c.optString("url").takeIf { it.isNotBlank() } ?: continue
+            val lan = c.optString("lan").takeIf { it.isNotBlank() } ?: continue
+            val norm = normalizedCaptionLang(lan)
+            // Dedup per kode bahasa hasil normalisasi (hindari track dobel).
+            if (!seen.add(norm)) continue
+            out.add(
+                SubtitleTrack(
+                    label = c.optString("lanName").takeIf { it.isNotBlank() } ?: lan,
+                    lang = if (norm == "id") "in_id" else lan,
+                    url = url,
+                )
+            )
+        }
+        // Bahasa Indonesia paling atas.
+        return out.sortedBy { if (it.lang == "in_id" || it.lang == "id") 0 else 1 }
+    }
+
     // Subtitle eksternal: /subject-api/get-ext-captions (pola APK: subjectId + resourceId [+ se/ep] -> data.extCaptions).
+    // Fallback: bila caption kosong, cari versi judul sama (tipe sama) yang punya caption Indonesia.
     suspend fun fetchSubtitles(subjectId: String, se: Int = 1, ep: Int = 1): List<SubtitleTrack> =
         withContext(Dispatchers.IO) {
             try {
                 val token = boot() ?: return@withContext emptyList()
                 val base = activeHostOrFirst()
                 val detailRoot = runCatching { fetchSubject(base, subjectId, token) }.getOrNull()
-                val rid = detailRoot?.optJSONObject("data")?.optJSONArray("resourceDetectors")
+                val detailData = detailRoot?.optJSONObject("data")
+                val rid = detailData?.optJSONArray("resourceDetectors")
                     ?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
-                var pq = "/wefeed-mobile-bff/subject-api/get-ext-captions?subjectId=$subjectId"
-                if (!rid.isNullOrBlank()) pq += "&resourceId=$rid"
-                if (ep > 1) {
-                    pq += "&se=${if (se > 0) se else 1}&ep=$ep"
-                }
-                val root = callJson(base, pq, null, token, false)
-                val data = root?.optJSONObject("data")
-                val caps = data?.optJSONArray("extCaptions")
-                    ?: data?.optJSONArray("subTitleList")
-                    ?: data?.optJSONArray("captions")
-                val out = ArrayList<SubtitleTrack>()
-                if (caps != null) {
-                    for (i in 0 until caps.length()) {
-                        val c = caps.optJSONObject(i) ?: continue
-                        val url = c.optString("url").takeIf { it.isNotBlank() } ?: continue
-                        val lan = c.optString("lan").takeIf { it.isNotBlank() } ?: continue
-                        out.add(
-                            SubtitleTrack(
-                                label = c.optString("lanName").takeIf { it.isNotBlank() } ?: lan,
-                                lang = lan,
-                                url = url,
-                            )
-                        )
+                val type = detailData?.optString("subjectType")?.toIntOrNull() ?: detailData?.optInt("subjectType", 0) ?: 0
+                val title = detailData?.optString("title")?.takeIf { it.isNotBlank() } ?: ""
+
+                val caps = extCaptionsFor(subjectId, rid, token, se, ep)
+                var out = captionsToTracks(caps)
+                if (caps != null) Log.i(TAG, "fetchSubtitles caps=${caps.length()} out=${out.size} subj=$subjectId se=$se ep=$ep")
+
+                if (out.isEmpty() && title.isNotBlank()) {
+                    // Cari versi lain dengan judul sama yang punya caption Indonesia.
+                    val sibs = searchSubjects(title, token).filter { s ->
+                        s.optString("subjectId").let { it.isNotBlank() && it != subjectId } &&
+                            (s.optString("subjectType").toIntOrNull() ?: 0) == type
+                    }
+                    Log.i(TAG, "fetchSubtitles sibling candidates=${sibs.size} title=${title.take(24)}")
+                    for (sib in sibs.take(3)) {
+                        val sid = sib.optString("subjectId")
+                        val ridSib = sib.optJSONArray("resourceDetectors")?.optJSONObject(0)?.optString("resourceId")
+                            ?.takeIf { it.isNotBlank() }
+                            ?: subjectDetailDataForRid(sid)
+                        val subCaps = extCaptionsFor(sid, ridSib, token, 1, ep)
+                        val all = captionsToTracks(subCaps)
+                        val picked = all.filter { t ->
+                            normalizedCaptionLang(t.lang ?: "") == "id" ||
+                                t.label?.lowercase()?.contains("indonesi") == true
+                        }
+                        if (picked.isNotEmpty()) {
+                            out = picked  // satu-satunya decode Indonesian dari versi lain
+                            Log.i(TAG, "fetchSubtitles sibling Indonesian from $sid n=${picked.size}")
+                            break
+                        }
                     }
                 }
-                Log.i(TAG, "fetchSubtitles count=${out.size} subj=${subjectId.takeLast(6)}")
+                Log.i(TAG, "fetchSubtitles final=${out.size} subj=$subjectId")
                 prepareSubtitleFiles(out)
             } catch (e: Exception) {
                 Log.w(TAG, "fetchSubtitles error: ${e.message}")
                 emptyList()
             }
         }
+
+    private suspend fun subjectDetailDataForRid(subjectId: String): String? {
+        val d = subjectDetail(subjectId)
+        return d?.optJSONObject("data")?.optJSONArray("resourceDetectors")
+            ?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+    }
 
     private fun streamFromUgcRes(res: JSONObject, referer: String = "https://www.movieboxpro.app/"): MediaStream? {
         val url = res.optString("url").takeIf { it.isNotBlank() } ?: return null
