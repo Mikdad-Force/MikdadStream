@@ -561,7 +561,10 @@ object LocalMovieBoxClient {
         if (subjects.isEmpty()) return@withContext emptyList()
         val picked: List<JSONObject> = when (categoryId.trim().lowercase(Locale.ROOT)) {
             "trending" -> subjects
-            "indonesia" -> filterIndoOnly(subjects, boot() ?: return@withContext emptyList())
+            // Indonesia = film asli buatan Indonesia (negara/bahasa produksi), bukan sekadar ber-subtitle Indonesia.
+            "indonesia" -> subjects.filter {
+                isIndoText(it.optString("countryName")) || isIndoText(it.optString("language"))
+            }
             else -> subjects.filter { categoryMatches(categoryId.trim().lowercase(Locale.ROOT), it) }
         }
         android.util.Log.i(TAG, "categoryItems $categoryId picked=${picked.size}/pool=${subjects.size}")
