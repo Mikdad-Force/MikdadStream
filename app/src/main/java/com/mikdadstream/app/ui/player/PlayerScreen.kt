@@ -671,13 +671,14 @@ fun PlayerScreen(
         selectedVideoHeight = null
         subtitleUserChosen = false
         selectedSubKey = null
-        // Bahasa Indonesia sudah ditandai DEFAULT pada SubtitleConfiguration,
-        // jadi ExoPlayer memilihnya sendiri. Preferred list dibiarkan kosong
-        // agar tidak pernah memilih Melayu/bahasa lain.
+        // Bahasa Indonesia ditandai DEFAULT pada SubtitleConfiguration DAN
+        // dijadikan preferensi bahasa teks. Bila track Indonesia ada, ExoPlayer
+        // memilihnya; bila tidak ada, tidak ada track lain yang otomatis dipilih
+        // (sehingga tidak pernah jatuh ke Melayu).
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-            .setPreferredTextLanguages()
+            .setPreferredTextLanguages("id", "in", "ind", "in_id")
             .setSelectUndeterminedTextLanguage(false)
             .build()
         player.setMediaItem(builder.build())

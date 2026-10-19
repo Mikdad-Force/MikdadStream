@@ -1111,11 +1111,34 @@ object LocalMovieBoxClient {
                     ?: rdArr?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
 
                 // HANYA sumber langsung (subjek + resourceId milik video ini).
-                // Tidak meminjam caption dari versi lain: subtitle versi lain
-                // ditempel ke video berbeda potongan -> tidak sinkron.
                 val caps = extCaptionsFor(subjectId, rid, token, se, ep)
                 val out = captionsToTracks(caps)
                 Log.i(TAG, "fetchSubtitles caps=${caps?.length() ?: 0} out=${out.size} subj=$subjectId se=$se ep=$ep direct")
+                // Bila versi yang diputar TIDAK punya caption Indonesia (mis. versi
+                // dub US/UK/India), ambil caption dari versi ASLI film yang sama
+                // (dubs.original) — video film sama, jadi tetap sinkron.
+                val hasIndo = out.any { it.lang == "id" || it.label?.contains("ndonesi", true) == true }
+                if (!hasIndo) {
+                    val dubs = detailData?.optJSONArray("dubs")
+                    val origId = dubs?.let { arr ->
+                        (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+                            .firstOrNull { it.optBoolean("original", false) }
+                            ?.optString("subjectId")?.takeIf { it.isNotBlank() }
+                    }
+                    if (!origId.isNullOrBlank() && origId != subjectId) {
+                        val origRid = subjectDetailDataForRid(origId, ep) ?: rid
+                        val origCaps = extCaptionsFor(origId, origRid, token, se, ep)
+                        val origOut = captionsToTracks(origCaps)
+                        val origIndo = origOut.any {
+                            it.lang == "id" || it.label?.contains("ndonesi", true) == true
+                        }
+                        Log.i(
+                            TAG,
+                            "fetchSubtitles versi dub tanpa Indonesia -> original=$origId indo=$origIndo",
+                        )
+                        if (origIndo) return@withContext prepareSubtitleFiles(origOut)
+                    }
+                }
                 prepareSubtitleFiles(out)
             } catch (e: Exception) {
                 Log.w(TAG, "fetchSubtitles error: ${e.message}")
