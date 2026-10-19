@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.media.AudioManager
+import android.util.Log
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -367,6 +368,8 @@ fun PlayerScreen(
     fun refreshSubOptions() {
         val opts = mutableListOf<SubOption>()
         var selectedKey: String? = null
+        val seenLabels = mutableSetOf<String>()
+        Log.d("PlayerScreen", "text tracks: ${player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }.joinToString { g -> (0 until g.length).joinToString(",") { g.getTrackFormat(it).language + "/" + g.getTrackFormat(it).label } }}")
         player.currentTracks.groups.forEach { g ->
             if (g.type != C.TRACK_TYPE_TEXT) return@forEach
             val tg = g.mediaTrackGroup
@@ -377,7 +380,9 @@ fun PlayerScreen(
                     ?: f.label?.takeIf { it.isNotBlank() }
                     ?: f.language?.takeIf { it.isNotBlank() }
                     ?: "Subtitle ${opts.size + 1}"
-                val key = "${tg.id}#$i"
+                // Dedup per label: jangan tampilkan dua track dengan nama sama.
+                if (!seenLabels.add(label)) continue
+                val key = "${ tg.id }#$i"
                 opts.add(SubOption(tg, i, key, label))
                 if (g.isTrackSelected(i)) selectedKey = key
             }
@@ -543,22 +548,36 @@ fun PlayerScreen(
         playerError = null
         streamHeaders.set(stream.headers.orEmpty())
         val builder = ExoMediaItem.Builder().setUri(url)
+        // Normalisasi kode bahasa SEBELUM diberi ke ExoPlayer:
+        // "in_id"/"id_id" (ng- MovieBox) -> "id", hindari normalisasi acak Exo ("Melayu").
+        fun normalizedLang(raw: String?): String =
+            (raw ?: "").trim().lowercase().replace('.', '_').let {
+                when {
+                    it.startsWith("in_") || it.startsWith("id_") || it == "in" -> "id"
+                    it.isBlank() -> "sub"
+                    else -> it.substringBefore('_')
+                }
+            }
+        val seenLang = LinkedHashSet<String>()
         val subs = apiSubtitles.mapNotNull { s ->
             val u = s.url?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             val mime = subtitleMime(u) ?: return@mapNotNull null
-            val lang = s.lang?.takeIf { it.isNotBlank() } ?: s.label ?: "sub"
+            val lang = normalizedLang(s.lang ?: s.label)
+            // Dedup: satu track per kode bahasa (hindari muncul dobel).
+            if (!seenLang.add(lang)) return@mapNotNull null
             ExoMediaItem.SubtitleConfiguration.Builder(Uri.parse(u))
                 .setMimeType(mime)
                 .setLanguage(lang)
-                .setLabel(s.label ?: s.lang ?: lang)
+                .setLabel(subtitleLangName(lang) ?: s.label ?: lang)
                 .build()
         }
+        Log.d("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.mimeType ?: "") + " " + (it.label ?: "") }}")
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
         selectedVideoHeight = null
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-            .setPreferredTextLanguages("in_id", "id_id", "in", "id", "ind")
+            .setPreferredTextLanguages("id", "in", "ind")
             .setSelectUndeterminedTextLanguage(false)
             .build()
         player.setMediaItem(builder.build())
