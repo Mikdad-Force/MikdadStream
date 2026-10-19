@@ -557,7 +557,22 @@ object LocalMovieBoxClient {
 
     private var indonesiaCache: Pair<Long, List<JSONObject>>? = null
 
-    /** Kategori Indonesia: film asli produksi Indonesia. Katalog metadata + pencarian keyword khas Indonesia. */
+    /** Upload/update resource terbaru epoch (detik), fallback date terbaru. */
+    private fun subjectUpdateScore(o: JSONObject): Long {
+        var best = 0L
+        o.optJSONArray("resourceDetectors")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val rd = arr.optJSONObject(i) ?: continue
+                val up = rd.optString("uploadTime").toLongOrNull()
+                if (up != null && up > best) best = up
+            }
+        }
+        if (best > 0) return best
+        val rd = o.optString("releaseDate").replace("-", "")
+        return rd.toLongOrNull() ?: 0L
+    }
+
+    /** Kategori Indonesia: film asli produksi Indonesia. Katalog metadata + pencarian keyword khas Indonesia, urut terbaru/terupdate. */
     private suspend fun indonesiaSubjects(subjects: List<JSONObject>, token: String): List<JSONObject> {
         val cached = indonesiaCache
         if (cached != null && System.currentTimeMillis() - cached.first < 600_000) {
@@ -582,9 +597,11 @@ object LocalMovieBoxClient {
             }
         }
         val list = out.values.toList()
-        android.util.Log.i(TAG, "indonesiaSubjects count=${list.size}")
-        indonesiaCache = System.currentTimeMillis() to list
-        return list
+            // Terbaru/terupdate di atas: skor uploadTime resource (fallback releaseDate).
+            val sorted = list.sortedByDescending { subjectUpdateScore(it) }
+            android.util.Log.i(TAG, "indonesiaSubjects count=${sorted.size}")
+            indonesiaCache = System.currentTimeMillis() to sorted
+            return sorted
     }
 
     /** Daftar film per kategori sintetis (moviebox-local). */
