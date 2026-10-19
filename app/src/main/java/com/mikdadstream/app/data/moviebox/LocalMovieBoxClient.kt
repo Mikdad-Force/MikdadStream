@@ -615,18 +615,71 @@ object LocalMovieBoxClient {
             return sorted
     }
 
+    private val categoryQueries = mapOf(
+        "anime" to listOf("anime", "one piece", "demon slayer"),
+        "hollywood" to listOf("hollywood", "marvel", "superhero"),
+        "asia" to listOf("korea", "japan", "thailand"),
+        "horror" to listOf("horror", "horor"),
+        "series" to listOf("series", "season"),
+        "movie" to listOf("full movie", "2026 movie"),
+    )
+
+    /** Hasil pencarian (subject) untuk satu keyword; gagal -> kosong. */
+    private suspend fun searchSubjects(keyword: String, token: String): List<JSONObject> =
+        withContext(Dispatchers.IO) {
+            try {
+                val base = activeHostOrFirst()
+                val body = JSONObject()
+                    .put("keyword", keyword)
+                    .put("page", 1)
+                    .put("pageSize", 20)
+                val root = callJson(base, "/wefeed-mobile-bff/subject-api/search", body.toString(), token, false)
+                extractList(root)
+            } catch (e: Exception) {
+                Log.w(TAG, "searchSubjects '$keyword' fail: ${e.message}")
+                emptyList()
+            }
+        }
+
+    private var categoryCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<MediaItem>>>()
+
     /** Daftar film per kategori sintetis (moviebox-local). */
     suspend fun categoryItems(categoryId: String): List<MediaItem> = withContext(Dispatchers.IO) {
-        val subjects = catalogSubjects()
-        if (subjects.isEmpty()) return@withContext emptyList()
-        val token = boot() ?: return@withContext emptyList()
-        val picked: List<JSONObject> = when (categoryId.trim().lowercase(Locale.ROOT)) {
-            "trending" -> subjects
-            // Indonesia = film asli buatan Indonesia (negara/bahasa produksi), bukan sekadar ber-subtitle Indonesia.
-            "indonesia" -> indonesiaSubjects(subjects, token)
-            else -> subjects.filter { categoryMatches(categoryId.trim().lowercase(Locale.ROOT), it) }
+        val cat = categoryId.trim().lowercase(Locale.ROOT).let { if (it == "hoollywood") "hollywood" else it }
+        categoryCache[cat]?.let { (t, list) ->
+            if (System.currentTimeMillis() - t < 300_000 && list.isNotEmpty()) return@withContext list
         }
-        android.util.Log.i(TAG, "categoryItems $categoryId picked=${picked.size}/pool=${subjects.size}")
+        val subjects = catalogSubjects()
+        val token = boot() ?: return@withContext emptyList()
+        val picked: ArrayList<JSONObject>
+        if (cat == "indonesia") {
+            // Indonesia = film asli buatan Indonesia; pengayaan via keyword di dalam fungsi.
+            picked = ArrayList(indonesiaSubjects(subjects, token))
+        } else {
+            picked = ArrayList(
+                if (cat == "trending") subjects
+                else subjects.filter { categoryMatches(cat, it) }
+            )
+            // enrichment: kategori wajib ada isinya -> tambah hasil pencarian yang lolos predikat
+            if (cat != "trending" && picked.size < 16) {
+                val queries = categoryQueries[cat] ?: emptyList()
+                for (q in queries) {
+                    for (s in searchSubjects(q, token)) {
+                        if (categoryMatches(cat, s)) {
+                            val id = s.optString("subjectId")
+                            if (id.isNotBlank() && picked.none { it.optString("subjectId") == id }) picked.add(s)
+                        }
+                    }
+                    if (picked.size >= 24) break
+                }
+                // fallback terakhir: jika strict tetap kosong, ambil hasil pencarian mentah agar kategori tidak kosong
+                if (picked.isEmpty()) {
+                    for (q in queries.take(2)) {
+                        for (s in searchSubjects(q, token)) picked.add(s)
+                    }
+                }
+            }
+        }
         val out = ArrayList<MediaItem>()
         val seen = HashSet<String>()
         for (s in picked) {
@@ -634,6 +687,8 @@ object LocalMovieBoxClient {
             if (seen.add(m.id ?: "")) out.add(m)
             if (out.size >= 48) break
         }
+        android.util.Log.i(TAG, "categoryItems $cat picked=${picked.size} out=${out.size}/pool=${subjects.size}")
+        categoryCache[cat] = System.currentTimeMillis() to out
         out
     }
 
