@@ -218,6 +218,19 @@ private fun DetailContent(
                     .padding(horizontal = 20.dp)
                     .padding(top = 4.dp, bottom = 10.dp),
             )
+            if (!detail.metaLine.isNullOrBlank()) {
+                Text(
+                    text = detail.metaLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 10.dp),
+                )
+            }
         }
 
         // ---------- Sinopsis ----------

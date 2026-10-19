@@ -717,10 +717,26 @@ object LocalMovieBoxClient {
         val episodes = seasonInfo(subjectId)?.let { mapSeasonToEpisodes(it) }?.takeIf { it.isNotEmpty() }
             ?: if (totalEp > 0) (1..totalEp).map { EpisodeData(episodeId = "1_$it", episodeNumber = it) }
             else listOf(EpisodeData(episodeId = "1_1", episodeNumber = 1))
+        val score = data.optDouble("score", 0.0).let { if (it <= 0.0) data.optDouble("showScore", 0.0) else it }
+        val year = data.optString("releaseDate").takeIf { it.isNotBlank() }?.take(4)
+            ?: data.optString("year").takeIf { it.isNotBlank() }
+        val country = data.optString("countryName").takeIf { it.isNotBlank() }
+            ?: data.optString("language").takeIf { it.isNotBlank() }
+        val genre = data.optJSONArray("genreList")?.run {
+            (0 until length()).mapNotNull { optJSONObject(it)?.optString("name")?.takeIf { n -> n.isNotBlank() } }
+        }?.joinToString(" • ")?.takeIf { it.isNotBlank() }
+            ?: data.optString("parent_type").takeIf { it.isNotBlank() }
+        val metaLine = listOfNotNull(
+            year,
+            score.takeIf { it > 0.0 }?.let { String.format(java.util.Locale.US, "%.1f", it) },
+            country,
+            genre,
+        ).joinToString("  •  ").takeIf { it.isNotBlank() }
         return DetailData(
             id = subjectId,
             title = title,
             description = desc,
+            metaLine = metaLine,
             cover = cover,
             modelId = "moviebox-local",
             episodes = episodes,

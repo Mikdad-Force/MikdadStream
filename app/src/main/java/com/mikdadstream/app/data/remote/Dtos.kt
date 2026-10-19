@@ -128,6 +128,7 @@ data class DetailData(
     val id: String? = null,
     val title: String? = null,
     val description: String? = null,
+    val metaLine: String? = null,
     @SerializedName("duration_seconds") val durationSeconds: Int? = null,
     val category: String? = null,
     @SerializedName("model_id") val modelId: String? = null,
