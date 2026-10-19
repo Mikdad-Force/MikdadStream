@@ -514,7 +514,11 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
         // Sumber sudah di-preload dari layar detail -> pemutaran langsung mulus.
-        if (reload == 0 && episodeId == request.episodeId && request.streams.isNotEmpty()) {
+        // Hanya pakai jalur cepat bila subtitle ikut ter-prefetch; jika tidak,
+        // lanjut fetch agar daftar subtitle (mis. Indonesia) tidak hilang.
+        if (reload == 0 && episodeId == request.episodeId && request.streams.isNotEmpty() &&
+            request.subtitles.isNotEmpty()
+        ) {
             val list = request.streams
             streams = list
             apiSubtitles = request.subtitles
@@ -582,6 +586,9 @@ fun PlayerScreen(
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+            // Tampilkan subtitle Indonesia OTOMATIS bila tersedia (tanpa
+            // menggabungkan/menggeser urutan; Melayu tetap terpisah).
+            .setPreferredTextLanguages("id", "in", "ind")
             .setSelectUndeterminedTextLanguage(false)
             .build()
         player.setMediaItem(builder.build())
