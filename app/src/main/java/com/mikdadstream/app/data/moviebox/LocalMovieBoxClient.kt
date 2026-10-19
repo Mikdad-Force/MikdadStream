@@ -6,6 +6,7 @@ import com.mikdadstream.app.data.remote.DetailData
 import com.mikdadstream.app.data.remote.EpisodeData
 import com.mikdadstream.app.data.remote.MediaItem
 import com.mikdadstream.app.data.remote.MediaStream
+import com.mikdadstream.app.data.remote.SubtitleTrack
 import java.security.MessageDigest
 import java.util.Base64 as JavaBase64
 import java.util.Locale
@@ -526,6 +527,48 @@ object LocalMovieBoxClient {
             false,
         )
     }
+
+    // Subtitle eksternal: /subject-api/get-ext-captions (pola APK: subjectId + resourceId [+ se/ep] -> data.extCaptions).
+    suspend fun fetchSubtitles(subjectId: String, se: Int = 1, ep: Int = 1): List<SubtitleTrack> =
+        withContext(Dispatchers.IO) {
+            try {
+                val token = boot() ?: return@withContext emptyList()
+                val base = activeHostOrFirst()
+                val detailRoot = runCatching { fetchSubject(base, subjectId, token) }.getOrNull()
+                val rid = detailRoot?.optJSONObject("data")?.optJSONArray("resourceDetectors")
+                    ?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+                var pq = "/wefeed-mobile-bff/subject-api/get-ext-captions?subjectId=$subjectId"
+                if (!rid.isNullOrBlank()) pq += "&resourceId=$rid"
+                if (ep > 1) {
+                    pq += "&se=${if (se > 0) se else 1}&ep=$ep"
+                }
+                val root = callJson(base, pq, null, token, false)
+                val data = root?.optJSONObject("data")
+                val caps = data?.optJSONArray("extCaptions")
+                    ?: data?.optJSONArray("subTitleList")
+                    ?: data?.optJSONArray("captions")
+                val out = ArrayList<SubtitleTrack>()
+                if (caps != null) {
+                    for (i in 0 until caps.length()) {
+                        val c = caps.optJSONObject(i) ?: continue
+                        val url = c.optString("url").takeIf { it.isNotBlank() } ?: continue
+                        val lan = c.optString("lan").takeIf { it.isNotBlank() } ?: continue
+                        out.add(
+                            SubtitleTrack(
+                                label = c.optString("lanName").takeIf { it.isNotBlank() } ?: lan,
+                                lang = lan,
+                                url = url,
+                            )
+                        )
+                    }
+                }
+                Log.i(TAG, "fetchSubtitles count=${out.size} subj=${subjectId.takeLast(6)}")
+                out
+            } catch (e: Exception) {
+                Log.w(TAG, "fetchSubtitles error: ${e.message}")
+                emptyList()
+            }
+        }
 
     private fun streamFromUgcRes(res: JSONObject, referer: String = "https://www.movieboxpro.app/"): MediaStream? {
         val url = res.optString("url").takeIf { it.isNotBlank() } ?: return null
