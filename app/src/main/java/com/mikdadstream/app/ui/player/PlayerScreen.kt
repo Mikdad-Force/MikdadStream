@@ -549,14 +549,24 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
         // Sumber sudah di-preload dari layar detail -> pemutaran langsung mulus.
-        // Hanya pakai jalur cepat bila subtitle ikut ter-prefetch; jika tidak,
-        // lanjut fetch agar daftar subtitle (mis. Indonesia) tidak hilang.
+        // Hanya pakai jalur cepat bila subtitle ikut ter-prefetch DAN benar-benar
+        // memuat Indonesia. Bila prefetch ada tapi tanpa Indonesia (mis. metadata
+        // beda/versi dub), jangan pakai jalur cepat -> lanjut fetch langsung.
+        val prefetchedHasIndo = request.subtitles.any { s ->
+            subtitleLangName(s.lang) == "Indonesia" || subtitleLangName(s.label) == "Indonesia"
+        }
+        Log.i(
+            "PlayerScreen",
+            "masuk player: episode=$episodeId prefetchStreams=${request.streams.size} " +
+                "prefetchSubs=${request.subtitles.size} prefetchIndo=$prefetchedHasIndo",
+        )
         if (reload == 0 && episodeId == request.episodeId && request.streams.isNotEmpty() &&
-            request.subtitles.isNotEmpty()
+            request.subtitles.isNotEmpty() && prefetchedHasIndo
         ) {
             val list = request.streams
             streams = list
             apiSubtitles = request.subtitles
+            Log.i("PlayerScreen", "subtitle prefetch: ${request.subtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}")
             selectedIndex = pickStreamIndex(list)
             loadingStreams = false
             return@LaunchedEffect
@@ -566,6 +576,7 @@ fun PlayerScreen(
             val list = data.playableStreams
             streams = list
             apiSubtitles = data.subtitles.orEmpty()
+            Log.i("PlayerScreen", "subtitle source: ${apiSubtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}")
             // Bila daftar tidak memuat Indonesia, coba sekali lagi langsung ke API.
             fun isIndo(s: SubtitleTrack): Boolean =
                 s.lang?.let(::subtitleLangName) == "Indonesia" || subtitleLangName(s.label) == "Indonesia"
