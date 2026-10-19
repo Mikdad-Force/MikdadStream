@@ -92,8 +92,12 @@ import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.mikdadstream.app.AppGraph
@@ -104,6 +108,7 @@ import com.mikdadstream.app.data.remote.MediaStream
 import com.mikdadstream.app.data.remote.SubtitleTrack
 import com.mikdadstream.app.ui.detail.PlayRequest
 import com.mikdadstream.app.ui.tv.TvRequestFocusOnShow
+import java.io.IOException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -193,6 +198,45 @@ private fun subtitleMime(url: String): String? {
         // dinormalisasi ke WebVTT saat disiapkan, jadi anggap VTT agar track
         // Indonesia tidak pernah dibuang diam-diam.
         else -> "text/vtt"
+    }
+}
+
+/**
+ * Baca beberapa byte awal file subtitle lokal ("file://...") untuk deteksi isi.
+ * Mengembalikan null untuk URL remote atau file yang tidak bisa dibaca.
+ */
+private fun localSubtitleHead(url: String): String? {
+    if (!url.startsWith("file://")) return null
+    return try {
+        val f = java.io.File(java.net.URI(url))
+        if (!f.exists() || f.length() == 0L) {
+            null
+        } else {
+            java.io.FileInputStream(f).use { ins ->
+                val buf = ByteArray(48)
+                val n = ins.read(buf)
+                if (n <= 0) null else String(buf, 0, n, Charsets.UTF_8).removePrefix("\uFEFF")
+            }
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/**
+ * Pilih MIME subtitle berdasarkan ISI file (bukan hanya ekstensi):
+ * file lokal yang berawalan "WEBVTT" -> text/vtt; berisi timestamp
+ * SRT "00:00:01,000" -> application/x-subrip. Bila isi tak terdeteksi,
+ * jatuh ke tebakan per-ekstensi (subtitleMime). Mencegah kasus VTT yang
+ * dibaca sebagai SRT (atau sebaliknya) sehingga parser gagal diam-diam.
+ */
+private fun detectSubtitleMime(url: String): String {
+    val head = localSubtitleHead(url)
+    return when {
+        head != null && head.trimStart().startsWith("WEBVTT", true) -> "text/vtt"
+        head != null && Regex("\\d{1,2}:\\d{2}:\\d{2}[,.]\\d{3}").containsMatchIn(head) ->
+            "application/x-subrip"
+        else -> subtitleMime(url) ?: "text/vtt"
     }
 }
 
@@ -422,10 +466,6 @@ fun PlayerScreen(
         val opts = mutableListOf<SubOption>()
         var selectedKey: String? = null
         val seenCodes = mutableSetOf<String>()
-        Log.d(
-            "PlayerScreen",
-            "currentTracks text: ${player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }.joinToString { g -> (0 until g.length).joinToString(",") { g.getTrackFormat(it).language + "/" + g.getTrackFormat(it).label } }}",
-        )
         player.currentTracks.groups.forEach { g ->
             if (g.type != C.TRACK_TYPE_TEXT) return@forEach
             val tg = g.mediaTrackGroup
@@ -670,13 +710,24 @@ fun PlayerScreen(
         val seenLang = LinkedHashSet<String>()
         val played = apiSubtitles.mapNotNull { s ->
             val u = s.url?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            // mime tidak pernah null: subtitleMime berfallback "text/vtt".
-            val mime = subtitleMime(u)
+            // MIME dipilih dari ISI file lokal (sniff WEBVTT/SRT) bila tersedia,
+            // bukan hanya dari ekstensi URL.
+            val mime = detectSubtitleMime(u)
             val lang = normalizeLangCode(s.lang ?: s.label)
-            // Dedup: satu track per kode hasil normalisasi.
+            // Dedup: satu track per kode hasil normalisasi (setId jadi unik per track).
             if (!seenLang.add(lang)) return@mapNotNull null
             val indo = lang == "id"
+            val headPreview = localSubtitleHead(u)?.trimStart()?.take(24)
+            Log.d(
+                "PlayerScreen",
+                "subtitle sniff lang=$lang mime=$mime" +
+                    (headPreview?.let { " head=\"$it\"" } ?: "") +
+                    " uri=$u",
+            )
             lang to ExoMediaItem.SubtitleConfiguration.Builder(Uri.parse(u))
+                // setId unik per subtitle agar seluruh track andal terlihat di
+                // currentTracks dan bisa di-override dengan pasti.
+                .setId("sub_$lang")
                 .setMimeType(mime)
                 .setLanguage(lang)
                 .setLabel(subtitleLangName(lang) ?: s.label ?: lang)
@@ -691,6 +742,16 @@ fun PlayerScreen(
         installedHasIndo = played.any { it.first == "id" }
         Log.d("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.language ?: "") + "/" + (it.label ?: "") }}")
         Log.d("PlayerScreen", "id match: api=${apiCodes.contains("id")} installed=$installedHasIndo visible=${subs.any { it.label == "Indonesia" }}")
+        // DIAGNOSTIK 2: cetak SEMUA SubtitleConfiguration sebelum prepare():
+        // id (unik "sub_<lang>"), language (hasil normalizeLangCode), label,
+        // mimeType, dan URI (lokal file:// -> VTT hasil konversi, atau remote).
+        subs.forEach { c ->
+            Log.i(
+                "PlayerScreen",
+                "SubtitleConfig id=${c.id} language=${c.language} label=${c.label} " +
+                    "mime=${c.mimeType} uri=${c.uri}",
+            )
+        }
 
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
         selectedVideoHeight = null
@@ -700,12 +761,30 @@ fun PlayerScreen(
         // dijadikan preferensi bahasa teks. Bila track Indonesia ada, ExoPlayer
         // memilihnya; bila tidak ada, tidak ada track lain yang otomatis dipilih
         // (sehingga tidak pernah jatuh ke Melayu).
-        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+        val newParams = player.trackSelectionParameters.buildUpon()
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
             .setPreferredTextLanguages("id", "in", "ind", "in_id")
             .setSelectUndeterminedTextLanguage(false)
             .build()
+        player.trackSelectionParameters = newParams
+        // DIAGNOSTIK 4: audit TrackSelectionParameters — pastikan tipe TEXT tidak
+        // dinonaktifkan dan tidak ada flag yang menyembunyikan track "id".
+        val textDisabled = newParams.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+        val textOverrides = newParams.overrides.values.filter { it.getType() == C.TRACK_TYPE_TEXT }
+        Log.i(
+            "PlayerScreen",
+            "track params: preferredText=${newParams.preferredTextLanguages} " +
+                "ignoredTextFlags=0x${Integer.toHexString(newParams.ignoredTextSelectionFlags)} " +
+                "undetermined=${newParams.selectUndeterminedTextLanguage} " +
+                "textDisabled=$textDisabled textOverrides=$textOverrides",
+        )
+        if (textDisabled) {
+            Log.w("PlayerScreen", "tipe TEXT dinonaktifkan -> diaktifkan kembali sebelum prepare")
+            player.trackSelectionParameters = newParams.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .build()
+        }
         player.setMediaItem(builder.build())
         val seek = pendingSeek.longValue
         if (seek > 0L) player.seekTo(seek)
@@ -741,28 +820,118 @@ fun PlayerScreen(
                 }
             }
 
-            override fun onPlayerError(error: PlaybackException) {
-                playerError = "Pemutaran gagal (${error.errorCodeName}). Coba ganti sumber."
-                saveProgressNow()
-            }
-
-            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-                refreshSubOptions()
-                refreshVideoQualities()
-            }
-
-            override fun onTrackSelectionParametersChanged(
-                params: androidx.media3.common.TrackSelectionParameters,
-            ) {
-                refreshSubOptions()
-            }
-        }
-        player.addListener(listener)
-        onDispose {
+        override fun onPlayerError(error: PlaybackException) {
+            // DIAGNOSTIK 1a: error pemutar lengkap (termasuk jejak stack yang
+            // memuat lokasi kegagalan load/parse subtitle eksternal bila ada).
+            Log.e(
+                "PlayerScreen",
+                "playerError: code=${error.errorCodeName} msg=${error.message}\n" +
+                    error.stackTraceToString(),
+            )
+            playerError = "Pemutaran gagal (${error.errorCodeName}). Coba ganti sumber."
             saveProgressNow()
-            player.removeListener(listener)
-            player.release()
         }
+
+        override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+            // DIAGNOSTIK 3: cetak SEMUA track teks pada currentTracks —
+            // group index, language, label, sampleMimeType, isSupported, isSelected.
+            var textCount = 0
+            tracks.groups.forEachIndexed { gi, g ->
+                if (g.type != C.TRACK_TYPE_TEXT) return@forEachIndexed
+                for (i in 0 until g.length) {
+                    val f = g.getTrackFormat(i)
+                    textCount++
+                    Log.i(
+                        "PlayerScreen",
+                        "textTrack group=$gi idx=$i lang=${f.language} label=${f.label} " +
+                            "mime=${f.sampleMimeType} supported=${g.isTrackSupported(i)} " +
+                            "selected=${g.isTrackSelected(i)}",
+                    )
+                }
+            }
+            Log.i("PlayerScreen", "onTracksChanged: totalTextTracks=$textCount")
+            refreshSubOptions()
+            refreshVideoQualities()
+        }
+
+        override fun onTrackSelectionParametersChanged(
+            params: androidx.media3.common.TrackSelectionParameters,
+        ) {
+            Log.i(
+                "PlayerScreen",
+                "params changed: preferredText=${params.preferredTextLanguages} " +
+                    "ignoredTextFlags=0x${Integer.toHexString(params.ignoredTextSelectionFlags)} " +
+                    "textDisabled=${params.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)}",
+            )
+            refreshSubOptions()
+        }
+    }
+    player.addListener(listener)
+    // DIAGNOSTIK 1b: listener analytics untuk event PER-LOAD. Untuk track teks
+    // (subtitle) cetak URL, MIME, durasi/byte, dan kode HTTP saat gagal. Mendeteksi
+    // subtitle yang gagal diunduh/parse sehingga tidak tampil di currentTracks.
+    val textLoadListener = object : AnalyticsListener {
+        private fun isTextLoad(mld: MediaLoadData): Boolean =
+            mld.trackType == C.TRACK_TYPE_TEXT ||
+                mld.trackFormat?.sampleMimeType?.startsWith("text/") == true
+
+        override fun onLoadStarted(
+            eventTime: AnalyticsListener.EventTime,
+            loadEventInfo: LoadEventInfo,
+            mediaLoadData: MediaLoadData,
+        ) {
+            if (!isTextLoad(mediaLoadData)) return
+            Log.i("PlayerScreen", "subtitle load start uri=${loadEventInfo.uri}")
+        }
+
+        override fun onLoadCompleted(
+            eventTime: AnalyticsListener.EventTime,
+            loadEventInfo: LoadEventInfo,
+            mediaLoadData: MediaLoadData,
+        ) {
+            if (!isTextLoad(mediaLoadData)) return
+            Log.i(
+                "PlayerScreen",
+                "subtitle load OK uri=${loadEventInfo.uri} bytes=${loadEventInfo.bytesLoaded} " +
+                    "durMs=${loadEventInfo.loadDurationMs} mime=${mediaLoadData.trackFormat?.sampleMimeType}",
+            )
+        }
+
+        override fun onLoadCanceled(
+            eventTime: AnalyticsListener.EventTime,
+            loadEventInfo: LoadEventInfo,
+            mediaLoadData: MediaLoadData,
+        ) {
+            if (!isTextLoad(mediaLoadData)) return
+            Log.w("PlayerScreen", "subtitle load CANCEL uri=${loadEventInfo.uri}")
+        }
+
+        override fun onLoadError(
+            eventTime: AnalyticsListener.EventTime,
+            loadEventInfo: LoadEventInfo,
+            mediaLoadData: MediaLoadData,
+            error: IOException,
+            wasCanceled: Boolean,
+        ) {
+            if (!isTextLoad(mediaLoadData)) return
+            val code = (error as? HttpDataSource.InvalidResponseCodeException)?.responseCode
+            Log.e(
+                "PlayerScreen",
+                "subtitle load ERROR uri=${loadEventInfo.uri} http=$code " +
+                    "mime=${mediaLoadData.trackFormat?.sampleMimeType} " +
+                    "lang=${mediaLoadData.trackFormat?.language} " +
+                    "err=${error?.message ?: "-"} canceled=$wasCanceled\n" +
+                    (error?.stackTraceToString() ?: ""),
+            )
+        }
+    }
+    player.addAnalyticsListener(textLoadListener)
+    onDispose {
+        saveProgressNow()
+        player.removeListener(listener)
+        player.removeAnalyticsListener(textLoadListener)
+        player.release()
+    }
     }
 
     // ---- Dukungan tombol remote / D-pad (diproses di PlayerActivity) ----

@@ -957,17 +957,36 @@ object LocalMovieBoxClient {
                                     okhttp3.Request.Builder().url(url).header("User-Agent", "ExoPlayerLib/2.19.1").build()
                                 ).execute()
                                 resp.use { r ->
+                                    val code = r.code
                                     val body = r.body?.string()
                                     if (r.isSuccessful && !body.isNullOrBlank()) {
                                         val clean = body.removePrefix("\uFEFF")
-                                        val vtt = if (clean.trimStart().startsWith("WEBVTT", true)) {
-                                            clean
-                                        } else {
-                                            srtToVtt(body)
+                                        val headTxt = clean.trimStart()
+                                        // Deteksi format dari ISI file (bukan ekstensi):
+                                        // WEBVTT sudah jadi VTT; SRT punya timestamp
+                                        // "00:00:01,000". Isi lain (HTML/JSON/galat)
+                                        // JANGAN disimpan sebagai subtitle.
+                                        val vtt = when {
+                                            headTxt.startsWith("WEBVTT", true) -> clean
+                                            Regex("(\\d{1,2}):(\\d{2}):(\\d{2}),(\\d{3})")
+                                                .containsMatchIn(clean) -> srtToVtt(body)
+                                            else -> null
                                         }
-                                        f.writeText(vtt)
-                                        true
-                                    } else false
+                                        if (vtt != null) {
+                                            f.writeText(vtt)
+                                            true
+                                        } else {
+                                            Log.w(
+                                                TAG,
+                                                "prepareSubtitle isi bukan SRT/VTT http=$code " +
+                                                    "head=\"${headTxt.take(40)}\" ($url)",
+                                            )
+                                            false
+                                        }
+                                    } else {
+                                        Log.w(TAG, "prepareSubtitle fetch gagal http=$code ($url)")
+                                        false
+                                    }
                                 }
                             } catch (e: Exception) {
                                 android.util.Log.w(TAG, "subtitle fetch fail ($url): ${e.message}")
