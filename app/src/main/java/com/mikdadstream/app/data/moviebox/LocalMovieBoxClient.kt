@@ -447,44 +447,85 @@ object LocalMovieBoxClient {
 
     private val indoCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
-    private suspend fun subjectQualifiesIndo(subject: JSONObject, base: String, token: String): Boolean {
-        val id = subject.optString("subjectId").ifBlank { subject.optString("id") }
-            .ifBlank { subject.optString("subject_id") }
-        if (id.isBlank()) return false
-        indoCache[id]?.let { return it }
-        val qualifies: Boolean
-        if (isIndoText(subject.optString("countryName")) || isIndoText(subject.optString("language"))) {
-            qualifies = true
-        } else {
-            val root = runCatching { fetchSubject(base, id, token) }.getOrNull()
-            val data = root?.optJSONObject("data")
-            val subStr = data?.optString("subtitles")?.takeIf { it.isNotBlank() }
-            qualifies = if (subStr != null) {
-                isIndoText(subStr)
-            } else {
-                val arr = data?.optJSONArray("subtitles")
-                if (arr != null) {
-                    (0 until arr.length()).any { isIndoText(arr.optString(it)) }
-                } else false
-            }
+    /** Info subtitle 1 film (1 request detail, cache 12 jam). */
+    private data class SubInfo(
+        val ts: Long,
+        val indoProd: Boolean,
+        val indoSub: Boolean,
+        val canonical: String?,
+    )
+
+    private val subInfoCache = java.util.concurrent.ConcurrentHashMap<String, SubInfo>()
+    private val SUB_INFO_TTL = 12 * 60 * 60 * 1000L
+
+    private fun subjectIdOf(s: JSONObject): String =
+        s.optString("subjectId").ifBlank { s.optString("id") }.ifBlank { s.optString("subject_id") }
+
+    private suspend fun subtitleInfo(subject: JSONObject, token: String): SubInfo? {
+        val id = subjectIdOf(subject)
+        if (id.isBlank()) return null
+        subInfoCache[id]?.let { if (System.currentTimeMillis() - it.ts < SUB_INFO_TTL) return it }
+        val base = activeHostOrFirst()
+        val data = runCatching { fetchSubject(base, id, token) }
+            .getOrNull()?.optJSONObject("data") ?: return null
+        // Produksi Indonesia (dari detail atau metadata daftar) -> selalu tampil.
+        val indoProd = isIndoText(data.optString("countryName")) || isIndoText(data.optString("language")) ||
+            isIndoText(subject.optString("countryName")) || isIndoText(subject.optString("language"))
+        // Subtitle Indonesia: field detail bertipe string koma atau array.
+        val hasIndoSub = when (val f = data.opt("subtitles")) {
+            is String -> isIndoText(f)
+            is org.json.JSONArray -> (0 until f.length()).any { isIndoText(f.optString(it)) }
+            else -> false
         }
-        indoCache[id] = qualifies
-        return qualifies
+        // ID film asal (semua versi dub/Hindi berbagi ID ini).
+        val canonical = data.optJSONArray("dubs")?.let { arr ->
+            (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+                .firstOrNull { it.optBoolean("original", false) }
+                ?.optString("subjectId")?.takeIf { it.isNotBlank() }
+        } ?: id
+        val info = SubInfo(System.currentTimeMillis(), indoProd, hasIndoSub, canonical)
+        subInfoCache[id] = info
+        return info
     }
 
-    // Filter: hanya subject berbahasa Indonesia atau ber-subtitle Indonesia.
-    // Metadata (countryName/language) dicek tanpa request; sisanya via detail (paralel, hasilnya dicache).
+    /**
+     * Saring agar semua film yang tampil punya subtitle Indonesia:
+     * - Produksi Indonesia: SELALU tampil (tanpa syarat subtitle).
+     * - Film lain: wajib ada subtitle Indonesia.
+     * - Versi duplikat (KR/EN dub/Hindi dari film sama) digabung -> satu kartu.
+     * - Jika pengecekan gagal (jaringan), kartu tetap ditampilkan (fail-soft).
+     * Cache 12 jam; paralel max 6 request.
+     */
     suspend fun filterIndoOnly(subjects: List<JSONObject>, token: String): List<JSONObject> =
         coroutineScope {
-            val base = activeHostOrFirst()
-            val sem = Semaphore(permits = 6)
-            subjects.map { s ->
-                async {
-                    sem.withPermit {
-                        if (subjectQualifiesIndo(s, base, token)) s else null
-                    }
+            val sem = Semaphore(permits = 10)
+            val infos = subjects.map { s ->
+                async { sem.withPermit { s to runCatching { subtitleInfo(s, token) }.getOrNull() } }
+            }.awaitAll()
+            val groups = LinkedHashMap<String, MutableList<Pair<JSONObject, SubInfo?>>>()
+            for ((s, info) in infos) {
+                val id = subjectIdOf(s)
+                if (id.isBlank()) continue
+                val key = info?.canonical ?: id
+                groups.getOrPut(key) { mutableListOf() }.add(s to info)
+            }
+            val out = ArrayList<JSONObject>()
+            for ((canonical, group) in groups) {
+                val qualified = group.filter { (_, info) ->
+                    info == null || info.indoProd || info.indoSub
                 }
-            }.awaitAll().filterNotNull()
+                if (qualified.isEmpty()) continue
+                val best = qualified.minWithOrNull(
+                    compareBy<Pair<JSONObject, SubInfo?>>(
+                        { (_, i) -> if (i?.indoProd == true) 0 else 1 },
+                        { (_, i) -> if (i?.indoSub == true) 0 else 1 },
+                        { (s, _) -> if (subjectIdOf(s) == canonical) 0 else 1 },
+                    )
+                )
+                best?.first?.let { out.add(it) }
+            }
+            Log.i(TAG, "filterIndoOnly in=${subjects.size} out=${out.size} groups=${groups.size}")
+            out
         }
 
     suspend fun tabOperating(tabId: Int): JSONObject? = withContext(Dispatchers.IO) {
@@ -680,14 +721,17 @@ object LocalMovieBoxClient {
                 }
             }
         }
+        // Kategori Indonesia = produksi Indonesia (selalu tampil). Kategori lain
+        // wajib ber-subtitle Indonesia & digabung per film (versi dub/Hindi hilang).
+        val qualified = if (cat == "indonesia") picked else filterIndoOnly(picked, token)
         val out = ArrayList<MediaItem>()
         val seen = HashSet<String>()
-        for (s in picked) {
+        for (s in qualified) {
             val m = mapSubjectToMediaItem(s) ?: continue
             if (seen.add(m.id ?: "")) out.add(m)
             if (out.size >= 48) break
         }
-        android.util.Log.i(TAG, "categoryItems $cat picked=${picked.size} out=${out.size}/pool=${subjects.size}")
+        android.util.Log.i(TAG, "categoryItems $cat picked=${picked.size} qualified=${qualified.size} out=${out.size}/pool=${subjects.size}")
         categoryCache[cat] = System.currentTimeMillis() to out
         out
     }
