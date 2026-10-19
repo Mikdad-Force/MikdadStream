@@ -702,15 +702,17 @@ object LocalMovieBoxClient {
                 val streams = buildStreams(data)
                 Log.i(TAG, "play-info streams count=${streams.size} subj=${subjectId.takeLast(6)} se=$se ep=$ep")
             val trap = streams.firstOrNull()?.url?.let { isTrapUrl(it) } == true
-            if (trap) {
+            if (streams.isEmpty() || trap) {
                 val real = fetchRealStream(subjectId, resourceId, if (se > 0) se else 1, if (ep > 0) ep else 1)
-                android.util.Log.w(TAG, "fetchRealStream result=${real != null} subj=${subjectId.takeLast(6)}")
+                android.util.Log.w(TAG, "fetchRealStream result=${real != null} empty=${streams.isEmpty()} trap=$trap subj=${subjectId.takeLast(6)}")
                 if (real != null) {
                     Log.i(TAG, "Moviebox Local real stream subj=${subjectId.takeLast(6)}")
                     return@withContext listOf(real)
                 }
-                // Jangan kembalikan iklan/trap; kosongkan agar tidak memutar ad.
-                return@withContext emptyList()
+                // Trap tanpa pengganti: jangan kembalikan iklan; kosongkan agar tidak memutar ad.
+                if (trap) return@withContext emptyList()
+                // Streams kosong & real null: coba varian play-info berikutnya.
+                continue
             }
             if (streams.isNotEmpty()) {
                 Log.i(TAG, "Moviebox Local stream count=${streams.size} subj=${subjectId.takeLast(6)}")
