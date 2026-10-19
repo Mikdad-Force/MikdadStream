@@ -1056,51 +1056,69 @@ object LocalMovieBoxClient {
         val candidates = ArrayList<JSONObject>()
 
         if (collectionId != null) {
-            val list = collectionDownloadList(collectionId, 1, 50)
-            if (list == null) {
-                android.util.Log.w(TAG, "collectionDownloadList null")
-            } else {
+            // ANAlisis API: download-list max 50 item/halaman ("S1EP1".."S2EP2"),
+            // episode musim lanjut ada di halaman berikutnya. WAJIB telusuri
+            // semua halaman — sebelumnya hanya halaman 1 lalu fallback item[0]
+            // (S1EP1) sehingga episode musim 2 selalu memutar EP1.
+            val allItems = ArrayList<JSONObject>()
+            var page = 1
+            while (page <= 40) {
+                val list = collectionDownloadList(collectionId, page, 50)
+                if (list == null) {
+                    android.util.Log.w(TAG, "collectionDownloadList null page=$page")
+                    break
+                }
                 val dataObj = list.optJSONObject("data")
                 val items = dataObj?.optJSONArray("items")
                     ?: dataObj?.optJSONArray("list")
-                    ?: org.json.JSONArray()
-                val count = items.length()
-                android.util.Log.i(TAG, "fetchRealStream items count=$count")
-                if (count > 0) {
-                    // Pola APK: pilih episode by epTitle "S{se}EP{ep}" atau "E{ep}"; jika rid/ep kosong pakai item pertama.
-                    var matched: JSONObject? = null
-                    for (i in 0 until count) {
-                        val item = items.optJSONObject(i) ?: continue
-                        val epTitle = item.optString("epTitle").uppercase(Locale.ROOT)
-                        if (epTitle.isBlank()) continue
-                        val sEp = "S${se}_EP${ep}"
-                        val eEp = "E${ep}"
-                        if (epTitle.contains(sEp) || epTitle.contains(eEp)) { matched = item; break }
+                if (items == null || items.length() == 0) break
+                for (i in 0 until items.length()) items.optJSONObject(i)?.let { allItems.add(it) }
+                if (items.length() < 50) break
+                page++
+            }
+            android.util.Log.i(TAG, "fetchRealStream items total=${allItems.size} pages=$page se=$se ep=$ep")
+
+            fun epTitleOf(item: JSONObject?): String =
+                item?.optString("epTitle")?.trim()?.uppercase(Locale.ROOT) ?: ""
+
+            // Cocokkan judul persis: "S{se}EP{ep}" (format API) — utamakan musim yang diminta.
+            var matched = allItems.firstOrNull { epTitleOf(it) == "S${se}EP${ep}" }
+            if (matched == null) {
+                // Format lama/anime tanpa musim: "EP{ep}" atau "E{ep}" (tepat, bukan contains).
+                matched = allItems.firstOrNull {
+                    val t = epTitleOf(it)
+                    t == "EP$ep" || t == "E$ep"
+                }
+            }
+            if (matched == null && se <= 1) {
+                matched = allItems.firstOrNull { epTitleOf(it) == "S1EP$ep" }
+            }
+            if (matched != null) {
+                android.util.Log.i(TAG, "fetchRealStream matched epTitle=${epTitleOf(matched)}")
+                collectCleanResources(matched, candidates)
+            }
+            // Jika judul tak cocok, telusuri semua item by resource id (rid unik per seri).
+            if (candidates.isEmpty() && !rid.isNullOrBlank()) {
+                for (item in allItems) {
+                    val resources = item.optJSONArray("resources") ?: continue
+                    var hit = false
+                    for (r in 0 until resources.length()) {
+                        val res = resources.optJSONObject(r) ?: continue
+                        if (res.optString("id") == rid) { hit = true; break }
                     }
-                    if (matched == null && rid.isNullOrBlank()) matched = items.optJSONObject(0)
-                    if (matched != null) {
-                        android.util.Log.i(TAG, "fetchRealStream matched item epTitle=${matched.optString("epTitle")}")
-                        collectCleanResources(matched, candidates)
-                    }
-                    // Jika resource item terpilih kosong dan rid diketahui, telusuri semua item by resource id.
-                    if (candidates.isEmpty() && !rid.isNullOrBlank()) {
-                        for (i in 0 until count) {
-                            val item = items.optJSONObject(i) ?: continue
-                            val resources = item.optJSONArray("resources") ?: continue
-                            for (r in 0 until resources.length()) {
-                                val res = resources.optJSONObject(r) ?: continue
-                                val resId = res.optString("id")
-                                if (resId.isNotBlank() && resId == rid) {
-                                    collectCleanResources(item, candidates)
-                                    break
-                                }
-                            }
-                            if (candidates.isNotEmpty()) break
+                    if (hit) {
+                        collectCleanResources(item, candidates)
+                        if (candidates.isNotEmpty()) {
+                            android.util.Log.i(TAG, "fetchRealStream matched by rid epTitle=${epTitleOf(item)}")
+                            break
                         }
                     }
-                    // Terakhir: kumpulkan resource bersih pertama dari item pertama (fallback APK).
-                    if (candidates.isEmpty()) collectCleanResources(items.optJSONObject(0), candidates)
                 }
+            }
+            // Fallback item pertama HANYA untuk episode 1 musim 1 (film/episode tunggal).
+            // Jangan pernah memakai item[0] untuk episode lain — itulah S1EP1.
+            if (candidates.isEmpty() && se <= 1 && ep <= 1) {
+                collectCleanResources(allItems.firstOrNull(), candidates)
             }
         }
 
