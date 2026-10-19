@@ -164,6 +164,19 @@ private fun DetailContent(
         else "Putar"
     } ?: "Putar"
 
+    // Season tersinkron dengan data film: dari kode episode "se_ep" hasil season-info.
+    val seasons = detail.episodeList
+        .mapNotNull { it.safeId.substringBefore("_").toIntOrNull() }
+        .distinct().sorted()
+    var selectedSeason by remember(detail.safeId) {
+        mutableStateOf(seasons.lastOrNull() ?: 1)
+    }
+    val seasonEpisodes = if (seasons.size > 1) {
+        detail.episodeList.filter { it.safeId.substringBefore("_").toIntOrNull() == selectedSeason }
+    } else {
+        detail.episodeList
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding() + 32.dp),
@@ -362,12 +375,41 @@ private fun DetailContent(
             0 -> {
                 item {
                     SectionHeader(
-                        title = if (detail.episodeList.size > 1) "Daftar Episode" else "Putaran",
+                        title = if (seasons.size > 1) {
+                            "Season $selectedSeason"
+                        } else if (detail.episodeList.size > 1) "Daftar Episode" else "Putaran",
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                     )
                 }
 
-                if (detail.episodeList.isEmpty()) {
+                if (seasons.size > 1) {
+                    item {
+                        // Baris pilih Season (sinkron jumlah musim film).
+                        androidx.compose.foundation.lazy.LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(seasons, key = { it }) { s ->
+                                val sel = s == selectedSeason
+                                Text(
+                                    text = "Season $s",
+                                    color = if (sel) Color.White else Color(0xFF9AA3AE),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(
+                                            if (sel) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.surfaceVariant
+                                        )
+                                        .clickable { selectedSeason = s }
+                                        .padding(horizontal = 16.dp, vertical = 9.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (seasonEpisodes.isEmpty()) {
                     item {
                         Text(
                             text = "Belum ada daftar episode untuk konten ini.",
@@ -378,7 +420,7 @@ private fun DetailContent(
                     }
                 }
 
-                items(detail.episodeList, key = { it.safeId }) { episode ->
+                items(seasonEpisodes, key = { it.safeId }) { episode ->
                     EpisodeRow(
                         episode = episode,
                         active = episode.safeId == state.history?.episodeId,
