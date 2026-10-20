@@ -18,6 +18,8 @@ import com.mikdadstream.app.data.remote.SourceData
 import com.mikdadstream.app.data.remote.SourceModel
 import com.mikdadstream.app.data.remote.VideosData
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -36,6 +38,10 @@ class StreamRepository(
 ) {
 
     private var modelsCache: ModelsResult? = null
+    // Cache hasil source per episode (5 menit) supaya kembali ke episode yang
+    // sama / prefetch episode berikutnya langsung tampil tanpa request ulang.
+    private val episodeSourceCache =
+        java.util.concurrent.ConcurrentHashMap<String, Pair<Long, SourceData>>()
     private val nameIndex = mutableMapOf<String, String>()
     private val _modelsState = MutableStateFlow<ModelsResult?>(null)
     val modelsState: StateFlow<ModelsResult?> = _modelsState
@@ -221,13 +227,38 @@ class StreamRepository(
 
     suspend fun source(modelId: String, episodeId: String, id: String): SourceData {
         if (modelId.equals("moviebox-local", true)) {
+            val cacheKey = "$id|$episodeId"
+            episodeSourceCache[cacheKey]?.let { (t, cached) ->
+                if (System.currentTimeMillis() - t < 5 * 60_000L) {
+                    android.util.Log.i("MovieboxLocal", "source cache-hit id=$id ep=$episodeId")
+                    return cached
+                }
+            }
             val parts = episodeId.split("_")
             val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
             val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
-            val streams = LocalMovieBoxClient.fetchStreams(id, se, ep) ?: emptyList()
-            android.util.Log.i("MovieboxLocal", "source streams=${streams.size} id=$id ep=$episodeId se=$se epNum=$ep")
-            val subtitles = runCatching { LocalMovieBoxClient.fetchSubtitles(id, se, ep) }.getOrDefault(emptyList())
-            return SourceData(streams = streams, subtitles = subtitles)
+            // Stream & subtitle diambil PARALEL: sebelumnya berurutan sehingga
+            // klik episode menunggu dua rangkaian request.
+            return coroutineScope {
+                val streamsAsync = async {
+                    LocalMovieBoxClient.fetchStreams(id, se, ep) ?: emptyList()
+                }
+                val subsAsync = async {
+                    runCatching { LocalMovieBoxClient.fetchSubtitles(id, se, ep) }
+                        .getOrDefault(emptyList())
+                }
+                val streams = streamsAsync.await()
+                val subtitles = subsAsync.await()
+                android.util.Log.i(
+                    "MovieboxLocal",
+                    "source streams=${streams.size} subs=${subtitles.size} id=$id ep=$episodeId se=$se epNum=$ep",
+                )
+                val result = SourceData(streams = streams, subtitles = subtitles)
+                if (streams.isNotEmpty()) {
+                    episodeSourceCache[cacheKey] = System.currentTimeMillis() to result
+                }
+                result
+            }
         }
         val data = unwrap(call { api.source(apiModelId(modelId), episodeId, id) }, "Sumber video tidak tersedia.")
         val refreshed = MovieboxResolver.maybeRefresh(data, id)

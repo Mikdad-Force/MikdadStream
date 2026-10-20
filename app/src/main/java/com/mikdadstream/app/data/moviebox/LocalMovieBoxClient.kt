@@ -1082,9 +1082,18 @@ object LocalMovieBoxClient {
                     }
                 }
             }
-            tracks.map { t ->
-                val url = t.url
-                if (url.isNullOrBlank()) {
+            // Unduh/konversi semua subtitle PARALEL: sebelumnya berurutan
+            // (9 bahasa = 9 request beruntun) sehingga klik episode terasa lama.
+            coroutineScope {
+                tracks.map { t ->
+                    async { prepareSubtitleOne(t, dir) }
+                }.awaitAll()
+            }
+        }
+
+    private suspend fun prepareSubtitleOne(t: SubtitleTrack, dir: java.io.File): SubtitleTrack {
+        val url = t.url
+        return if (url.isNullOrBlank()) {
                     t
                 } else {
                     val pathLower = url.substringBefore('?').lowercase()
@@ -1171,8 +1180,7 @@ object LocalMovieBoxClient {
                         if (ok) t.copy(url = android.net.Uri.fromFile(f).toString()) else t
                     }
                 }
-            }
-        }
+    }
 
     /** Konversi konten SRT ke WebVTT: header WEBVTT + koma -> titik pada timestamp. */
     private fun srtToVtt(srt: String): String {
@@ -1330,6 +1338,21 @@ object LocalMovieBoxClient {
         se: Int,
         ep: Int,
     ): String? {
+        val ck = "$subjectId|$se|$ep"
+        episodeRidCache[ck]?.let { (t, v) ->
+            if (System.currentTimeMillis() - t < 10 * 60_000L) return v
+        }
+        val found = episodeResourceIdUncached(subjectId, token, se, ep)
+        if (found != null) episodeRidCache[ck] = System.currentTimeMillis() to found
+        return found
+    }
+
+    private suspend fun episodeResourceIdUncached(
+        subjectId: String,
+        token: String,
+        se: Int,
+        ep: Int,
+    ): String? {
         val base = activeHostOrFirst()
         suspend fun fetchPage(page: Int): Pair<List<JSONObject>, Boolean> {
             val root = runCatching {
@@ -1378,7 +1401,7 @@ object LocalMovieBoxClient {
             try {
                 val token = boot() ?: return@withContext emptyList()
                 val base = activeHostOrFirst()
-                val detailRoot = runCatching { fetchSubject(base, subjectId, token) }.getOrNull()
+                val detailRoot = fetchSubjectCached(base, subjectId, token)
                 val detailData = detailRoot?.optJSONObject("data")
                 // rid WAJIB milik episode yang diputar. resourceDetectors adalah
                 // id PAKET (subtitle EP1 untuk semua episode) -> tidak sinkron.
@@ -1613,11 +1636,29 @@ object LocalMovieBoxClient {
         android.util.Log.i(TAG, "Moviebox Local real streams count=${out.size} qualities=${out.joinToString { (it.quality ?: "Auto") }} subj=${subjectId.takeLast(6)}")
         return out
     }
+    // Cache singkat agar fetchStreams & fetchSubtitles tidak memanggil detail
+    // subjek dua kali untuk episode yang sama.
+    private val subjectDetailCache =
+        java.util.concurrent.ConcurrentHashMap<String, Pair<Long, JSONObject>>()
+
+    private suspend fun fetchSubjectCached(base: String, id: String, token: String): JSONObject? {
+        val now = System.currentTimeMillis()
+        subjectDetailCache[id]?.let { (t, j) ->
+            if (now - t < 90_000) return j
+        }
+        val root = runCatching { fetchSubject(base, id, token) }.getOrNull() ?: return null
+        subjectDetailCache[id] = now to root
+        return root
+    }
+
+    private val episodeRidCache =
+        java.util.concurrent.ConcurrentHashMap<String, Pair<Long, String>>()
+
     suspend fun fetchStreams(subjectId: String, se: Int = 1, ep: Int = 1): List<MediaStream>? =
         withContext(Dispatchers.IO) {
             val token = boot() ?: return@withContext null
             val base = activeHostOrFirst()
-            val detailRoot = runCatching { fetchSubject(base, subjectId, token) }.getOrNull()
+            val detailRoot = fetchSubjectCached(base, subjectId, token)
             val detailData = detailRoot?.optJSONObject("data")
             // resourceId WAJIB per-episode (index = ep-1), bukan selalu index 0 —
             // sebelumnya semua episode memutar konten episode 1.

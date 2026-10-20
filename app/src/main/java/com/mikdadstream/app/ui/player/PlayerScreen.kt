@@ -812,29 +812,32 @@ fun PlayerScreen(
         if (reload == 0 && episodeId == request.episodeId && request.streams.isNotEmpty()) {
             val list = request.streams
             streams = list
-            // Subtitle JANGAN dipakai dari prefetch: prefetch bisa berasal dari
-            // metadata/versi tanpa caption Indonesia, sehingga subtitle tidak
-            // termuat. Selalu ambil ulang daftar segar dari API untuk subjek yang
-            // benar-benar diputar; prefetch hanya dipakai sebagai cadangan.
-            val parts = episodeId.split("_")
-            val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
-            val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
-            val fresh = runCatching {
-                com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
-                    .fetchSubtitles(request.contentId, se, ep)
-            }.getOrDefault(emptyList())
-            fun indoOf(s: SubtitleTrack) =
-                normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia"
-            apiSubtitles = when {
-                fresh.any(::indoOf) -> fresh
-                request.subtitles.any(::indoOf) -> request.subtitles
-                fresh.isNotEmpty() -> fresh
-                else -> request.subtitles
+            // Prefetch sudah memuat Indonesia (per-episode sejak v2.1.32) ->
+            // pakai langsung, JANGAN fetch ulang. Fetch ulang dulu membuat
+            // video mulai lalu di-reload lagi saat daftar baru tiba.
+            if (prefetchedHasIndo) {
+                apiSubtitles = request.subtitles
+                Log.i("PlayerScreen", "subtitle prefetch dipakai (${request.subtitles.size})")
+            } else {
+                val parts = episodeId.split("_")
+                val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
+                val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
+                val fresh = runCatching {
+                    com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
+                        .fetchSubtitles(request.contentId, se, ep)
+                }.getOrDefault(emptyList())
+                fun indoOf(s: SubtitleTrack) =
+                    normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia"
+                apiSubtitles = when {
+                    fresh.any(::indoOf) -> fresh
+                    fresh.isNotEmpty() -> fresh
+                    else -> request.subtitles
+                }
+                Log.i(
+                    "PlayerScreen",
+                    "subtitle segar: ${apiSubtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}",
+                )
             }
-            Log.i(
-                "PlayerScreen",
-                "subtitle segar: ${apiSubtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}",
-            )
             selectedIndex = pickStreamIndex(list)
             loadingStreams = false
             return@LaunchedEffect
@@ -871,6 +874,20 @@ fun PlayerScreen(
             loadingStreams = false
             streamError = e.message ?: "Gagal memuat sumber video."
         }
+    }
+
+    // Prefetch episode berikutnya di latar belakang: saat pengguna menekan
+    // "Episode selanjutnya", sumber sudah ada di cache -> pemutaran instan.
+    LaunchedEffect(episodeId, loadingStreams, episodes) {
+        if (loadingStreams || streams.isEmpty()) return@LaunchedEffect
+        if (!request.modelId.equals("moviebox-local", true)) return@LaunchedEffect
+        val idx = episodes.indexOfFirst { it.safeId == episodeId }
+        val next = episodes.getOrNull(idx + 1) ?: return@LaunchedEffect
+        delay(2500)
+        runCatching {
+            AppGraph.repository.source(request.modelId, next.safeId, request.contentId)
+        }
+        Log.i("PlayerScreen", "prefetch episode berikut: ${next.safeId}")
     }
 
     // ---- Terapkan stream terpilih ke ExoPlayer (pemutar native) ----
