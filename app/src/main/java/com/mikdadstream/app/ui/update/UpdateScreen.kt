@@ -21,7 +21,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -66,7 +65,6 @@ fun UpdateScreen(
     failed: Boolean,
     onUpdate: () -> Unit,
     onOpenPermission: () -> Unit,
-    onOpenBrowser: () -> Unit,
 ) {
     val s = LocalStrings.current
     BackHandler(enabled = true) { /* pembaruan wajib: blokir tombol kembali */ }
@@ -245,10 +243,6 @@ fun UpdateScreen(
                         fontWeight = FontWeight.Bold,
                     )
                 }
-            }
-
-            TextButton(onClick = onOpenBrowser) {
-                Text(s.updateOpenBrowser, color = StreamTextMuted)
             }
 
             Text(

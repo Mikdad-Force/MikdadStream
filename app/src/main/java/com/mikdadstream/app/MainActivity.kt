@@ -139,8 +139,27 @@ private fun AppRoot(isTv: Boolean) {        val loggedIn by AppGraph.prefs.logge
         }
     }
 
+    // Cek update otomatis: saat aplikasi dibuka, saat kembali ke depan
+    // (ON_RESUME), dan berkala tiap 10 menit selama aplikasi berjalan.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && updateInfo == null) {
+                scope.launch {
+                    runCatching { updater.check() }.getOrNull()?.let { updateInfo = it }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     LaunchedEffect(Unit) {
-        runCatching { updater.check() }.getOrNull()?.let { updateInfo = it }
+        while (true) {
+            if (updateInfo == null) {
+                runCatching { updater.check() }.getOrNull()?.let { updateInfo = it }
+            }
+            delay(10 * 60_000L)
+        }
     }
 
     val info = updateInfo
@@ -170,7 +189,6 @@ private fun AppRoot(isTv: Boolean) {        val loggedIn by AppGraph.prefs.logge
                 }
             },
             onOpenPermission = { updater.openInstallPermission() },
-            onOpenBrowser = { updater.openPage(info.pageUrl) },
         )
         return
     }

@@ -63,8 +63,12 @@ class AppUpdater(context: Context) {
 
     val latestUrl: String get() = "https://github.com/$repo/releases/latest"
 
+    private val checking = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** Cek rilis terbaru di GitHub. Mengembalikan info bila ada versi lebih baru. */
     suspend fun check(): UpdateInfo? = withContext(Dispatchers.IO) {
+        // Hindari dua pengecekan bersamaan (mis. loop berkala + ON_RESUME).
+        if (!checking.compareAndSet(false, true)) return@withContext null
         _state.value = UpdateState.Checking
         try {
             val request = Request.Builder()
@@ -102,6 +106,8 @@ class AppUpdater(context: Context) {
         } catch (e: Exception) {
             _state.value = UpdateState.Failed(e.message ?: "Gagal memeriksa pembaruan")
             return@withContext null
+        } finally {
+            checking.set(false)
         }
     }
 
