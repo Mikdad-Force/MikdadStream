@@ -109,10 +109,12 @@ import com.mikdadstream.app.data.remote.SubtitleTrack
 import com.mikdadstream.app.ui.detail.PlayRequest
 import com.mikdadstream.app.ui.tv.TvRequestFocusOnShow
 import java.io.IOException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private data class SubOption(val group: TrackGroup, val index: Int, val key: String, val label: String)
 
@@ -240,6 +242,126 @@ private fun detectSubtitleMime(url: String): String {
     }
 }
 
+private fun formatOffset(ms: Long): String {
+    val seconds = ms / 1000.0
+    val text = String.format(java.util.Locale.US, "%.1f", seconds)
+    return if (ms > 0) "+${text}s" else "${text}s"
+}
+
+private fun md5Key(text: String): String =
+    java.security.MessageDigest.getInstance("MD5")
+        .digest(text.toByteArray())
+        .joinToString("") { "%02x".format(it) }
+        .take(24)
+
+/** Konversi teks SRT mentah menjadi WebVTT. */
+private fun srtTextToVtt(srt: String): String {
+    val clean = srt.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
+    val sb = StringBuilder("WEBVTT\n\n")
+    val ts = Regex("(\\d{1,2}):(\\d{2}):(\\d{2}),(\\d{3})")
+    sb.append(ts.replace(clean) { m ->
+        "${m.groupValues[1]}:${m.groupValues[2]}:${m.groupValues[3]}.${m.groupValues[4]}"
+    })
+    return sb.toString()
+}
+
+/** Pastikan teks berupa WebVTT; null jika isi bukan SRT/VTT. */
+private fun normalizeSubtitleText(text: String): String? {
+    val clean = text.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
+    val trimmed = clean.trimStart()
+    if (trimmed.startsWith("WEBVTT", true)) return clean
+    if (Regex("\\d{1,2}:\\d{2}:\\d{2},\\d{3}").containsMatchIn(clean)) return srtTextToVtt(clean)
+    return null
+}
+
+private suspend fun fetchSubtitleText(url: String): String? = withContext(Dispatchers.IO) {
+    try {
+        if (url.startsWith("file://")) {
+            val f = java.io.File(java.net.URI(url))
+            if (f.exists() && f.length() > 0) f.readText() else null
+        } else {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 20_000
+            conn.readTimeout = 45_000
+            conn.setRequestProperty("User-Agent", "ExoPlayerLib/2.19.1")
+            try {
+                if (conn.responseCode !in 200..299) null
+                else conn.inputStream.bufferedReader().use { it.readText() }
+            } finally {
+                conn.disconnect()
+            }
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/**
+ * Ambil isi subtitle sebagai WebVTT (unduh bila remote, konversi bila SRT).
+ * Hasil remote di-cache di ".../subs/sb4_<hash>.vtt".
+ */
+private suspend fun localVttContent(url: String): String? = withContext(Dispatchers.IO) {
+    if (url.startsWith("file://")) {
+        val f = java.io.File(java.net.URI(url))
+        if (!f.exists() || f.length() == 0L) return@withContext null
+        return@withContext normalizeSubtitleText(f.readText())
+    }
+    val ctx = try { AppGraph.appContext } catch (e: Throwable) { null }
+        ?: return@withContext null
+    val dir = java.io.File(ctx.cacheDir, "subs").apply { mkdirs() }
+    val f = java.io.File(dir, "sb4_${md5Key(url)}.vtt")
+    if (f.exists() && f.length() > 0) {
+        val cached = f.readText()
+        if (cached.trimStart().removePrefix("\uFEFF").startsWith("WEBVTT", true)) {
+            return@withContext cached
+        }
+        f.delete()
+    }
+    val body = fetchSubtitleText(url) ?: return@withContext null
+    val vtt = normalizeSubtitleText(body) ?: return@withContext null
+    f.writeText(vtt)
+    vtt
+}
+
+/** Geser semua timestamp WebVTT sebesar offset (ms). Timestamp negatif -> 0. */
+private fun shiftVttTimestamps(content: String, offsetMs: Long): String {
+    val ts = Regex("(\\d{2}):(\\d{2}):(\\d{2})\\.(\\d{3})")
+    return ts.replace(content) { m ->
+        val total = ((m.groupValues[1].toLong() * 3600 +
+            m.groupValues[2].toLong() * 60 +
+            m.groupValues[3].toLong()) * 1000 +
+            m.groupValues[4].toLong() + offsetMs).coerceAtLeast(0L)
+        val hh = total / 3_600_000
+        val mm = (total % 3_600_000) / 60_000
+        val ss = (total % 60_000) / 1000
+        val millis = total % 1000
+        "%02d:%02d:%02d.%03d".format(hh, mm, ss, millis)
+    }
+}
+
+/**
+ * URL subtitle yang sudah digeser sesuai offset (disimpan sebagai file lokal
+ * "sbshift_<hash>.vtt"). Offset 0 -> URL asli.
+ */
+private suspend fun shiftedSubtitleUrl(url: String, offsetMs: Long): String =
+    withContext(Dispatchers.IO) {
+        if (offsetMs == 0L) return@withContext url
+        val ctx = try { AppGraph.appContext } catch (e: Throwable) { null }
+            ?: return@withContext url
+        val dir = java.io.File(ctx.cacheDir, "subs").apply { mkdirs() }
+        val f = java.io.File(dir, "sbshift_${md5Key("$url|$offsetMs")}.vtt")
+        if (f.exists() && f.length() > 0) {
+            val cached = f.readText().take(64)
+            if (cached.trimStart().removePrefix("\uFEFF").startsWith("WEBVTT", true)) {
+                return@withContext android.net.Uri.fromFile(f).toString()
+            }
+            f.delete()
+        }
+        val base = localVttContent(url) ?: return@withContext url
+        f.writeText(shiftVttTimestamps(base, offsetMs))
+        android.net.Uri.fromFile(f).toString()
+    }
+
 private fun subtitleLangName(code: String?): String? {
     val raw = (code ?: "").trim().lowercase()
     if (raw.isEmpty()) return null
@@ -335,6 +457,10 @@ fun PlayerScreen(
     var subOptions by remember { mutableStateOf<List<SubOption>>(emptyList()) }
     var selectedSubKey by remember { mutableStateOf<String?>(null) }
     var subtitleUserChosen by remember { mutableStateOf(false) }
+    // Sinkronisasi subtitle manual: offset waktu subtitle terhadap video.
+    var subOffsetMs by remember { mutableLongStateOf(0L) }
+    var subOffsetTrigger by remember { mutableIntStateOf(0) }
+    var showSyncMenu by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
     var videoQualities by remember { mutableStateOf<List<Int>>(emptyList()) }
     var selectedVideoHeight by remember { mutableStateOf<Int?>(null) }
@@ -692,7 +818,7 @@ fun PlayerScreen(
     }
 
     // ---- Terapkan stream terpilih ke ExoPlayer (pemutar native) ----
-    LaunchedEffect(selectedIndex, episodeId, apiSubtitles) {
+    LaunchedEffect(selectedIndex, episodeId, apiSubtitles, subOffsetTrigger) {
         val stream = streams.getOrNull(selectedIndex) ?: return@LaunchedEffect
         val url = resolveStreamUrl(stream.safeUrl) ?: return@LaunchedEffect
         playerError = null
@@ -707,8 +833,25 @@ fun PlayerScreen(
         Log.d("PlayerScreen", "subtitle API codes: $apiCodes")
         Log.d("PlayerScreen", "subtitle received: ${apiSubtitles.map { (it.lang ?: "") + "|" + (it.label ?: "") }}")
 
+        // Terapkan offset sinkronisasi: bila pengguna menggeser waktu subtitle,
+        // setiap file subtitle digeser lalu dipakai versi lokalnya.
+        val sourceSubs = if (subOffsetMs == 0L) {
+            apiSubtitles
+        } else {
+            val out = ArrayList<SubtitleTrack>(apiSubtitles.size)
+            for (s in apiSubtitles) {
+                val u = s.url
+                out.add(
+                    if (u.isNullOrBlank()) s
+                    else s.copy(url = shiftedSubtitleUrl(u, subOffsetMs)),
+                )
+            }
+            out
+        }
+        Log.i("PlayerScreen", "subtitle offset=${subOffsetMs}ms tracks=${sourceSubs.size}")
+
         val seenLang = LinkedHashSet<String>()
-        val played = apiSubtitles.mapNotNull { s ->
+        val played = sourceSubs.mapNotNull { s ->
             val u = s.url?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             // MIME dipilih dari ISI file lokal (sniff WEBVTT/SRT) bila tersedia,
             // bukan hanya dari ekstensi URL.
@@ -951,9 +1094,9 @@ fun PlayerScreen(
     }
 
     // Beri fokus ke tombol putar/jeda saat kontrol tampil agar D-pad bisa menjelajah.
-    LaunchedEffect(showControls, mediaReady, inPip, showSpeedMenu, showSubMenu, showSleepMenu, showQualityMenu) {
+    LaunchedEffect(showControls, mediaReady, inPip, showSpeedMenu, showSubMenu, showSyncMenu, showSleepMenu, showQualityMenu) {
         if (showControls && mediaReady && !inPip &&
-            !showSpeedMenu && !showSubMenu && !showSleepMenu && !showQualityMenu
+            !showSpeedMenu && !showSubMenu && !showSyncMenu && !showSleepMenu && !showQualityMenu
         ) {
             delay(60)
             runCatching { controlFocus.requestFocus() }
@@ -987,9 +1130,9 @@ fun PlayerScreen(
     }
 
     // ---- Sembunyikan kontrol otomatis ----
-    LaunchedEffect(showControls, isPlaying, showSpeedMenu, showSubMenu, showSleepMenu, showQualityMenu, showSources, showEpisodes, inPip) {
+    LaunchedEffect(showControls, isPlaying, showSpeedMenu, showSubMenu, showSyncMenu, showSleepMenu, showQualityMenu, showSources, showEpisodes, inPip) {
         if (showControls && isPlaying && !inPip &&
-            !showSpeedMenu && !showSubMenu && !showSleepMenu && !showQualityMenu && !showSources && !showEpisodes
+            !showSpeedMenu && !showSubMenu && !showSyncMenu && !showSleepMenu && !showQualityMenu && !showSources && !showEpisodes
         ) {
             delay(3_500)
             showControls = false
@@ -1016,6 +1159,7 @@ fun PlayerScreen(
         when {
             showSpeedMenu -> showSpeedMenu = false
             showSubMenu -> showSubMenu = false
+            showSyncMenu -> showSyncMenu = false
             showSleepMenu -> showSleepMenu = false
             showQualityMenu -> showQualityMenu = false
             showSources -> showSources = false
@@ -1383,6 +1527,14 @@ fun PlayerScreen(
                             refreshSubOptions()
                             showSubMenu = true
                         }
+                        CtlButton(
+                            icon = Icons.Filled.Speed,
+                            label = if (subOffsetMs == 0L) "Sync" else formatOffset(subOffsetMs),
+                            tint = if (subOffsetMs != 0L) MaterialTheme.colorScheme.primary
+                            else Color.White,
+                        ) {
+                            showSyncMenu = true
+                        }
                         if (videoQualities.size > 1) {
                             CtlButton(
                                 icon = Icons.Filled.HighQuality,
@@ -1580,6 +1732,38 @@ fun PlayerScreen(
                 showSubMenu = false
             },
             onDismiss = { showSubMenu = false },
+        )
+    }
+
+
+    // ---- Menu sinkronisasi subtitle ----
+    if (showSyncMenu) {
+        val offsets = listOf(
+            -10000L to "-10.0 detik",
+            -5000L to "-5.0 detik",
+            -2000L to "-2.0 detik",
+            -1000L to "-1.0 detik",
+            -500L to "-0.5 detik",
+            0L to "Normal (0.0)",
+            500L to "+0.5 detik",
+            1000L to "+1.0 detik",
+            2000L to "+2.0 detik",
+            5000L to "+5.0 detik",
+            10000L to "+10.0 detik",
+        )
+        OptionMenu(
+            title = "Sinkronisasi Subtitle",
+            note = "Geser waktu subtitle terhadap video. Sekarang: ${formatOffset(subOffsetMs)}",
+            items = offsets,
+            selected = { it == subOffsetMs },
+            onSelect = { value ->
+                subOffsetMs = value
+                pendingSeek.longValue = player.currentPosition
+                subOffsetTrigger++
+                showSyncMenu = false
+                showHud(Icons.Filled.Speed, "Sync ${formatOffset(value)}")
+            },
+            onDismiss = { showSyncMenu = false },
         )
     }
 
