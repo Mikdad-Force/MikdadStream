@@ -124,6 +124,10 @@ class StreamRepository(
     suspend fun categories(modelId: String): List<CategoryBundle> {
         if (modelId.equals("moviebox-local", true)) {
             return listOf(
+                CategoryBundle("trending", "Trending"),
+                CategoryBundle("indonesia", "Lokasi Indonesia"),
+                CategoryBundle("livetv", "Live TV"),
+                CategoryBundle("livesport", "Live Sport"),
                 CategoryBundle("kdrama", "K-Drama"),
                 CategoryBundle("indodrama", "Indo Drama"),
                 CategoryBundle("cdrama", "C-Drama"),

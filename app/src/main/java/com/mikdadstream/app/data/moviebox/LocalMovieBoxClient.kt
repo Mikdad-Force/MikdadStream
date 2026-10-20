@@ -764,9 +764,113 @@ object LocalMovieBoxClient {
 
     private var categoryCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<MediaItem>>>()
 
+    private val liveCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<MediaItem>>>()
+
+    /**
+     * Kanal Live TV / Live Sport dari playlist publik iptv-org.
+     * MovieBox tidak menyediakan API live, jadi kanal diputar langsung (HLS).
+     * id item = "live:<base64url(url)>|<base64url(nama)>" dan ditangani
+     * AppNavGraph.openDetail dengan membuka pemutar langsung.
+     */
+    suspend fun liveChannelItems(kind: String): List<MediaItem> = withContext(Dispatchers.IO) {
+        val key = kind.trim().lowercase(Locale.ROOT)
+        liveCache[key]?.let { (t, list) ->
+            if (System.currentTimeMillis() - t < 300_000 && list.isNotEmpty()) {
+                return@withContext list
+            }
+        }
+        val urls = if (key == "livesport") {
+            listOf(
+                "https://iptv-org.github.io/iptv/categories/sports.m3u",
+                "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/categories/sports.m3u",
+            )
+        } else {
+            listOf(
+                "https://iptv-org.github.io/iptv/countries/id.m3u",
+                "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/id.m3u",
+            )
+        }
+        var body: String? = null
+        for (u in urls) {
+            body = runCatching {
+                http.newCall(
+                    okhttp3.Request.Builder().url(u)
+                        .header("User-Agent", "MikdadStream/1.0").build(),
+                ).execute().use { r -> if (r.isSuccessful) r.body?.string() else null }
+            }.getOrNull()
+            if (!body.isNullOrBlank()) break
+        }
+        if (body.isNullOrBlank()) {
+            Log.w(TAG, "livePlaylist $key gagal diunduh")
+            return@withContext emptyList()
+        }
+        val out = ArrayList<MediaItem>()
+        val seen = HashSet<String>()
+        var pendingName: String? = null
+        var pendingLogo: String? = null
+        var pendingGroup: String? = null
+        for (raw in body.lineSequence()) {
+            val line = raw.trim()
+            if (line.isEmpty()) continue
+            if (line.startsWith("#EXTINF", true)) {
+                // Nama = teks setelah atribut terakhir (bisa saja ada koma di
+                // group-title); fallback ke setelah koma pertama.
+                val q = line.lastIndexOf('"')
+                val name = if (q >= 0) line.substring(q + 1).removePrefix(",").trim()
+                else line.substringAfter(',', "").trim()
+                if (name.isEmpty()) continue
+                pendingName = name
+                pendingLogo = Regex("tvg-logo=\"([^\"]*)\"").find(line)
+                    ?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
+                pendingGroup = Regex("group-title=\"([^\"]*)\"").find(line)
+                    ?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
+                continue
+            }
+            if (line.startsWith("#")) continue
+            val name = pendingName
+            val url = line
+            if (name == null || !url.startsWith("http", true)) {
+                pendingName = null
+                continue
+            }
+            if (seen.add(url)) {
+                val label = if (pendingGroup.isNullOrBlank()) name else "$name \u00b7 $pendingGroup"
+                val u = android.util.Base64.encodeToString(
+                    url.toByteArray(),
+                    android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP,
+                )
+                val n = android.util.Base64.encodeToString(
+                    name.toByteArray(),
+                    android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP,
+                )
+                val id = "live:$u|$n"
+                out.add(
+                    MediaItem(
+                        key = id,
+                        id = id,
+                        cover = pendingLogo,
+                        title = label,
+                        source = if (key == "livesport") "Live Sport" else "Live TV",
+                        type = "live",
+                    )
+                )
+            }
+            pendingName = null
+            pendingLogo = null
+            pendingGroup = null
+            if (out.size >= 400) break
+        }
+        Log.i(TAG, "livePlaylist $key channels=${out.size}")
+        liveCache[key] = System.currentTimeMillis() to out
+        out
+    }
+
     /** Daftar film per kategori sintetis (moviebox-local). */
     suspend fun categoryItems(categoryId: String): List<MediaItem> = withContext(Dispatchers.IO) {
         val cat = categoryId.trim().lowercase(Locale.ROOT).let { if (it == "hoollywood") "hollywood" else it }
+        if (cat == "livetv" || cat == "livesport") {
+            return@withContext liveChannelItems(cat)
+        }
         categoryCache[cat]?.let { (t, list) ->
             if (System.currentTimeMillis() - t < 300_000 && list.isNotEmpty()) return@withContext list
         }

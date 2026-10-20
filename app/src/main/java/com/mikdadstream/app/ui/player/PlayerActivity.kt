@@ -156,6 +156,8 @@ class PlayerActivity : ComponentActivity() {
         positionMs: Long,
         durationMs: Long,
     ) {
+        // Kanal live tidak disimpan ke riwayat (tidak punya durasi/episode).
+        if (contentId.startsWith("live:")) return
         saveScope.launch {
             AppGraph.repository.historyDao.upsert(
                 HistoryEntity(

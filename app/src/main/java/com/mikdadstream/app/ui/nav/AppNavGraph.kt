@@ -229,6 +229,40 @@ fun AppNavGraph(isTv: Boolean = false) {
     }
 
     fun openDetail(modelId: String?, id: String, source: String?, autoplay: Boolean = false) {
+        // Kanal Live TV / Live Sport: buka pemutar langsung tanpa layar detail.
+        if (id.startsWith("live:")) {
+            fun decode(part: String?): String? = part?.let {
+                runCatching {
+                    String(
+                        android.util.Base64.decode(
+                            it,
+                            android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP,
+                        )
+                    )
+                }.getOrNull()
+            }
+            val parts = id.removePrefix("live:").split("|")
+            val streamUrl = decode(parts.getOrNull(0))
+            val liveTitle = decode(parts.getOrNull(1)).orEmpty().ifBlank { "Live" }
+            if (!streamUrl.isNullOrBlank()) {
+                context.startActivity(
+                    PlayerActivity.intent(
+                        context,
+                        PlayRequest(
+                            modelId = "live",
+                            contentId = id,
+                            episodeId = "live",
+                            episodeNumber = 1,
+                            title = liveTitle,
+                            cover = null,
+                            episodes = emptyList(),
+                            localUrl = streamUrl,
+                        ),
+                    )
+                )
+                return
+            }
+        }
         val route = "detail?modelId=${Uri.encode(modelId.orEmpty())}" +
             "&id=${Uri.encode(id)}" +
             "&source=${Uri.encode(source.orEmpty())}" +
