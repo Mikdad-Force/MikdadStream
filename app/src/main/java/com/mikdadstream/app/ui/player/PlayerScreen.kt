@@ -509,7 +509,7 @@ fun PlayerScreen(
     fun refreshVideoQualities() {
         val heights = LinkedHashSet<Int>()
         player.currentTracks.groups.forEach { g ->
-            if (g.type != C.TRACK_TYPE_TEXT) return@forEach
+            if (g.type != C.TRACK_TYPE_VIDEO) return@forEach
             for (i in 0 until g.length) {
                 val h = g.getTrackFormat(i).height
                 if (h > 0) heights.add(h)
