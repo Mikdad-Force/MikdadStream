@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -51,12 +53,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -99,9 +103,26 @@ fun HomeScreen(
     val history by viewModel.continueWatching.collectAsState()
     val s = LocalStrings.current
     val gridState = rememberLazyGridState()
-    val heroes = if (state.loading || state.error != null) emptyList()
+    // Jangan sembunyikan hero hanya karena loading kategori (dulu memicu
+    // lompatan layout). Hero hilang hanya bila memang belum ada item.
+    val heroes = if (state.items.isEmpty()) emptyList()
     else state.items.filter { !it.isNews }.ifEmpty { state.items }.take(6)
     val rest = state.items.filter { item -> heroes.none { it === item } }
+
+    // Animasi perpindahan kategori: konten baru muncul dengan fade + geser
+    // tipis. Nilai dibaca di graphicsLayer (draw/layer), bukan recomposition.
+    val categoryAlpha = remember { Animatable(1f) }
+    val categoryShift = remember { Animatable(0f) }
+    LaunchedEffect(state.activeCategory?.id, state.items.firstOrNull()?.safeId) {
+        if (state.items.isEmpty()) return@LaunchedEffect
+        categoryAlpha.snapTo(0.45f)
+        categoryShift.snapTo(12f)
+        launch { categoryAlpha.animateTo(1f, tween(280)) }
+        categoryShift.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 520f))
+    }
+    LaunchedEffect(state.activeCategory?.id) {
+        runCatching { gridState.animateScrollToItem(0) }
+    }
 
     LaunchedEffect(gridState, state.hasMore, state.loading, state.loadingMore) {
         snapshotFlow {
@@ -130,7 +151,13 @@ fun HomeScreen(
             ),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
-            modifier = Modifier.fillMaxSize().statusBarsPadding(),
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .graphicsLayer {
+                    alpha = categoryAlpha.value
+                    translationY = categoryShift.value
+                },
         ) {
             // ---- Greeting header ----
             item(span = { GridItemSpan(maxLineSpan) }, key = "greeting") {
@@ -218,6 +245,14 @@ fun HomeScreen(
                 }
 
                 else -> {
+                    if (state.loading) {
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "categoryLoading") {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().height(2.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                     if (rest.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }, key = "recommended") {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -644,7 +679,6 @@ private fun ContinueCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .softShadow(8.dp, RoundedCornerShape(10.dp))
                 .clip(RoundedCornerShape(10.dp)),
         ) {
             PosterImage(url = entry.cover, modifier = Modifier.fillMaxSize())

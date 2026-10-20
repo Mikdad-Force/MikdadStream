@@ -311,15 +311,12 @@ fun AppNavGraph(isTv: Boolean = false) {
             modifier = Modifier.fillMaxSize(),
             // Transisi halaman halus: konten baru masuk dengan fade + geser tipis,
             // halaman lama memudar (pop arah sebaliknya).
-            enterTransition = {
-                // Mulai dari alpha tinggi: tidak ada jeda layar gelap/hitam
-                // saat halaman baru masih dimuat.
-                fadeIn(tween(180), initialAlpha = 0.7f) +
-                    slideInHorizontally(tween(260)) { it / 16 }
-            },
-            exitTransition = { slideOutHorizontally(tween(220)) { -it / 20 } },
-            popEnterTransition = { fadeIn(tween(160), initialAlpha = 0.7f) },
-            popExitTransition = { slideOutHorizontally(tween(220)) { it / 20 } },
+            // Fade saja (tanpa geser layar penuh) agar transisi ringan dan
+            // tidak patah-patah di perangkat kelas menengah.
+            enterTransition = { fadeIn(tween(190), initialAlpha = 0.8f) },
+            exitTransition = { androidx.compose.animation.ExitTransition.None },
+            popEnterTransition = { fadeIn(tween(170), initialAlpha = 0.8f) },
+            popExitTransition = { androidx.compose.animation.ExitTransition.None },
         ) {
             composable(Routes.HOME) {
                 val vm: HomeViewModel = sharedViewModel { HomeViewModel(AppGraph.repository, AppGraph.prefs) }

@@ -22,19 +22,16 @@ fun Modifier.pressScale(onClick: () -> Unit): Modifier {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.955f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
+        targetValue = if (pressed) 0.96f else 1f,
+        // Spring ringkas: respons cepat, tanpa animasi bayangan per-frame
+        // (shadowElevation dinamis membuat scroll/tekan terasa patah-patah).
+        animationSpec = spring(dampingRatio = 0.85f, stiffness = 900f),
         label = "pressScale",
     )
     return this
         .graphicsLayer {
             scaleX = scale
             scaleY = scale
-            // bayangan dinamis mengikuti tekanan
-            shadowElevation = if (pressed) 2.dp.toPx() else 10.dp.toPx()
         }
         .clickable(
             interactionSource = interactionSource,

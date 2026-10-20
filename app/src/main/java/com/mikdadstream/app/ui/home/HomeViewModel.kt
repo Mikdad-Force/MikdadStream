@@ -72,7 +72,14 @@ class HomeViewModel(
     fun selectCategory(category: CategoryBundle) {
         if (category.id == _state.value.activeCategory?.id) return
         val token = ++requestToken
-        _state.value = _state.value.copy(loading = true, items = emptyList(), error = null)
+        // Optimistis: chip langsung aktif & daftar lama tetap tampil (dengan
+        // indikator loading tipis) supaya perpindahan kategori tidak "patah"
+        // menjadi layar skeleton/kosong.
+        _state.value = _state.value.copy(
+            loading = true,
+            activeCategory = category,
+            error = null,
+        )
         viewModelScope.launch { loadCategory(prefs.activeSource.value, category, token) }
     }
 

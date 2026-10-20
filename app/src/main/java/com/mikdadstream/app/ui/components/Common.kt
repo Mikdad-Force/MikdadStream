@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -53,23 +54,26 @@ fun ShimmerBox(
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(10.dp),
 ) {
     val transition = rememberInfiniteTransition(label = "shimmer")
-    val alpha by transition.animateFloat(
+    val alpha = transition.animateFloat(
         initialValue = 0.35f,
-        targetValue = 0.85f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        targetValue = 0.8f,
+        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
         label = "shimmerAlpha",
     )
+    val base = MaterialTheme.colorScheme.surfaceVariant
+    // Nilai animasi dibaca di fase DRAW (bukan recomposition), jadi puluhan
+    // placeholder tidak memicu recompose tiap frame -> animasi lebih mulus.
     Box(
         modifier = modifier
             .clip(shape)
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha),
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = alpha * 0.6f),
+            .drawBehind {
+                val a = alpha.value
+                drawRect(
+                    Brush.linearGradient(
+                        listOf(base.copy(alpha = a), base.copy(alpha = a * 0.55f)),
                     )
                 )
-            )
+            }
     )
 }
 
@@ -118,7 +122,6 @@ fun VideoCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .softShadow(8.dp, shape)
                 .clip(shape)
                 .border(
                     width = 1.dp,
