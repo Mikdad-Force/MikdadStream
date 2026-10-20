@@ -279,6 +279,7 @@ fun SearchScreen(
                         onClick = { onOpenItem(item) },
                         badge = item.source,
                         badgeColor = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.animateItem(),
                     )
                 }
                 if (state.loadingMore) {

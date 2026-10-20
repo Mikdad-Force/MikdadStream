@@ -166,7 +166,7 @@ fun LibraryScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     items(watchlist, key = { it.key }) { entry ->
-                        Box {
+                        Box(modifier = Modifier.animateItem()) {
                             VideoCard(
                                 item = MediaItem(
                                     id = entry.contentId,
@@ -224,6 +224,7 @@ fun LibraryScreen(
                     items(history, key = { it.contentId }) { entry ->
                         HistoryRow(
                             entry = entry,
+                            modifier = Modifier.animateItem(),
                             onResume = { onOpenHistory(entry) },
                             onRemove = { viewModel.removeHistory(entry.contentId) },
                         )
@@ -283,9 +284,10 @@ private fun HistoryRow(
     entry: HistoryEntity,
     onResume: () -> Unit,
     onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onResume),
         verticalAlignment = Alignment.CenterVertically,

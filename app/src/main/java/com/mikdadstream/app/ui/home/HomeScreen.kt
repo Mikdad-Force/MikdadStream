@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -27,6 +30,9 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -157,7 +163,11 @@ fun HomeScreen(
                         SectionHeader(s.continueWatching, actionLabel = s.seeAll, onAction = onSeeHistory)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                             items(history.take(8), key = { it.contentId }) { entry ->
-                                ContinueCard(entry = entry, onClick = { onContinue(entry) })
+                                ContinueCard(
+                                    entry = entry,
+                                    onClick = { onContinue(entry) },
+                                    modifier = Modifier.animateItem(),
+                                )
                             }
                         }
                     }
@@ -175,6 +185,7 @@ fun HomeScreen(
                                     label = category.name,
                                     selected = category.id == state.activeCategory?.id,
                                     onClick = { viewModel.selectCategory(category) },
+                                    modifier = Modifier.animateItem(),
                                 )
                             }
                         }
@@ -213,7 +224,7 @@ fun HomeScreen(
                                 SectionHeader("Rekomendasi untukmu", actionLabel = "Lihat Semua")
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                     items(rest.take(8), key = { "rec" + it.safeId + it.hashCode() }) { item ->
-                                        Box(modifier = Modifier.width(120.dp)) {
+                                        Box(modifier = Modifier.width(120.dp).animateItem()) {
                                             VideoCard(
                                                 item = item,
                                                 onClick = { onOpenItem(item, viewModel.activeSourceId()) },
@@ -234,6 +245,7 @@ fun HomeScreen(
                         VideoCard(
                             item = item,
                             onClick = { onOpenItem(item, viewModel.activeSourceId()) },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -569,6 +581,17 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
 @Composable
 private fun HeroCarousel(items: List<MediaItem>, onOpen: (MediaItem) -> Unit) {
     val pagerState = rememberPagerState(pageCount = { items.size })
+    // Sorotan bergeser otomatis perlahan; berhenti sesaat bila pengguna
+    // sedang menggeser sendiri.
+    LaunchedEffect(items.size) {
+        if (items.size <= 1) return@LaunchedEffect
+        while (true) {
+            delay(6000)
+            if (!pagerState.isScrollInProgress) {
+                pagerState.animateScrollToPage((pagerState.currentPage + 1) % items.size)
+            }
+        }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         HorizontalPager(
             state = pagerState,
@@ -584,15 +607,23 @@ private fun HeroCarousel(items: List<MediaItem>, onOpen: (MediaItem) -> Unit) {
         ) {
             repeat(items.size) { index ->
                 val selected = pagerState.currentPage == index
+                val width by animateDpAsState(
+                    targetValue = if (selected) 22.dp else 6.dp,
+                    animationSpec = spring(dampingRatio = 0.7f, stiffness = 500f),
+                    label = "heroDotWidth",
+                )
+                val dotColor by animateColorAsState(
+                    targetValue = if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outline,
+                    animationSpec = androidx.compose.animation.core.tween(250),
+                    label = "heroDotColor",
+                )
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 3.dp)
-                        .size(width = if (selected) 22.dp else 6.dp, height = 6.dp)
+                        .size(width = width, height = 6.dp)
                         .clip(RoundedCornerShape(999.dp))
-                        .background(
-                            if (selected) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outline
-                        )
+                        .background(dotColor)
                 )
             }
         }
@@ -600,9 +631,13 @@ private fun HeroCarousel(items: List<MediaItem>, onOpen: (MediaItem) -> Unit) {
 }
 
 @Composable
-private fun ContinueCard(entry: HistoryEntity, onClick: () -> Unit) {
+private fun ContinueCard(
+    entry: HistoryEntity,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
-        modifier = Modifier.width(120.dp).pressScale(onClick),
+        modifier = modifier.width(120.dp).pressScale(onClick),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(

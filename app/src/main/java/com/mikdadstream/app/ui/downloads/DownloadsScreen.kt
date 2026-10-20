@@ -147,6 +147,7 @@ fun DownloadsScreen(
                 items(items, key = { it.key }) { dl ->
                     DownloadRow(
                         item = dl,
+                        modifier = Modifier.animateItem(),
                         onPlay = { onPlay(dl) },
                         onDelete = { viewModel.remove(dl) },
                     )
@@ -212,11 +213,12 @@ private fun DownloadRow(
     item: DownloadEntity,
     onPlay: () -> Unit,
     onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val s = LocalStrings.current
     val done = item.status == DownloadManager.STATUS_DONE && !item.filePath.isNullOrBlank()
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surface)

@@ -422,6 +422,7 @@ private fun DetailContent(
 
                 items(seasonEpisodes, key = { it.safeId }) { episode ->
                     EpisodeRow(
+                        modifier = Modifier.animateItem(),
                         episode = episode,
                         active = episode.safeId == state.history?.episodeId,
                         onClick = {
@@ -727,9 +728,10 @@ private fun EpisodeRow(
     active: Boolean,
     onClick: () -> Unit,
     onDownload: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 5.dp)
             .clip(RoundedCornerShape(10.dp))

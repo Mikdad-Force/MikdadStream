@@ -1,5 +1,14 @@
 package com.mikdadstream.app.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,46 +74,49 @@ fun FloatingBottomNavBar(
     ) {
         items.forEachIndexed { index, item ->
             val selected = index == safeIndex
-            if (selected) {
-                Row(
-                    modifier = Modifier
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(resolvedActive)
-                        .clickable { onSelect(index) }
-                        .padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+            val pillColor by animateColorAsState(
+                targetValue = if (selected) resolvedActive else Color.Transparent,
+                animationSpec = tween(240),
+                label = "navPill",
+            )
+            val contentColor by animateColorAsState(
+                targetValue = if (selected) activeContentColor else mutedColor,
+                animationSpec = tween(240),
+                label = "navContent",
+            )
+            val horizontalPadding by animateDpAsState(
+                targetValue = if (selected) 20.dp else 12.dp,
+                animationSpec = spring(dampingRatio = 0.75f, stiffness = 600f),
+                label = "navPadding",
+            )
+            Row(
+                modifier = Modifier
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(pillColor)
+                    .clickable { onSelect(index) }
+                    .padding(horizontal = horizontalPadding),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = if (selected) item.selectedIcon ?: item.icon else item.icon,
+                    contentDescription = item.label,
+                    tint = contentColor,
+                    modifier = Modifier.size(24.dp),
+                )
+                AnimatedVisibility(
+                    visible = selected,
+                    enter = fadeIn(tween(180)) + expandHorizontally(tween(220)),
+                    exit = fadeOut(tween(120)) + shrinkHorizontally(tween(160)),
                 ) {
-                    Icon(
-                        imageVector = item.selectedIcon ?: item.icon,
-                        contentDescription = item.label,
-                        tint = activeContentColor,
-                        modifier = Modifier.size(24.dp),
-                    )
                     Text(
                         text = item.label,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = activeContentColor,
+                        color = contentColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            } else {
-                Row(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .clickable { onSelect(index) },
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = item.icon,
-                        contentDescription = item.label,
-                        tint = mutedColor,
-                        modifier = Modifier.size(24.dp),
                     )
                 }
             }

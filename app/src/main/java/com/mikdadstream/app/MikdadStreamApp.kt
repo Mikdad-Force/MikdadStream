@@ -82,7 +82,14 @@ object AppGraph {
     }
 }
 
-class MikdadStreamApp : Application() {
+class MikdadStreamApp : Application(), coil.ImageLoaderFactory {
+    /** Coil: fade-in halus saat poster selesai dimuat (tidak "pop" mendadak). */
+    override fun newImageLoader(): coil.ImageLoader =
+        coil.ImageLoader.Builder(this)
+            .crossfade(250)
+            .respectCacheHeaders(false)
+            .build()
+
     override fun onCreate() {
         super.onCreate()
         AppGraph.init(this)

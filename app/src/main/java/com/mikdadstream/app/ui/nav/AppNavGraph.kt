@@ -1,6 +1,10 @@
 package com.mikdadstream.app.ui.nav
 
 import android.net.Uri
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -305,6 +309,16 @@ fun AppNavGraph(isTv: Boolean = false) {
             navController = navController,
             startDestination = Routes.HOME,
             modifier = Modifier.fillMaxSize(),
+            // Transisi halaman halus: konten baru masuk dengan fade + geser tipis,
+            // halaman lama memudar (pop arah sebaliknya).
+            enterTransition = {
+                fadeIn(tween(220)) + slideInHorizontally(tween(280)) { it / 14 }
+            },
+            exitTransition = { fadeOut(tween(160)) },
+            popEnterTransition = { fadeIn(tween(200)) },
+            popExitTransition = {
+                fadeOut(tween(160)) + slideOutHorizontally(tween(240)) { it / 14 }
+            },
         ) {
             composable(Routes.HOME) {
                 val vm: HomeViewModel = sharedViewModel { HomeViewModel(AppGraph.repository, AppGraph.prefs) }
