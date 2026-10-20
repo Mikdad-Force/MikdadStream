@@ -2,7 +2,10 @@ package com.mikdadstream.app.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mikdadstream.app.BuildConfig
 import com.mikdadstream.app.data.local.PrefsStore
+import com.mikdadstream.app.data.update.UpdateInfo
+import com.mikdadstream.app.data.update.UpdateState
 import com.mikdadstream.app.data.remote.AccountData
 import com.mikdadstream.app.data.remote.ApiError
 import com.mikdadstream.app.data.repository.StreamRepository
@@ -67,6 +70,27 @@ class SettingsViewModel(
 
     private val _healthProgress = MutableStateFlow("")
     val healthProgress: StateFlow<String> = _healthProgress
+
+    // ---- Cek pembaruan aplikasi ----
+    private val updater = com.mikdadstream.app.AppGraph.updater
+
+    private val _updateChecking = MutableStateFlow(false)
+    val updateChecking: StateFlow<Boolean> = _updateChecking
+
+    private val _updateInfo = MutableStateFlow<UpdateInfo?>(null)
+    val updateInfo: StateFlow<UpdateInfo?> = _updateInfo
+
+    private val _updateMessage = MutableStateFlow<String?>(null)
+    val updateMessage: StateFlow<String?> = _updateMessage
+
+    val updateDownloading: StateFlow<Boolean> = updater.downloading
+    val updateProgress: StateFlow<Float> = updater.progress
+
+    private val _updateInstalling = MutableStateFlow(false)
+    val updateInstalling: StateFlow<Boolean> = _updateInstalling
+
+    private val _updateFailed = MutableStateFlow(false)
+    val updateFailed: StateFlow<Boolean> = _updateFailed
 
     init {
         refreshAccount()
@@ -266,6 +290,56 @@ class SettingsViewModel(
                 stages = stages,
                 latencyMs = System.currentTimeMillis() - start,
             )
+        }
+    }
+
+    /** Cek manual dari halaman Pengaturan. */
+    fun checkUpdate() {
+        if (_updateChecking.value) return
+        viewModelScope.launch {
+            _updateChecking.value = true
+            _updateMessage.value = null
+            _updateFailed.value = false
+            val info = runCatching { updater.check() }.getOrNull()
+            if (info != null) {
+                _updateInfo.value = info
+            } else {
+                _updateMessage.value = when (val st = updater.state.value) {
+                    is UpdateState.UpToDate ->
+                        "Aplikasi sudah versi terbaru (v${BuildConfig.VERSION_NAME})"
+                    is UpdateState.Failed -> "Gagal memeriksa pembaruan: ${st.message}"
+                    else -> "Belum ada informasi pembaruan."
+                }
+            }
+            _updateChecking.value = false
+        }
+    }
+
+    fun dismissUpdate() {
+        if (updater.downloading.value) return
+        _updateInfo.value = null
+        _updateMessage.value = null
+        _updateFailed.value = false
+    }
+
+    fun downloadAndInstallUpdate() {
+        val info = _updateInfo.value ?: return
+        viewModelScope.launch {
+            _updateFailed.value = false
+            val file = updater.download(info)
+            if (file == null) {
+                _updateFailed.value = true
+                return@launch
+            }
+            if (!updater.canInstall()) {
+                updater.openInstallPermission()
+                _updateMessage.value =
+                    "Izinkan pemasangan dari aplikasi ini, lalu tekan Perbarui lagi."
+                return@launch
+            }
+            _updateInstalling.value = true
+            runCatching { updater.install(file) }.onFailure { _updateFailed.value = true }
+            _updateInstalling.value = false
         }
     }
 }

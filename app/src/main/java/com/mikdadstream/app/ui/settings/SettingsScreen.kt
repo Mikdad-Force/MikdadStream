@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -113,6 +114,13 @@ fun SettingsScreen(
     val healthResults by viewModel.healthResults.collectAsState()
     val healthProgress by viewModel.healthProgress.collectAsState()
     val language by com.mikdadstream.app.AppGraph.prefs.language.collectAsState()
+    val updateChecking by viewModel.updateChecking.collectAsState()
+    val updateInfo by viewModel.updateInfo.collectAsState()
+    val updateMessage by viewModel.updateMessage.collectAsState()
+    val updateDownloading by viewModel.updateDownloading.collectAsState()
+    val updateProgress by viewModel.updateProgress.collectAsState()
+    val updateInstalling by viewModel.updateInstalling.collectAsState()
+    val updateFailed by viewModel.updateFailed.collectAsState()
     val s = com.mikdadstream.app.ui.i18n.LocalStrings.current
 
     val languageLabel = when (language) {
@@ -588,6 +596,13 @@ fun SettingsScreen(
             icon = { Icon(Icons.Filled.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
         ) {
             InfoRow("Versi aplikasi", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            SettingsDivider()
+            UpdateCheckRow(
+                checking = updateChecking,
+                subtitle = updateMessage
+                    ?: "Periksa apakah ada versi baru di GitHub",
+                onClick = { viewModel.checkUpdate() },
+            )
         }
 
         SettingsSection(
@@ -614,6 +629,98 @@ fun SettingsScreen(
                 )
             }
         }
+    }
+
+    // ---------- Dialog pembaruan tersedia ----------
+    val info = updateInfo
+    if (info != null) {
+        val dialogFocus = remember { FocusRequester() }
+        TvRequestFocusOnShow(dialogFocus)
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissUpdate() },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(
+                    text = "Pembaruan Tersedia",
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = "Versi ${BuildConfig.VERSION_NAME} → ${info.version}",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (!info.notes.isNullOrBlank()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 220.dp)
+                                .verticalScroll(rememberScrollState()),
+                        ) {
+                            Text(
+                                text = info.notes.take(1200),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (updateDownloading) {
+                        LinearProgressIndicator(
+                            progress = { updateProgress },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "Mengunduh ${(updateProgress * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (updateFailed) {
+                        Text(
+                            text = "Unduhan gagal. Coba lagi.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (updateMessage != null) {
+                        Text(
+                            text = updateMessage.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.downloadAndInstallUpdate() },
+                    enabled = !updateDownloading && !updateInstalling,
+                ) {
+                    Text(
+                        when {
+                            updateInstalling -> "Memasang…"
+                            updateDownloading -> "Mengunduh…"
+                            else -> "Perbarui"
+                        },
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.dismissUpdate() },
+                    enabled = !updateDownloading && !updateInstalling,
+                ) { Text("Nanti", color = StreamTextMuted) }
+            },
+        )
     }
 
     // ---------- Dialog hasil cek kesehatan ----------
@@ -968,6 +1075,58 @@ private fun DataAction(icon: ImageVector, label: String, onClick: () -> Unit) {
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp),
         )
+    }
+}
+
+@Composable
+private fun UpdateCheckRow(
+    checking: Boolean,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !checking, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.SystemUpdate,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp),
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = "Cek Update Aplikasi",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (checking) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            Icon(
+                Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
 
