@@ -1183,6 +1183,58 @@ object LocalMovieBoxClient {
         return out
     }
 
+    /**
+     * resourceId KHUSUS episode (bukan id paket/series). Caption per episode
+     * hanya tersedia di resource id ini; memakai id paket membuat subtitle EP1
+     * dipakai untuk semua episode (tidak sinkron).
+     */
+    private suspend fun episodeResourceId(
+        subjectId: String,
+        token: String,
+        se: Int,
+        ep: Int,
+    ): String? {
+        val base = activeHostOrFirst()
+        suspend fun fetchPage(page: Int): Pair<List<JSONObject>, Boolean> {
+            val root = runCatching {
+                callJson(
+                    base,
+                    "/wefeed-mobile-bff/subject-api/resource?subjectId=$subjectId" +
+                        "&se=$se&ep=$ep&page=$page",
+                    null,
+                    token,
+                    false,
+                )
+            }.getOrNull() ?: return emptyList<JSONObject>() to false
+            val data = root.optJSONObject("data") ?: return emptyList<JSONObject>() to false
+            val arr = data.optJSONArray("list") ?: return emptyList<JSONObject>() to false
+            val items = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+            val hasMore = data.optJSONObject("pager")?.optBoolean("hasMore", false) ?: false
+            return items to hasMore
+        }
+        fun pick(items: List<JSONObject>): String? = items.firstOrNull { it ->
+            it.optInt("se", se) == se && it.optInt("ep", ep) == ep &&
+                it.optString("resourceId").isNotBlank()
+        }?.optString("resourceId")?.takeIf { it.isNotBlank() }
+
+        // Halaman yang paling mungkin lebih dulu (10 item/halaman; EP1-9 di hal.1).
+        val guessed = if (ep <= 9) 1 else (ep / 10 + 1)
+        runCatching { fetchPage(guessed) }.getOrNull()?.let { (items, _) ->
+            pick(items)?.let { return it }
+        }
+        var page = 1
+        while (page <= 40) {
+            if (page != guessed) {
+                val (items, hasMore) = runCatching { fetchPage(page) }
+                    .getOrDefault(emptyList<JSONObject>() to false)
+                pick(items)?.let { return it }
+                if (!hasMore && page > 1) break
+            }
+            page++
+        }
+        return null
+    }
+
     // Subtitle eksternal: /subject-api/get-ext-captions (pola APK: subjectId + resourceId [+ se/ep] -> data.extCaptions).
     // Fallback: bila caption kosong, cari versi judul sama (tipe sama) yang punya caption Indonesia.
     suspend fun fetchSubtitles(subjectId: String, se: Int = 1, ep: Int = 1): List<SubtitleTrack> =
@@ -1192,18 +1244,22 @@ object LocalMovieBoxClient {
                 val base = activeHostOrFirst()
                 val detailRoot = runCatching { fetchSubject(base, subjectId, token) }.getOrNull()
                 val detailData = detailRoot?.optJSONObject("data")
-                // rid WAJIB per-episode: resourceDetectors index = episode-1.
-                // Sebelumnya selalu index 0 -> subtitle EP1 dipakai di EP2+ (tidak sinkron).
+                // rid WAJIB milik episode yang diputar. resourceDetectors adalah
+                // id PAKET (subtitle EP1 untuk semua episode) -> tidak sinkron.
                 val rdArr = detailData?.optJSONArray("resourceDetectors")
-                val lastIdx = (rdArr?.length() ?: 1).coerceAtLeast(1) - 1
-                val rd = rdArr?.optJSONObject((ep - 1).coerceIn(0, lastIdx)) ?: rdArr?.optJSONObject(0)
-                val rid = rd?.optString("resourceId")?.takeIf { it.isNotBlank() }
-                    ?: rdArr?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+                val packRid = rdArr?.optJSONObject(0)?.optString("resourceId")
+                    ?.takeIf { it.isNotBlank() }
+                val rid = episodeResourceId(subjectId, token, se, ep)
+                    ?: packRid
 
                 // HANYA sumber langsung (subjek + resourceId milik video ini).
                 val caps = extCaptionsFor(subjectId, rid, token, se, ep)
                 val out = captionsToTracks(caps)
-                Log.i(TAG, "fetchSubtitles caps=${caps?.length() ?: 0} out=${out.size} subj=$subjectId se=$se ep=$ep direct")
+                Log.i(
+                    TAG,
+                    "fetchSubtitles caps=${caps?.length() ?: 0} out=${out.size} subj=$subjectId " +
+                        "se=$se ep=$ep rid=$rid packRid=$packRid direct",
+                )
                 // Bila versi yang diputar TIDAK punya caption Indonesia (mis. versi
                 // dub US/UK/India), ambil caption dari versi ASLI film yang sama
                 // (dubs.original) — video film sama, jadi tetap sinkron.
@@ -1216,7 +1272,8 @@ object LocalMovieBoxClient {
                             ?.optString("subjectId")?.takeIf { it.isNotBlank() }
                     }
                     if (!origId.isNullOrBlank() && origId != subjectId) {
-                        val origRid = subjectDetailDataForRid(origId, ep) ?: rid
+                        val origRid = episodeResourceId(origId, token, se, ep)
+                            ?: subjectDetailDataForRid(origId, ep) ?: rid
                         val origCaps = extCaptionsFor(origId, origRid, token, se, ep)
                         val origOut = captionsToTracks(origCaps)
                         val origIndo = origOut.any {
