@@ -941,8 +941,12 @@ object LocalMovieBoxClient {
                 } else {
                     val pathLower = url.substringBefore('?').lowercase()
                     val ext = pathLower.substringAfterLast('.', "")
-                    // Format yang sudah didukung ExoPlayer langsung.
-                    val directlySupported = ext in setOf("vtt", "ttml", "dfxp", "ass", "ssa")
+                    // Hanya format kaya (TTML/SSA) yang dibiarkan remote. SRT dan
+                    // VTT SELALU diunduh + divalidasi + dijadikan VTT lokal:
+                    // ExoPlayer TIDAK punya parser SubRip, dan URL .vtt kadang
+                    // isinya SRT/HTML. Tanpa ini track gagal terdaftar sehingga
+                    // bahasa tidak muncul di menu Subtitle.
+                    val directlySupported = ext in setOf("ttml", "dfxp", "ass", "ssa")
                     if (directlySupported) {
                         t
                     } else {
@@ -950,8 +954,23 @@ object LocalMovieBoxClient {
                         val key = java.security.MessageDigest.getInstance("MD5")
                             .digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
                             .take(24)
-                        val f = java.io.File(dir, "sb2_$key.vtt")
-                        val ok = if (f.exists() && f.length() > 0) true else run {
+                        val f = java.io.File(dir, "sb3_$key.vtt")
+                        // Cache-hit hanya dipakai bila isinya VTT valid (header +
+                        // timestamp). Cache lama/rusak (mis. HTML error page dari
+                        // v2.1.24) dihapus dan diunduh ulang.
+                        val cachedOk = if (f.exists() && f.length() > 0) {
+                            val cached = runCatching { f.readText() }.getOrDefault("")
+                            val c = cached.removePrefix("\uFEFF").trimStart()
+                            if (c.startsWith("WEBVTT", true) && c.contains("-->")) {
+                                true
+                            } else {
+                                f.delete()
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                        val ok = if (cachedOk) true else run {
                             try {
                                 val resp = http.newCall(
                                     okhttp3.Request.Builder().url(url).header("User-Agent", "ExoPlayerLib/2.19.1").build()
@@ -967,9 +986,13 @@ object LocalMovieBoxClient {
                                         // "00:00:01,000". Isi lain (HTML/JSON/galat)
                                         // JANGAN disimpan sebagai subtitle.
                                         val vtt = when {
-                                            headTxt.startsWith("WEBVTT", true) -> clean
+                                            headTxt.startsWith("WEBVTT", true) -> normalizeVttHours(clean)
                                             Regex("(\\d{1,2}):(\\d{2}):(\\d{2}),(\\d{3})")
-                                                .containsMatchIn(clean) -> srtToVtt(body)
+                                                .containsMatchIn(clean) -> srtToVtt(clean)
+                                            clean.contains("-->") &&
+                                                Regex("(\\d{1,2}):(\\d{2}):(\\d{2})\\.(\\d{3})")
+                                                    .containsMatchIn(clean) ->
+                                                normalizeVttHours("WEBVTT\n\n" + clean.trimStart())
                                             else -> null
                                         }
                                         if (vtt != null) {
@@ -993,7 +1016,7 @@ object LocalMovieBoxClient {
                                 false
                             }
                         }
-                        Log.i(TAG, "prepareSubtitle ${t.lang}/${t.label} ext=$ext converted=$ok -> ${if (ok) "local vtt" else "remote"}")
+                        Log.i(TAG, "prepareSubtitle ${t.lang}/${t.label} ext=$ext cached=$cachedOk converted=$ok -> ${if (ok) "local vtt" else "REMOTE (track bisa tidak terdaftar)"}")
                         if (ok) t.copy(url = android.net.Uri.fromFile(f).toString()) else t
                     }
                 }
@@ -1005,8 +1028,25 @@ object LocalMovieBoxClient {
         val clean = srt.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
         val sb = StringBuilder("WEBVTT\n\n")
         val ts = Regex("(\\d{1,2}):(\\d{2}):(\\d{2}),(\\d{3})")
-        sb.append(ts.replace(clean) { m -> "${m.groupValues[1]}:${m.groupValues[2]}:${m.groupValues[3]}.${m.groupValues[4]}" })
+        sb.append(ts.replace(clean) { m ->
+            // WebVTT mewajibkan jam 2 digit; SRT sering memakai "0:00:01,000".
+            "%02d:%s:%s.%s".format(
+                m.groupValues[1].toInt(),
+                m.groupValues[2], m.groupValues[3], m.groupValues[4],
+            )
+        })
         return sb.toString()
+    }
+
+    /** Rapikan jam pada timestamp WebVTT menjadi 2 digit. */
+    private fun normalizeVttHours(vtt: String): String {
+        val ts = Regex("(\\d{1,2}):(\\d{2}):(\\d{2})\\.(\\d{3})")
+        return ts.replace(vtt) { m ->
+            "%02d:%s:%s.%s".format(
+                m.groupValues[1].toInt(),
+                m.groupValues[2], m.groupValues[3], m.groupValues[4],
+            )
+        }
     }
 
     fun firstBySubject(subjectId: String): JSONObject? {

@@ -116,7 +116,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private data class SubOption(val group: TrackGroup, val index: Int, val key: String, val label: String)
+private data class SubOption(val group: TrackGroup?, val index: Int, val key: String, val label: String)
 
 private data class HudInfo(val icon: ImageVector?, val text: String)
 
@@ -611,6 +611,16 @@ fun PlayerScreen(
                 if (g.isTrackSelected(i)) selectedKey = key
             }
         }
+        // Fallback: tampilkan juga bahasa yang ADA di API tetapi belum terdaftar
+        // di pemutar (mis. track gagal diparse). Menu jadi selalu sinkron dengan
+        // daftar bahasa video; memilihnya memicu muat ulang track.
+        apiSubtitles.forEach { s ->
+            val code = normalizeLangCode(s.lang ?: s.label)
+            if (code.isBlank() || code in seenCodes) return@forEach
+            seenCodes.add(code)
+            val label = subtitleLangName(code) ?: s.label?.takeIf { it.isNotBlank() } ?: code
+            opts.add(SubOption(null, -1, "api:$code", label))
+        }
         subOptions = opts.sortedBy { if (it.label == "Indonesia") 0 else 1 }
         selectedSubKey = selectedKey
         // Pilih Indonesia eksplisit bila belum ada yang terpilih.
@@ -620,11 +630,41 @@ fun PlayerScreen(
     fun selectSubtitle(opt: SubOption?) {
         // Pilihan manual pengguna: jangan ditimpa auto-select Indonesia.
         subtitleUserChosen = true
+        val group = opt?.group
+        if (opt != null && group == null) {
+            // Bahasa ada di API tapi belum terdaftar di pemutar. Coba cari group
+            // yang cocok berdasarkan kode bahasa, kalau tidak ada muat ulang.
+            val code = opt.key.removePrefix("api:")
+            var applied = false
+            player.currentTracks.groups.forEach { g ->
+                if (applied || g.type != C.TRACK_TYPE_TEXT) return@forEach
+                for (i in 0 until g.length) {
+                    if (normalizeLangCode(g.getTrackFormat(i).language) == code) {
+                        val bp = player.trackSelectionParameters.buildUpon()
+                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                            .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i))
+                        player.trackSelectionParameters = bp.build()
+                        selectedSubKey = "${g.mediaTrackGroup.id}#$i"
+                        applied = true
+                        return@forEach
+                    }
+                }
+            }
+            if (!applied) {
+                pendingSeek.longValue = player.currentPosition
+                subOffsetTrigger++
+                showHud(Icons.Filled.Subtitles, "Memuat subtitle ${opt.label}…")
+            } else {
+                showHud(Icons.Filled.Subtitles, "Subtitle ${opt.label}")
+            }
+            return
+        }
         val bp = player.trackSelectionParameters.buildUpon()
         bp.clearOverridesOfType(C.TRACK_TYPE_TEXT)
-        if (opt != null) {
+        if (opt != null && group != null) {
             bp.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                .setOverrideForType(TrackSelectionOverride(opt.group, opt.index))
+                .setOverrideForType(TrackSelectionOverride(group, opt.index))
         } else {
             bp.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         }
