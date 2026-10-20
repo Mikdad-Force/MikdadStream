@@ -635,8 +635,32 @@ fun PlayerScreen(
         }
         subOptions = opts.sortedBy { if (it.label == "Indonesia") 0 else 1 }
         selectedSubKey = selectedKey
-        // Pilih Indonesia eksplisit bila belum ada yang terpilih.
-        if (selectedKey == null) applyIndonesianSubtitle()
+        // ---- Auto pakai subtitle Indonesia ----
+        // Track Indonesia bisa muncul lebih lambat daripada track lain. Jangan
+        // biarkan English/Melayu yang sudah terpilih otomatis tetap dipakai.
+        if (!subtitleUserChosen) {
+            val hasIndo = opts.any { it.label == "Indonesia" }
+            val indoSelected = player.currentTracks.groups.any { g ->
+                g.type == C.TRACK_TYPE_TEXT && (0 until g.length).any { i ->
+                    g.isTrackSelected(i) && (
+                        normalizeLangCode(g.getTrackFormat(i).language) == "id" ||
+                            subtitleLangName(g.getTrackFormat(i).label) == "Indonesia"
+                        )
+                }
+            }
+            if (hasIndo && !indoSelected) {
+                applyIndonesianSubtitle(force = true)
+            } else if (!hasIndo && opts.isNotEmpty() &&
+                !player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+            ) {
+                // Tidak ada Indonesia: jangan otomatis menampilkan bahasa lain.
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build()
+            }
+        } else if (selectedKey == null) {
+            applyIndonesianSubtitle()
+        }
     }
 
     fun selectSubtitle(opt: SubOption?) {
