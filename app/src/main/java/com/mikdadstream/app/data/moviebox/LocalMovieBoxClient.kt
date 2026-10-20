@@ -874,18 +874,38 @@ object LocalMovieBoxClient {
         categoryCache[cat]?.let { (t, list) ->
             if (System.currentTimeMillis() - t < 300_000 && list.isNotEmpty()) return@withContext list
         }
-        val subjects = catalogSubjects()
         val token = boot() ?: return@withContext emptyList()
+        // TRENDING: cukup daftar trending (8 item), jangan seluruh katalog —
+        // filter subtitle ke ratusan judul membuat kategori lama kosong/timeout.
+        if (cat == "trending") {
+            val raw = extractList(trendingV2())
+            val filtered = runCatching { filterIndoOnly(raw, token) }.getOrDefault(emptyList())
+            // Jangan pernah kosong: bila tak ada yang lolos filter subtitle,
+            // tetap tampilkan trending (tanpa judul Hindi).
+            val use = filtered.ifEmpty {
+                raw.filterNot {
+                    isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
+                }
+            }
+            val out = ArrayList<MediaItem>()
+            val seen = HashSet<String>()
+            for (s in use) {
+                val m = mapSubjectToMediaItem(s) ?: continue
+                if (seen.add(m.id ?: "")) out.add(m)
+                if (out.size >= 48) break
+            }
+            Log.i(TAG, "categoryItems trending raw=${raw.size} filtered=${filtered.size} out=${out.size}")
+            categoryCache[cat] = System.currentTimeMillis() to out
+            return@withContext out
+        }
+        val subjects = catalogSubjects()
         val picked: ArrayList<JSONObject>
         if (cat == "indonesia" || cat == "indodrama") {
             // Indonesia = film asli buatan Indonesia; Indo Drama = serialnya saja.
             val indo = indonesiaSubjects(subjects, token)
             picked = ArrayList(if (cat == "indodrama") indo.filter { subjectTypeOf(it) == 2 } else indo)
         } else {
-            picked = ArrayList(
-                if (cat == "trending") subjects
-                else subjects.filter { categoryMatches(cat, it) }
-            )
+            picked = ArrayList(subjects.filter { categoryMatches(cat, it) })
             // enrichment: kategori wajib ada isinya -> tambah hasil pencarian yang lolos predikat
             if (cat != "trending" && picked.size < 24) {
                 val queries = categoryQueries[cat] ?: emptyList()
@@ -910,9 +930,19 @@ object LocalMovieBoxClient {
         // Indonesia & digabung per film (versi dub/Hindi hilang).
         val needsFilter = cat != "indonesia" && cat != "indodrama"
         val qualified = if (needsFilter) filterIndoOnly(picked, token) else picked
+        // Kategori tidak boleh kosong: jika filter subtitle Indonesia tidak
+        // menemukan apa pun, tampilkan hasil mentah (tanpa judul Hindi).
+        val usable = if (needsFilter && qualified.isEmpty() && picked.isNotEmpty()) {
+            Log.w(TAG, "categoryItems $cat filter kosong -> fallback tanpa filter")
+            picked.filterNot {
+                isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
+            }
+        } else {
+            qualified
+        }
         val out = ArrayList<MediaItem>()
         val seen = HashSet<String>()
-        for (s in qualified) {
+        for (s in usable) {
             val m = mapSubjectToMediaItem(s) ?: continue
             if (seen.add(m.id ?: "")) out.add(m)
             if (out.size >= 48) break
@@ -926,7 +956,9 @@ object LocalMovieBoxClient {
         withContext(Dispatchers.IO) {
             val token = boot() ?: return@withContext emptyList()
             val flat = extractList(trendingV2())
-            filterIndoOnly(flat, token).mapNotNull { mapSubjectToMediaItem(it) }
+            val filtered = runCatching { filterIndoOnly(flat, token) }.getOrDefault(emptyList())
+            val use = filtered.ifEmpty { flat }
+            use.mapNotNull { mapSubjectToMediaItem(it) }
         }
 
     suspend fun searchItems(keyword: String, page: Int = 1): List<MediaItem> =
