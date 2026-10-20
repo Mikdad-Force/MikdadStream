@@ -934,6 +934,18 @@ object LocalMovieBoxClient {
             val ctx = try { com.mikdadstream.app.AppGraph.appContext } catch (e: Throwable) { null }
             if (ctx == null) return@withContext tracks
             val dir = java.io.File(ctx.cacheDir, "subs").apply { mkdirs() }
+            // Bersihkan cache subtitle versi lama yang bisa berisi HTML error
+            // atau tertukar antar bahasa (penyebab "pilih Indo keluar Melayu").
+            runCatching {
+                dir.listFiles()?.forEach { f ->
+                    val n = f.name
+                    if (n.startsWith("sb2_") || n.startsWith("sb_") ||
+                        n.startsWith("sb4_") || n.startsWith("sbshift_")
+                    ) {
+                        f.delete()
+                    }
+                }
+            }
             tracks.map { t ->
                 val url = t.url
                 if (url.isNullOrBlank()) {
@@ -951,8 +963,11 @@ object LocalMovieBoxClient {
                         t
                     } else {
                         // SRT atau ekstensi tak dikenal: unduh, deteksi isi, jadikan VTT lokal.
+                        // Sertakan kode bahasa pada cache key agar file Indonesia
+                        // dan Melayu tidak pernah berbagi cache yang sama.
                         val key = java.security.MessageDigest.getInstance("MD5")
-                            .digest(url.toByteArray()).joinToString("") { "%02x".format(it) }
+                            .digest("${t.lang ?: ""}|$url".toByteArray())
+                            .joinToString("") { "%02x".format(it) }
                             .take(24)
                         val f = java.io.File(dir, "sb3_$key.vtt")
                         // Cache-hit hanya dipakai bila isinya VTT valid (header +

@@ -457,6 +457,10 @@ fun PlayerScreen(
     var subOptions by remember { mutableStateOf<List<SubOption>>(emptyList()) }
     var selectedSubKey by remember { mutableStateOf<String?>(null) }
     var subtitleUserChosen by remember { mutableStateOf(false) }
+    // Bahasa subtitle yang DIKUNCI pengguna. null = semua track dipasang,
+    // "" = nonaktif, kode lain = HANYA track itu yang dipasang (tidak mungkin
+    // jatuh ke bahasa lain seperti Melayu saat memilih Indonesia).
+    var forcedSubLang by remember { mutableStateOf<String?>(null) }
     // Sinkronisasi subtitle manual: offset waktu subtitle terhadap video.
     var subOffsetMs by remember { mutableLongStateOf(0L) }
     var subOffsetTrigger by remember { mutableIntStateOf(0) }
@@ -564,13 +568,15 @@ fun PlayerScreen(
      * Tidak bergantung pada event onTracksChanged / pilihan otomatis ExoPlayer,
      * sehingga tidak pernah jatuh ke Melayu/English.
      */
-    fun applyIndonesianSubtitle(force: Boolean = false): Boolean {
-        if (subtitleUserChosen && !force) return false
+    /** Pilih track teks dengan kode bahasa tertentu dari currentTracks. */
+    fun applyLanguage(code: String): Boolean {
         player.currentTracks.groups.forEach { g ->
             if (g.type != C.TRACK_TYPE_TEXT) return@forEach
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
-                if (normalizeLangCode(f.language) == "id" || subtitleLangName(f.label) == "Indonesia") {
+                val match = normalizeLangCode(f.language) == code ||
+                    (code == "id" && subtitleLangName(f.label) == "Indonesia")
+                if (match) {
                     val bp = player.trackSelectionParameters.buildUpon()
                         .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -579,13 +585,18 @@ fun PlayerScreen(
                     selectedSubKey = "${g.mediaTrackGroup.id}#$i"
                     Log.i(
                         "PlayerScreen",
-                        "Pilih subtitle Indonesia: lang=${f.language} label=${f.label} idx=$i",
+                        "Pilih subtitle $code: lang=${f.language} label=${f.label} idx=$i",
                     )
                     return true
                 }
             }
         }
         return false
+    }
+
+    fun applyIndonesianSubtitle(force: Boolean = false): Boolean {
+        if (subtitleUserChosen && !force) return false
+        return applyLanguage("id")
     }
 
     fun refreshSubOptions() {
@@ -630,46 +641,23 @@ fun PlayerScreen(
     fun selectSubtitle(opt: SubOption?) {
         // Pilihan manual pengguna: jangan ditimpa auto-select Indonesia.
         subtitleUserChosen = true
-        val group = opt?.group
-        if (opt != null && group == null) {
-            // Bahasa ada di API tapi belum terdaftar di pemutar. Coba cari group
-            // yang cocok berdasarkan kode bahasa, kalau tidak ada muat ulang.
-            val code = opt.key.removePrefix("api:")
-            var applied = false
-            player.currentTracks.groups.forEach { g ->
-                if (applied || g.type != C.TRACK_TYPE_TEXT) return@forEach
-                for (i in 0 until g.length) {
-                    if (normalizeLangCode(g.getTrackFormat(i).language) == code) {
-                        val bp = player.trackSelectionParameters.buildUpon()
-                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                            .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i))
-                        player.trackSelectionParameters = bp.build()
-                        selectedSubKey = "${g.mediaTrackGroup.id}#$i"
-                        applied = true
-                        return@forEach
-                    }
-                }
-            }
-            if (!applied) {
-                pendingSeek.longValue = player.currentPosition
-                subOffsetTrigger++
-                showHud(Icons.Filled.Subtitles, "Memuat subtitle ${opt.label}…")
-            } else {
-                showHud(Icons.Filled.Subtitles, "Subtitle ${opt.label}")
-            }
-            return
+        // Kunci hanya satu bahasa: pilih Indonesia -> media dimuat ulang dengan
+        // SubtitleConfiguration Indonesia SAJA, sehingga track Melayu/English
+        // tidak mungkin tampil menggantikannya.
+        val code = when (opt) {
+            null -> ""
+            else -> normalizeLangCode(
+                opt.key.removePrefix("api:").ifBlank { opt.label },
+            )
         }
-        val bp = player.trackSelectionParameters.buildUpon()
-        bp.clearOverridesOfType(C.TRACK_TYPE_TEXT)
-        if (opt != null && group != null) {
-            bp.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                .setOverrideForType(TrackSelectionOverride(group, opt.index))
-        } else {
-            bp.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-        }
-        player.trackSelectionParameters = bp.build()
-        selectedSubKey = opt?.key
+        if (code == forcedSubLang) return
+        forcedSubLang = code
+        pendingSeek.longValue = player.currentPosition
+        subOffsetTrigger++
+        showHud(
+            Icons.Filled.Subtitles,
+            if (code.isEmpty()) "Subtitle nonaktif" else "Subtitle ${opt?.label ?: code}",
+        )
     }
 
     fun refreshVideoQualities() {
@@ -890,8 +878,17 @@ fun PlayerScreen(
         }
         Log.i("PlayerScreen", "subtitle offset=${subOffsetMs}ms tracks=${sourceSubs.size}")
 
+        // Kunci bahasa: bila pengguna memilih bahasa tertentu, hanya track itu
+        // yang dipasang ke pemutar (tidak ada fallback ke bahasa lain).
+        val activeSubs = when (val f = forcedSubLang) {
+            null -> sourceSubs
+            "" -> emptyList()
+            else -> sourceSubs.filter { normalizeLangCode(it.lang ?: it.label) == f }
+        }
+        Log.i("PlayerScreen", "subtitle forced=${forcedSubLang ?: "all"} active=${activeSubs.size}/${sourceSubs.size}")
+
         val seenLang = LinkedHashSet<String>()
-        val played = sourceSubs.mapNotNull { s ->
+        val played = activeSubs.mapNotNull { s ->
             val u = s.url?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             // MIME dipilih dari ISI file lokal (sniff WEBVTT/SRT) bila tersedia,
             // bukan hanya dari ekstensi URL.
@@ -976,12 +973,27 @@ fun PlayerScreen(
         showControls = true
         // Track subtitle baru tersedia beberapa saat setelah prepare; jangan
         // hanya bergantung pada onTracksChanged (bisa terlewat).
-        repeat(24) {
-            if (applyIndonesianSubtitle()) return@LaunchedEffect
-            delay(250)
+        val wanted = forcedSubLang
+        if (wanted.isNullOrEmpty()) {
+            if (wanted == "") {
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build()
+            }
+            repeat(24) {
+                if (applyIndonesianSubtitle()) return@LaunchedEffect
+                delay(250)
+            }
+            Log.i("PlayerScreen", "Tidak ada track subtitle Indonesia untuk stream ini (${apiSubtitles.size} track)")
+            if (apiSubtitles.isNotEmpty()) showHud(null, "Subtitle Indonesia tidak tersedia")
+        } else {
+            repeat(24) {
+                if (applyLanguage(wanted)) return@LaunchedEffect
+                delay(250)
+            }
+            Log.w("PlayerScreen", "Subtitle $wanted tidak berhasil dipasang")
+            showHud(Icons.Filled.Subtitles, "Subtitle $wanted gagal dimuat")
         }
-        Log.i("PlayerScreen", "Tidak ada track subtitle Indonesia untuk stream ini (${apiSubtitles.size} track)")
-        if (apiSubtitles.isNotEmpty()) showHud(null, "Subtitle Indonesia tidak tersedia")
     }
 
     // ---- Listener pemutar ----
