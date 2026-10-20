@@ -462,6 +462,7 @@ fun PlayerScreen(
     // jatuh ke bahasa lain seperti Melayu saat memilih Indonesia).
     var forcedSubLang by remember { mutableStateOf<String?>(null) }
     // Sinkronisasi subtitle manual: offset waktu subtitle terhadap video.
+    var hasStartedOnce by remember { mutableStateOf(false) }
     var subOffsetMs by remember { mutableLongStateOf(0L) }
     var subOffsetTrigger by remember { mutableIntStateOf(0) }
     var showSyncMenu by remember { mutableStateOf(false) }
@@ -644,11 +645,14 @@ fun PlayerScreen(
         // Kunci hanya satu bahasa: pilih Indonesia -> media dimuat ulang dengan
         // SubtitleConfiguration Indonesia SAJA, sehingga track Melayu/English
         // tidak mungkin tampil menggantikannya.
-        val code = when (opt) {
-            null -> ""
-            else -> normalizeLangCode(
-                opt.key.removePrefix("api:").ifBlank { opt.label },
+        val code = when {
+            opt == null -> ""
+            // Track yang sudah terpasang: ambil bahasa dari Format-nya, BUKAN
+            // dari key ("sub_id#0" -> dulu salah jadi "sub" sehingga subtitle hilang).
+            opt.group != null -> normalizeLangCode(
+                opt.group.getFormat(opt.index).language ?: opt.label,
             )
+            else -> normalizeLangCode(opt.key.removePrefix("api:").ifBlank { opt.label })
         }
         if (code == forcedSubLang) return
         forcedSubLang = code
@@ -851,6 +855,9 @@ fun PlayerScreen(
         val url = resolveStreamUrl(stream.safeUrl) ?: return@LaunchedEffect
         playerError = null
         // Cegah playback ganda: hentikan media sebelumnya sebelum memuat yang baru.
+        // Simpan niat putar/jeda agar reload (ganti subtitle/kualitas) tidak
+        // memaksa video berputar sendiri saat pengguna sedang menjeda.
+        val wasPlayWhenReady = if (hasStartedOnce) player.playWhenReady else true
         player.stop()
         player.clearMediaItems()
         streamHeaders.set(stream.headers.orEmpty())
@@ -880,10 +887,18 @@ fun PlayerScreen(
 
         // Kunci bahasa: bila pengguna memilih bahasa tertentu, hanya track itu
         // yang dipasang ke pemutar (tidak ada fallback ke bahasa lain).
-        val activeSubs = when (val f = forcedSubLang) {
+        var activeSubs = when (val f = forcedSubLang) {
             null -> sourceSubs
             "" -> emptyList()
             else -> sourceSubs.filter { normalizeLangCode(it.lang ?: it.label) == f }
+        }
+        // Jangan sampai subtitle sama sekali hilang hanya karena bahasa pilihan
+        // tidak ada di sumber: tampilkan semua track + beri tahu pengguna.
+        if (!forcedSubLang.isNullOrEmpty() && activeSubs.isEmpty() && sourceSubs.isNotEmpty()) {
+            Log.w("PlayerScreen", "bahasa ${forcedSubLang} tidak ada di sumber -> fallback semua track")
+            activeSubs = sourceSubs
+            forcedSubLang = null
+            showHud(Icons.Filled.Subtitles, "Bahasa pilihan tidak tersedia")
         }
         Log.i("PlayerScreen", "subtitle forced=${forcedSubLang ?: "all"} active=${activeSubs.size}/${sourceSubs.size}")
 
@@ -934,8 +949,7 @@ fun PlayerScreen(
         }
 
         if (subs.isNotEmpty()) builder.setSubtitleConfigurations(subs)
-        selectedVideoHeight = null
-        subtitleUserChosen = false
+        subtitleUserChosen = forcedSubLang != null
         selectedSubKey = null
         // Bahasa Indonesia ditandai DEFAULT pada SubtitleConfiguration DAN
         // dijadikan preferensi bahasa teks. Bila track Indonesia ada, ExoPlayer
@@ -969,17 +983,19 @@ fun PlayerScreen(
         val seek = pendingSeek.longValue
         if (seek > 0L) player.seekTo(seek)
         player.prepare()
-        player.playWhenReady = true
+        player.playWhenReady = wasPlayWhenReady
+        hasStartedOnce = true
+        // Kualitas video pilihan pengguna dipertahankan setelah reload.
+        selectedVideoHeight?.let { h -> selectVideoHeight(h) }
         showControls = true
         // Track subtitle baru tersedia beberapa saat setelah prepare; jangan
         // hanya bergantung pada onTracksChanged (bisa terlewat).
         val wanted = forcedSubLang
-        if (wanted.isNullOrEmpty()) {
-            if (wanted == "") {
-                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                    .build()
-            }
+        if (wanted == "") {
+            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .build()
+        } else if (wanted == null) {
             repeat(24) {
                 if (applyIndonesianSubtitle()) return@LaunchedEffect
                 delay(250)
@@ -1047,6 +1063,17 @@ fun PlayerScreen(
             Log.i("PlayerScreen", "onTracksChanged: totalTextTracks=$textCount")
             refreshSubOptions()
             refreshVideoQualities()
+            // Pulihkan kualitas video pilihan setelah reload (ganti subtitle/offset).
+            val h = selectedVideoHeight
+            if (h != null) {
+                val alreadySelected = tracks.groups.any { g ->
+                    g.type == C.TRACK_TYPE_VIDEO &&
+                        (0 until g.length).any { i ->
+                            g.getTrackFormat(i).height == h && g.isTrackSelected(i)
+                        }
+                }
+                if (!alreadySelected) selectVideoHeight(h)
+            }
         }
 
         override fun onTrackSelectionParametersChanged(
@@ -1683,6 +1710,9 @@ fun PlayerScreen(
                         .clickable {
                             streamError = null
                             loadingStreams = true
+                            // Lanjutkan dari posisi terakhir, bukan dari awal.
+                            pendingSeek.longValue = player.currentPosition
+                                .takeIf { it > 0L } ?: pendingSeek.longValue
                             streams = emptyList()
                             reload++
                         }
