@@ -42,7 +42,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import androidx.compose.ui.graphics.RectangleShape
+import coil.compose.SubcomposeAsyncImage
 import com.mikdadstream.app.data.remote.MediaItem
 
 /** Placeholder berdenyut (shimmer sederhana). */
@@ -78,11 +79,23 @@ fun PosterImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
 ) {
-    AsyncImage(
+    // Placeholder shimmer (bukan kotak gelap/black) sampai poster selesai
+    // dimuat, lalu fade-in halus. Menghilangkan "layar hitam" di daftar film.
+    SubcomposeAsyncImage(
         model = url,
         contentDescription = null,
-        modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier = modifier,
         contentScale = contentScale,
+        loading = {
+            ShimmerBox(modifier = Modifier.fillMaxSize(), shape = RectangleShape)
+        },
+        error = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            )
+        },
     )
 }
 

@@ -15,7 +15,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import com.mikdadstream.app.ui.components.TvFocusIndication
+import com.mikdadstream.app.ui.tv.isTelevision
 
 // ---------- Palet persis design folder Theme (MikdadStreamUI.kt) ----------
 
@@ -180,11 +183,15 @@ fun MikdadStreamTheme(
         typography = AppTypography,
         shapes = AppShapes,
     ) {
-        // Aksen aktif bisa dibaca komponen mana pun via LocalAccent.current,
-        // dan fokus fokus D-pad tetap terlihat jelas saat dinavigasi remote.
+        // Aksen aktif bisa dibaca komponen mana pun via LocalAccent.current.
+        // Ring fokus D-pad HANYA untuk TV; di ponsel sentuh pakai ripple
+        // bawaan supaya tidak muncul bingkai putih setiap menu ditekan.
+        val context = LocalContext.current
+        val tv = remember(context) { context.isTelevision() }
+        val baseIndication = LocalIndication.current
         CompositionLocalProvider(
             LocalAccent provides accent.color,
-            LocalIndication provides TvFocusIndication,
+            LocalIndication provides if (tv) TvFocusIndication else baseIndication,
         ) {
             content()
         }
