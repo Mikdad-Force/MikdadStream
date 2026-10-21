@@ -48,6 +48,7 @@ object LocalMovieBoxClient {
     const val PLAY_INFO_PATH = "/wefeed-mobile-bff/subject-api/play-info"
 
     private const val SECRET_DEFAULT = "76iRl07s0xSN9jqmEWAt79EBJZulIQIsV64FZr2O"
+    private const val SHORT_TV_TAB_ID = 13
     private const val SIGN_BODY_MAX = 102400
     private const val MIN_DURATION_SECONDS = 60L
 
@@ -567,6 +568,30 @@ object LocalMovieBoxClient {
         callJson(base, "/wefeed-mobile-bff/tab-operating?host=api.inmoviebox.com&page=1&pageSize=24&tabId=$tabId", null, token, false)
     }
 
+    /** Ambil semua subject dari respons tab-operating (rows -> subjects), dedup per id. */
+    private fun tabSubjects(root: JSONObject?): List<JSONObject> {
+        if (root == null) return emptyList()
+        val out = LinkedHashMap<String, JSONObject>()
+        fun add(o: JSONObject?) {
+            if (o == null) return
+            val id = subjectIdOf(o)
+            if (id.isNotBlank() && !out.containsKey(id)) out[id] = o
+        }
+        val items = root.optJSONObject("data")?.optJSONArray("items")
+        if (items != null) {
+            for (i in 0 until items.length()) {
+                val item = items.optJSONObject(i) ?: continue
+                val arr = item.optJSONArray("subjects") ?: continue
+                for (j in 0 until arr.length()) {
+                    val o = arr.optJSONObject(j) ?: continue
+                    add(o.optJSONObject("subject") ?: o)
+                }
+            }
+        }
+        if (out.isEmpty()) extractList(root).forEach(::add)
+        return out.values.toList()
+    }
+
     private var catalogCache: Pair<Long, List<JSONObject>>? = null
 
     /** Katalog gabungan: trending/v2 + rows tab-operating (tab 1 & 2), dedup per subjectId. */
@@ -727,6 +752,7 @@ object LocalMovieBoxClient {
             "japanese drama", "j drama", "japan drama", "japanese series",
             "japanese tv drama", "alice in borderland", "midnight diner", "first love",
         ),
+        "shorttv" to listOf("short drama", "short tv", "mini drama", "drama pendek"),
         "malaydrama" to listOf(
             "drama malaysia", "melayu drama", "malay drama", "drama melayu",
             "malaysian drama", "rindu", "cinta melayu",
@@ -898,9 +924,22 @@ object LocalMovieBoxClient {
             categoryCache[cat] = System.currentTimeMillis() to out
             return@withContext out
         }
-        val subjects = catalogSubjects()
+        val subjects = if (cat == "shorttv") emptyList() else catalogSubjects()
         val picked: ArrayList<JSONObject>
-        if (cat == "indonesia" || cat == "indodrama") {
+        if (cat == "shorttv") {
+            // Short TV punya tab khusus (tabId=13), bukan bagian katalog film/serial.
+            picked = ArrayList(tabSubjects(tabOperating(SHORT_TV_TAB_ID)))
+            if (picked.size < 24) {
+                for (q in categoryQueries["shorttv"].orEmpty()) {
+                    for (s in searchSubjects(q, token)) {
+                        val id = s.optString("subjectId")
+                        if (id.isNotBlank() && picked.none { it.optString("subjectId") == id }) picked.add(s)
+                    }
+                    if (picked.size >= 32) break
+                }
+            }
+            Log.i(TAG, "categoryItems shorttv tab=$SHORT_TV_TAB_ID picked=${picked.size}")
+        } else if (cat == "indonesia" || cat == "indodrama") {
             // Indonesia = film asli buatan Indonesia; Indo Drama = serialnya saja.
             val indo = indonesiaSubjects(subjects, token)
             picked = ArrayList(if (cat == "indodrama") indo.filter { subjectTypeOf(it) == 2 } else indo)

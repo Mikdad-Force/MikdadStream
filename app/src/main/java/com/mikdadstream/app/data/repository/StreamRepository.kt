@@ -132,6 +132,7 @@ class StreamRepository(
             return listOf(
                 CategoryBundle("trending", "Trending"),
                 CategoryBundle("indonesia", "Indonesia"),
+                CategoryBundle("shorttv", "Short TV"),
                 CategoryBundle("livetv", "Live TV"),
                 CategoryBundle("livesport", "Live Sport"),
                 CategoryBundle("kdrama", "K-Drama"),
