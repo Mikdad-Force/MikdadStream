@@ -359,8 +359,14 @@ fun AppNavGraph(isTv: Boolean = false) {
             }
 
             composable(Routes.SHORTTV) {
+                val shortTvTitle = com.mikdadstream.app.ui.i18n.LocalStrings.current.navShortTv
                 val vm: HomeViewModel = sharedViewModel {
-                    HomeViewModel(AppGraph.repository, AppGraph.prefs, initialCategoryId = "shorttv")
+                    HomeViewModel(
+                        AppGraph.repository,
+                        AppGraph.prefs,
+                        initialCategoryId = "shorttv",
+                        initialCategoryName = shortTvTitle,
+                    )
                 }
                 HomeScreen(
                     viewModel = vm,

@@ -31,6 +31,7 @@ class HomeViewModel(
     private val repo: StreamRepository,
     private val prefs: PrefsStore,
     private val initialCategoryId: String? = null,
+    private val initialCategoryName: String? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeUiState())
@@ -58,7 +59,10 @@ class HomeViewModel(
             val categories = repo.categories(sourceId)
             if (token != requestToken) return
             _state.value = _state.value.copy(categories = categories, loading = true)
-            val first = categories.firstOrNull { it.id == initialCategoryId } ?: categories.firstOrNull()
+            val first = categories.firstOrNull { it.id == initialCategoryId }
+                ?: initialCategoryId?.takeIf { sourceId.equals("moviebox-local", true) }
+                    ?.let { CategoryBundle(it, initialCategoryName ?: it) }
+                ?: categories.firstOrNull()
             if (first == null) {
                 _state.value = _state.value.copy(loading = false, error = "Sumber ini belum punya kategori.")
                 return
