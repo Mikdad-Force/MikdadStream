@@ -366,10 +366,23 @@ object LocalMovieBoxClient {
         return out
     }
 
-    suspend fun trendingV2(): JSONObject? = withContext(Dispatchers.IO) {
+    suspend fun trendingV2(page: Int = 1): JSONObject? = withContext(Dispatchers.IO) {
         val token = boot() ?: return@withContext null
         val base = activeHostOrFirst()
-        callJson(base, "/wefeed-mobile-bff/subject-api/trending/v2", "{}", token, false)
+        val body = if (page <= 1) "{}" else JSONObject().put("page", page).toString()
+        callJson(base, "/wefeed-mobile-bff/subject-api/trending/v2", body, token, false)
+    }
+
+    /** Beberapa halaman trending (API hanya 8 per halaman) lalu dedup per subjectId. */
+    private suspend fun trendingAll(maxPages: Int = 3): List<JSONObject> {
+        val out = LinkedHashMap<String, JSONObject>()
+        for (page in 1..maxPages) {
+            extractList(trendingV2(page)).forEach { s ->
+                val id = subjectIdOf(s)
+                if (id.isNotBlank() && !out.containsKey(id)) out[id] = s
+            }
+        }
+        return out.values.toList()
     }
 
     suspend fun search(keyword: String, page: Int = 1): JSONObject? = withContext(Dispatchers.IO) {
@@ -608,7 +621,7 @@ object LocalMovieBoxClient {
             val id = subject.optString("subjectId")
             if (id.isNotBlank() && !out.containsKey(id)) out[id] = subject
         }
-        extractList(trendingV2()).forEach(::add)
+        trendingAll().forEach(::add)
         android.util.Log.i(TAG, "catalogSubjects trending=${out.size}")
         for (tab in listOf(1, 2)) {
             val root = tabOperating(tab) ?: continue
@@ -716,22 +729,24 @@ object LocalMovieBoxClient {
         }
         // 2. Dari pencarian: keyword generik + sort terbaru (filter negara tetap ketat di bawah).
         for (q in listOf("indonesia", "horor", "komedi indonesia", "drama indonesia", "sinetron", "series indonesia")) {
-            val body = org.json.JSONObject()
-                .put("keyword", q)
-                .put("page", 1)
-                .put("pageSize", 20)
-                .put("sort", "Latest")
-            val root = runCatching {
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val base0 = activeHostOrFirst()
-                    callJson(base0, "/wefeed-mobile-bff/subject-api/search", body.toString(), token, false)
-                }
-            }.getOrNull()
-            val arr = extractList(root)
-            for (s in arr) {
-                if (isIndoText(s.optString("countryName")) || isIndoText(s.optString("language"))) {
-                    val id = s.optString("subjectId")
-                    if (id.isNotBlank()) out[id] = s
+            for (page in 1..3) {
+                val body = org.json.JSONObject()
+                    .put("keyword", q)
+                    .put("page", page)
+                    .put("pageSize", 20)
+                    .put("sort", "Latest")
+                val root = runCatching {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val base0 = activeHostOrFirst()
+                        callJson(base0, "/wefeed-mobile-bff/subject-api/search", body.toString(), token, false)
+                    }
+                }.getOrNull()
+                val arr = extractList(root)
+                for (s in arr) {
+                    if (isIndoText(s.optString("countryName")) || isIndoText(s.optString("language"))) {
+                        val id = s.optString("subjectId")
+                        if (id.isNotBlank()) out[id] = s
+                    }
                 }
             }
         }
@@ -793,6 +808,13 @@ object LocalMovieBoxClient {
         }
 
     private var categoryCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<MediaItem>>>()
+
+    /** Tab katalog khusus per kategori (isi jauh lebih banyak dari tab beranda). */
+    private val categoryExtraTabs = mapOf(
+        "kdrama" to listOf(18),
+        "cdrama" to listOf(18),
+        "western" to listOf(19),
+    )
 
     private val liveCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<MediaItem>>>()
 
@@ -908,7 +930,7 @@ object LocalMovieBoxClient {
         // TRENDING: cukup daftar trending (8 item), jangan seluruh katalog —
         // filter subtitle ke ratusan judul membuat kategori lama kosong/timeout.
         if (cat == "trending") {
-            val raw = extractList(trendingV2())
+            val raw = trendingAll()
             val filtered = runCatching { filterIndoOnly(raw, token) }.getOrDefault(emptyList())
             // Jangan pernah kosong: bila tak ada yang lolos filter subtitle,
             // tetap tampilkan trending (tanpa judul Hindi).
@@ -922,13 +944,17 @@ object LocalMovieBoxClient {
             for (s in use) {
                 val m = mapSubjectToMediaItem(s) ?: continue
                 if (seen.add(m.id ?: "")) out.add(m)
-                if (out.size >= 48) break
             }
             Log.i(TAG, "categoryItems trending raw=${raw.size} filtered=${filtered.size} out=${out.size}")
             categoryCache[cat] = System.currentTimeMillis() to out
             return@withContext out
         }
-        val subjects = if (cat == "shorttv") emptyList() else catalogSubjects()
+        val subjects = if (cat == "shorttv") {
+            emptyList()
+        } else {
+            val extra = categoryExtraTabs[cat].orEmpty().flatMap { tabSubjects(tabOperating(it)) }
+            if (extra.isEmpty()) catalogSubjects() else catalogSubjects() + extra
+        }
         val picked: ArrayList<JSONObject>
         if (cat == "shorttv") {
             // Short TV: tab khusus (tabId=13) + pencarian, hanya konten lokasi Indonesia.
@@ -942,7 +968,7 @@ object LocalMovieBoxClient {
             }
             tabSubjects(tabOperating(SHORT_TV_TAB_ID)).forEach(::addIndo)
             for (q in categoryQueries["shorttv"].orEmpty()) {
-                for (page in 1..2) searchSubjects(q, token, page).forEach(::addIndo)
+                for (page in 1..5) searchSubjects(q, token, page).forEach(::addIndo)
             }
             picked = ArrayList(pool.values.sortedByDescending { subjectUpdateScore(it) })
             // Fallback: bila tak ada konten Indonesia, tampilkan tab Short TV tanpa judul Hindi.
@@ -964,13 +990,14 @@ object LocalMovieBoxClient {
             if (cat != "trending" && picked.size < 24) {
                 val queries = categoryQueries[cat] ?: emptyList()
                 for (q in queries) {
-                    for (s in searchSubjects(q, token)) {
-                        if (categoryMatches(cat, s)) {
-                            val id = s.optString("subjectId")
-                            if (id.isNotBlank() && picked.none { it.optString("subjectId") == id }) picked.add(s)
+                    for (page in 1..2) {
+                        for (s in searchSubjects(q, token, page)) {
+                            if (categoryMatches(cat, s)) {
+                                val id = s.optString("subjectId")
+                                if (id.isNotBlank() && picked.none { it.optString("subjectId") == id }) picked.add(s)
+                            }
                         }
                     }
-                    if (picked.size >= 32) break
                 }
                 // fallback terakhir: jika strict tetap kosong, ambil hasil pencarian mentah agar kategori tidak kosong
                 if (picked.isEmpty()) {
@@ -999,7 +1026,6 @@ object LocalMovieBoxClient {
         for (s in usable) {
             val m = mapSubjectToMediaItem(s) ?: continue
             if (seen.add(m.id ?: "")) out.add(m)
-            if (out.size >= 48) break
         }
         android.util.Log.i(TAG, "categoryItems $cat picked=${picked.size} qualified=${qualified.size} out=${out.size}/pool=${subjects.size}")
         categoryCache[cat] = System.currentTimeMillis() to out
@@ -1009,7 +1035,7 @@ object LocalMovieBoxClient {
     suspend fun trendingItems(): List<MediaItem> =
         withContext(Dispatchers.IO) {
             val token = boot() ?: return@withContext emptyList()
-            val flat = extractList(trendingV2())
+            val flat = trendingAll()
             val filtered = runCatching { filterIndoOnly(flat, token) }.getOrDefault(emptyList())
             val use = filtered.ifEmpty { flat }
             use.mapNotNull { mapSubjectToMediaItem(it) }
