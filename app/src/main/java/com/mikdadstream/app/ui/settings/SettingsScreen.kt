@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
@@ -76,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mikdadstream.app.BuildConfig
+import com.mikdadstream.app.data.local.CountryLocations
 import com.mikdadstream.app.data.local.PrefsStore
 import com.mikdadstream.app.data.remote.SourceModel
 import com.mikdadstream.app.ui.components.FilterChipPill
@@ -97,6 +99,7 @@ fun SettingsScreen(
     isPremium: Boolean = false,
     onOpenSources: () -> Unit,
     onOpenLanguage: () -> Unit = {},
+    onOpenLocation: () -> Unit = {},
     onOpenPremium: () -> Unit = {},
     onPairDevice: () -> Unit = {},
     onOpenDesignKit: () -> Unit = {},
@@ -114,6 +117,7 @@ fun SettingsScreen(
     val healthResults by viewModel.healthResults.collectAsState()
     val healthProgress by viewModel.healthProgress.collectAsState()
     val language by com.mikdadstream.app.AppGraph.prefs.language.collectAsState()
+    val region by com.mikdadstream.app.AppGraph.prefs.region.collectAsState()
     val updateChecking by viewModel.updateChecking.collectAsState()
     val updateInfo by viewModel.updateInfo.collectAsState()
     val updateMessage by viewModel.updateMessage.collectAsState()
@@ -128,6 +132,7 @@ fun SettingsScreen(
         PrefsStore.LANG_SU -> "Bahasa Sunda"
         else -> "Bahasa Indonesia"
     }
+    val selectedLocation = CountryLocations.byCode(region)
 
     val displaySourceName = remember(activeSourceName, allSources) {
         val resolved = allSources.firstOrNull { it.safeId.equals(activeSourceName, true) }?.safeName
@@ -410,6 +415,47 @@ fun SettingsScreen(
                     )
                     Text(
                         text = languageLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = "Ganti",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
+        // ---------- Lokasi negara ----------
+        SettingsSection(
+            title = "Lokasi",
+            icon = { Icon(Icons.Filled.Public, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) },
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenLocation)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Public,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Lokasi negara",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        text = "${selectedLocation.flag} ${selectedLocation.name}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

@@ -2,6 +2,7 @@ package com.mikdadstream.app.data.moviebox
 
 import android.util.Base64
 import android.util.Log
+import com.mikdadstream.app.data.local.CountrySelection
 import com.mikdadstream.app.data.remote.DetailData
 import com.mikdadstream.app.data.remote.EpisodeData
 import com.mikdadstream.app.data.remote.MediaItem
@@ -107,6 +108,7 @@ object LocalMovieBoxClient {
     }
 
     private fun clientInfo(): String {
+        val location = CountrySelection.current()
         val info = JSONObject()
         info.put("package_name", "com.movieboxpro.android")
         info.put("version_name", "16.2.1")
@@ -119,11 +121,11 @@ object LocalMovieBoxClient {
         info.put("gaid", "")
         info.put("brand", "google")
         info.put("model", "Pixel 6")
-        info.put("system_language", "en")
+        info.put("system_language", location.language)
         info.put("net", "wifi")
-        info.put("region", "US")
-        info.put("timezone", "America/New_York")
-        info.put("sp_code", "404")
+        info.put("region", location.code)
+        info.put("timezone", location.timezone)
+        info.put("sp_code", location.spCode)
         return info.toString()
     }
 
@@ -816,6 +818,15 @@ object LocalMovieBoxClient {
 
     private val liveCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<MediaItem>>>()
 
+    /** Buang cache katalog/live agar lokasi negara baru langsung terpakai. */
+    fun onRegionChanged() {
+        catalogCache = null
+        indonesiaCache = null
+        categoryCache.clear()
+        liveCache.clear()
+        indoCache.clear()
+    }
+
     /**
      * Kanal Live TV / Live Sport dari playlist publik iptv-org.
      * MovieBox tidak menyediakan API live, jadi kanal diputar langsung (HLS).
@@ -830,10 +841,11 @@ object LocalMovieBoxClient {
             }
         }
         val isSport = key == "livesport"
-        // Sport TV hanya kanal olahraga Indonesia (playlist negara ID).
+        // Live TV / Sport TV mengikuti lokasi negara yang dipilih di Pengaturan.
+        val location = CountrySelection.current()
         val urls = listOf(
-            "https://iptv-org.github.io/iptv/countries/id.m3u",
-            "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/id.m3u",
+            "https://iptv-org.github.io/iptv/countries/${location.playlist}.m3u",
+            "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/${location.playlist}.m3u",
         )
         var body: String? = null
         for (u in urls) {
@@ -887,13 +899,13 @@ object LocalMovieBoxClient {
                 val n = name.lowercase(Locale.ROOT)
                 val g = pendingGroup.orEmpty().lowercase(Locale.ROOT)
                 val i = channelId.lowercase(Locale.ROOT)
-                val indonesia = i.endsWith(".id") || i.contains(".id@") ||
-                    n.contains("indonesia") || g.contains("indonesia")
+                val cc = location.playlist
+                val inCountry = i.endsWith(".$cc") || i.contains(".$cc@")
                 val sporty = g.contains("sport") || listOf(
                     "sport", "bola", "champions", "spotv", "sportstars", "voli",
                     "arena", "fight", "golf", "motogp", "badminton", "liga",
                 ).any { n.contains(it) || i.contains(it) }
-                if (!indonesia || !sporty) {
+                if (!inCountry || !sporty) {
                     pendingName = null
                     pendingId = null
                     pendingLogo = null

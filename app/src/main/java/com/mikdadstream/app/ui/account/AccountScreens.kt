@@ -62,7 +62,9 @@ import android.content.Context
 import android.content.res.Configuration
 import java.util.Locale
 import com.mikdadstream.app.AppGraph
+import com.mikdadstream.app.data.local.CountryLocations
 import com.mikdadstream.app.data.local.PrefsStore
+import com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
 import com.mikdadstream.app.ui.components.FilterChipPill
 import com.mikdadstream.app.ui.components.StreamCard
 import com.mikdadstream.app.ui.components.StreamDivider
@@ -249,6 +251,64 @@ fun LanguageScreen(onBack: () -> Unit) {
                         }
                     }
                     if (index != options.lastIndex) StreamDivider()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LocationScreen(onBack: () -> Unit) {
+    val prefs = AppGraph.prefs
+    val current by prefs.region.collectAsState()
+
+    AccountScaffold(title = "Lokasi Negara", onBack = onBack) {
+        Text(
+            text = "Lokasi ini dipakai untuk Moviebox, Live TV, dan Sport TV.",
+            style = MaterialTheme.typography.bodySmall,
+            color = StreamTextMuted,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+        StreamCard {
+            Column {
+                CountryLocations.all.forEachIndexed { index, location ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                prefs.setRegion(location.code)
+                                LocalMovieBoxClient.onRegionChanged()
+                            }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = location.flag,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = location.name,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onBackground,
+                            )
+                            Text(
+                                text = location.code,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (current == location.code) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                    if (index != CountryLocations.all.lastIndex) StreamDivider()
                 }
             }
         }

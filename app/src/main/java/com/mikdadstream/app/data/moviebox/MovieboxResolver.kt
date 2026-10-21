@@ -1,6 +1,7 @@
 package com.mikdadstream.app.data.moviebox
 
 import android.os.Build
+import com.mikdadstream.app.data.local.CountrySelection
 import com.mikdadstream.app.data.remote.MediaStream
 import com.mikdadstream.app.data.remote.MovieboxEpisodeStream
 import com.mikdadstream.app.data.remote.MovieboxUpdate
@@ -69,6 +70,7 @@ object MovieboxResolver {
         "MovieBoxPro/16.2.1 (Android 14; com.community.mbox.in)"
 
     private fun clientInfo(): String {
+        val location = CountrySelection.current()
         val info = JSONObject()
         info.put("package_name", "com.movieboxpro.android")
         info.put("version_name", "16.2.1")
@@ -81,11 +83,11 @@ object MovieboxResolver {
         info.put("gaid", UUID.randomUUID().toString())
         info.put("brand", Build.BRAND ?: "Redmi")
         info.put("model", Build.MODEL ?: "M2012K11AG")
-        info.put("system_language", Locale.getDefault().language.ifBlank { "en" })
+        info.put("system_language", location.language)
         info.put("net", "NETWORK_WIFI")
-        info.put("region", "US")
-        info.put("timezone", java.util.TimeZone.getDefault().id)
-        info.put("sp_code", Locale.getDefault().country.ifBlank { "40401" })
+        info.put("region", location.code)
+        info.put("timezone", location.timezone)
+        info.put("sp_code", location.spCode)
         info.put("X-Play-Mode", "2")
         return info.toString()
     }

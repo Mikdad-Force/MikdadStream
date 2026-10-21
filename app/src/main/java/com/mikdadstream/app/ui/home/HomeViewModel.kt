@@ -12,6 +12,7 @@ import com.mikdadstream.app.data.repository.StreamRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -44,7 +45,8 @@ class HomeViewModel(
 
     init {
         viewModelScope.launch {
-            prefs.activeSource.collect { sourceId -> loadSource(sourceId) }
+            combine(prefs.activeSource, prefs.region) { source, _ -> source }
+                .collect { sourceId -> loadSource(sourceId) }
         }
     }
 

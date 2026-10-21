@@ -41,10 +41,17 @@ class PrefsStore(context: Context) {
     private val _themeMode = MutableStateFlow(sp.getInt(KEY_THEME, THEME_SYSTEM))
     private val _accent = MutableStateFlow(sp.getInt(KEY_ACCENT, ACCENT_PINK))
     private val _language = MutableStateFlow(sp.getString(KEY_LANGUAGE, LANG_ID) ?: LANG_ID)
+    private val _region = MutableStateFlow(
+        CountryLocations.byCode(sp.getString(KEY_REGION, DEFAULT_REGION)).code,
+    )
     private val _premiumUnlocked = MutableStateFlow(sp.getBoolean(KEY_PREMIUM_UNLOCK, false))
     private val _serverStatus = MutableStateFlow<String?>(null)
     private val _hiddenSources = MutableStateFlow(sp.getStringSet(KEY_HIDDEN, null)?.toSet() ?: emptySet())
     private val _loggedIn = MutableStateFlow(sp.getBoolean(KEY_LOGGED_IN, false))
+
+    init {
+        CountrySelection.code = _region.value
+    }
 
     val accessToken: StateFlow<String?> = _accessToken
     val profile: StateFlow<Profile?> = _profile
@@ -52,12 +59,14 @@ class PrefsStore(context: Context) {
     val themeMode: StateFlow<Int> = _themeMode
     val accent: StateFlow<Int> = _accent
     val language: StateFlow<String> = _language
+    val region: StateFlow<String> = _region
     val premiumUnlocked: StateFlow<Boolean> = _premiumUnlocked
     val serverStatus: StateFlow<String?> = _serverStatus
     val hiddenSources: StateFlow<Set<String>> = _hiddenSources
     val loggedIn: StateFlow<Boolean> = _loggedIn
 
     val refreshToken: String? get() = sp.getString(KEY_REFRESH, null)
+
     val appInstanceId: String
         get() = sp.getString(KEY_INSTANCE, null) ?: UUID.randomUUID().toString().also {
             sp.edit { putString(KEY_INSTANCE, it) }
@@ -140,6 +149,13 @@ class PrefsStore(context: Context) {
         _language.value = code
     }
 
+    fun setRegion(code: String) {
+        val normalized = CountryLocations.byCode(code).code
+        sp.edit { putString(KEY_REGION, normalized) }
+        _region.value = normalized
+        CountrySelection.code = normalized
+    }
+
     fun setPremiumUnlocked(value: Boolean) {
         sp.edit { putBoolean(KEY_PREMIUM_UNLOCK, value) }
         _premiumUnlocked.value = value
@@ -193,6 +209,8 @@ class PrefsStore(context: Context) {
         const val LANG_EN = "en"
         const val LANG_SU = "su"
 
+        const val DEFAULT_REGION = "ID"
+
         private const val KEY_ACCESS = "access_token"
         private const val KEY_REFRESH = "refresh_token"
         private const val KEY_ACCESS_EXP = "access_exp"
@@ -207,6 +225,7 @@ class PrefsStore(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_ACCENT = "accent_choice"
         private const val KEY_LANGUAGE = "app_language"
+        private const val KEY_REGION = "app_region"
         private const val KEY_PREMIUM_UNLOCK = "premium_unlocked"
         private const val KEY_HIDDEN = "hidden_sources"
         private const val KEY_LOGGED_IN = "logged_in"
