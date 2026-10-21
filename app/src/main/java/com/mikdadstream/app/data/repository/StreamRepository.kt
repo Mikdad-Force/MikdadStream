@@ -134,7 +134,7 @@ class StreamRepository(
                 CategoryBundle("indonesia", "Indonesia"),
                 CategoryBundle("shorttv", "Short TV"),
                 CategoryBundle("livetv", "Live TV"),
-                CategoryBundle("livesport", "Live Sport"),
+                CategoryBundle("livesport", "Sport TV"),
                 CategoryBundle("kdrama", "K-Drama"),
                 CategoryBundle("indodrama", "Indo Drama"),
                 CategoryBundle("cdrama", "C-Drama"),
@@ -158,16 +158,19 @@ class StreamRepository(
 
     suspend fun videos(modelId: String, categoryId: String, page: Int = 1): VideosData {
         if (modelId.equals("moviebox-local", true)) {
-            val items = runCatching { LocalMovieBoxClient.categoryItems(categoryId) }
-                .getOrElse { emptyList() }
-                .ifEmpty { runCatching { LocalMovieBoxClient.trendingItems() }.getOrDefault(emptyList()) }
-            android.util.Log.i("MovieboxLocal", "videos cat=$categoryId items=${items.size}")
+            val (loaded, more) = runCatching { LocalMovieBoxClient.categoryPage(categoryId, page) }
+                .getOrElse { emptyList<MediaItem>() to false }
+            val items = loaded.ifEmpty {
+                if (page > 1) emptyList()
+                else runCatching { LocalMovieBoxClient.trendingItems() }.getOrDefault(emptyList())
+            }
+            android.util.Log.i("MovieboxLocal", "videos cat=$categoryId page=$page items=${items.size} hasMore=$more")
             return VideosData(
                 type = "movie_tv",
                 moduleName = "Moviebox Local",
                 items = items,
                 page = page,
-                hasMore = false,
+                hasMore = more,
             )
         }
         return unwrap(call { api.videos(apiModelId(modelId), categoryId, page) }, "Gagal memuat daftar video.")

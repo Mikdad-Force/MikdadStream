@@ -48,7 +48,6 @@ object LocalMovieBoxClient {
     const val PLAY_INFO_PATH = "/wefeed-mobile-bff/subject-api/play-info"
 
     private const val SECRET_DEFAULT = "76iRl07s0xSN9jqmEWAt79EBJZulIQIsV64FZr2O"
-    private const val SHORT_TV_TAB_ID = 13
     private const val SIGN_BODY_MAX = 102400
     private const val MIN_DURATION_SECONDS = 60L
 
@@ -771,7 +770,6 @@ object LocalMovieBoxClient {
             "japanese drama", "j drama", "japan drama", "japanese series",
             "japanese tv drama", "alice in borderland", "midnight diner", "first love",
         ),
-        "shorttv" to listOf("mini tv indonesia", "short tv indonesia", "drama pendek indonesia"),
         "malaydrama" to listOf(
             "drama malaysia", "melayu drama", "malay drama", "drama melayu",
             "malaysian drama", "rindu", "cinta melayu",
@@ -831,17 +829,12 @@ object LocalMovieBoxClient {
                 return@withContext list
             }
         }
-        val urls = if (key == "livesport") {
-            listOf(
-                "https://iptv-org.github.io/iptv/categories/sports.m3u",
-                "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/categories/sports.m3u",
-            )
-        } else {
-            listOf(
-                "https://iptv-org.github.io/iptv/countries/id.m3u",
-                "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/id.m3u",
-            )
-        }
+        val isSport = key == "livesport"
+        // Sport TV hanya kanal olahraga Indonesia (playlist negara ID).
+        val urls = listOf(
+            "https://iptv-org.github.io/iptv/countries/id.m3u",
+            "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/id.m3u",
+        )
         var body: String? = null
         for (u in urls) {
             body = runCatching {
@@ -861,6 +854,7 @@ object LocalMovieBoxClient {
         var pendingName: String? = null
         var pendingLogo: String? = null
         var pendingGroup: String? = null
+        var pendingId: String? = null
         for (raw in body.lineSequence()) {
             val line = raw.trim()
             if (line.isEmpty()) continue
@@ -876,6 +870,8 @@ object LocalMovieBoxClient {
                     ?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
                 pendingGroup = Regex("group-title=\"([^\"]*)\"").find(line)
                     ?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
+                pendingId = Regex("tvg-id=\"([^\"]*)\"").find(line)
+                    ?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
                 continue
             }
             if (line.startsWith("#")) continue
@@ -883,7 +879,27 @@ object LocalMovieBoxClient {
             val url = line
             if (name == null || !url.startsWith("http", true)) {
                 pendingName = null
+                pendingId = null
                 continue
+            }
+            val channelId = pendingId.orEmpty()
+            if (isSport) {
+                val n = name.lowercase(Locale.ROOT)
+                val g = pendingGroup.orEmpty().lowercase(Locale.ROOT)
+                val i = channelId.lowercase(Locale.ROOT)
+                val indonesia = i.endsWith(".id") || i.contains(".id@") ||
+                    n.contains("indonesia") || g.contains("indonesia")
+                val sporty = g.contains("sport") || listOf(
+                    "sport", "bola", "champions", "spotv", "sportstars", "voli",
+                    "arena", "fight", "golf", "motogp", "badminton", "liga",
+                ).any { n.contains(it) || i.contains(it) }
+                if (!indonesia || !sporty) {
+                    pendingName = null
+                    pendingId = null
+                    pendingLogo = null
+                    pendingGroup = null
+                    continue
+                }
             }
             if (seen.add(url)) {
                 val label = if (pendingGroup.isNullOrBlank()) name else "$name \u00b7 $pendingGroup"
@@ -902,7 +918,7 @@ object LocalMovieBoxClient {
                         id = id,
                         cover = pendingLogo,
                         title = label,
-                        source = if (key == "livesport") "Live Sport" else "Live TV",
+                        source = if (isSport) "Sport TV" else "Live TV",
                         type = "live",
                     )
                 )
@@ -910,6 +926,7 @@ object LocalMovieBoxClient {
             pendingName = null
             pendingLogo = null
             pendingGroup = null
+            pendingId = null
             if (out.size >= 400) break
         }
         Log.i(TAG, "livePlaylist $key channels=${out.size}")
@@ -917,11 +934,64 @@ object LocalMovieBoxClient {
         out
     }
 
+    /** Satu halaman pencarian Short TV Indonesia (subjectType=7); kembalikan item + hasMore. */
+    private suspend fun searchShortTvPage(apiPage: Int, token: String): Pair<List<JSONObject>, Boolean> {
+        val base = activeHostOrFirst()
+        val body = JSONObject()
+            .put("keyword", "indonesia")
+            .put("page", apiPage)
+            .put("pageSize", 20)
+            .put("subjectType", 7)
+            .toString()
+        val root = callJson(base, "/wefeed-mobile-bff/subject-api/search", body, token, false)
+        val subjects = extractList(root)
+        val hasMore = root?.optJSONObject("data")?.optJSONObject("pager")
+            ?.optBoolean("hasMore", subjects.isNotEmpty()) ?: subjects.isNotEmpty()
+        return subjects to hasMore
+    }
+
+    /** Short TV Indonesia tanpa batas: tiap halaman UI menarik 3 halaman API (30 judul). */
+    private suspend fun shortTvPage(page: Int, apiPagesPerUiPage: Int = 3): Pair<List<MediaItem>, Boolean> =
+        withContext(Dispatchers.IO) {
+            val token = boot() ?: return@withContext emptyList<MediaItem>() to false
+            val out = ArrayList<MediaItem>()
+            val seen = HashSet<String>()
+            var hasMore = false
+            val firstApiPage = (page.coerceAtLeast(1) - 1) * apiPagesPerUiPage + 1
+            for (apiPage in firstApiPage until firstApiPage + apiPagesPerUiPage) {
+                val (subjects, more) = searchShortTvPage(apiPage, token)
+                hasMore = more
+                for (s in subjects) {
+                    if (!isIndonesiaCountry(s) || subjectTypeOf(s) != 7) continue
+                    val m = mapSubjectToMediaItem(s) ?: continue
+                    if (seen.add(m.id ?: "")) out.add(m)
+                }
+                if (!more) break
+            }
+            Log.i(TAG, "shortTvPage uiPage=$page apiFrom=$firstApiPage items=${out.size} hasMore=$hasMore")
+            out to hasMore
+        }
+
+    /** Halaman kategori untuk Moviebox Local (Short TV benar-benar berpaginasi). */
+    suspend fun categoryPage(categoryId: String, page: Int): Pair<List<MediaItem>, Boolean> {
+        val cat = categoryId.trim().lowercase(Locale.ROOT).let { if (it == "hoollywood") "hollywood" else it }
+        if (cat == "shorttv") return shortTvPage(page)
+        val all = categoryItems(cat)
+        val pageSize = 60
+        val from = ((page.coerceAtLeast(1)) - 1) * pageSize
+        if (from >= all.size) return emptyList<MediaItem>() to false
+        val to = minOf(all.size, from + pageSize)
+        return all.subList(from, to) to (to < all.size)
+    }
+
     /** Daftar film per kategori sintetis (moviebox-local). */
     suspend fun categoryItems(categoryId: String): List<MediaItem> = withContext(Dispatchers.IO) {
         val cat = categoryId.trim().lowercase(Locale.ROOT).let { if (it == "hoollywood") "hollywood" else it }
         if (cat == "livetv" || cat == "livesport") {
             return@withContext liveChannelItems(cat)
+        }
+        if (cat == "shorttv") {
+            return@withContext shortTvPage(1).first
         }
         categoryCache[cat]?.let { (t, list) ->
             if (System.currentTimeMillis() - t < 300_000 && list.isNotEmpty()) return@withContext list
@@ -949,38 +1019,10 @@ object LocalMovieBoxClient {
             categoryCache[cat] = System.currentTimeMillis() to out
             return@withContext out
         }
-        val subjects = if (cat == "shorttv") {
-            emptyList()
-        } else {
-            val extra = categoryExtraTabs[cat].orEmpty().flatMap { tabSubjects(tabOperating(it)) }
-            if (extra.isEmpty()) catalogSubjects() else catalogSubjects() + extra
-        }
+        val extra = categoryExtraTabs[cat].orEmpty().flatMap { tabSubjects(tabOperating(it)) }
+        val subjects = if (extra.isEmpty()) catalogSubjects() else catalogSubjects() + extra
         val picked: ArrayList<JSONObject>
-        if (cat == "shorttv") {
-            // Short TV: tab khusus (tabId=13) + pencarian, hanya konten lokasi Indonesia.
-            val pool = LinkedHashMap<String, JSONObject>()
-            fun addIndo(s: JSONObject?) {
-                if (s == null) return
-                val id = subjectIdOf(s)
-                if (id.isBlank() || pool.containsKey(id)) return
-                if (!isIndonesiaCountry(s) || subjectTypeOf(s) != 7) return
-                pool[id] = s
-            }
-            tabSubjects(tabOperating(SHORT_TV_TAB_ID)).forEach(::addIndo)
-            for (q in categoryQueries["shorttv"].orEmpty()) {
-                for (page in 1..5) searchSubjects(q, token, page).forEach(::addIndo)
-            }
-            picked = ArrayList(pool.values.sortedByDescending { subjectUpdateScore(it) })
-            // Fallback: bila tak ada konten Indonesia, tampilkan tab Short TV tanpa judul Hindi.
-            if (picked.isEmpty()) {
-                picked.addAll(
-                    tabSubjects(tabOperating(SHORT_TV_TAB_ID)).filterNot {
-                        isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
-                    }
-                )
-            }
-            Log.i(TAG, "categoryItems shorttv tab=$SHORT_TV_TAB_ID picked=${picked.size}")
-        } else if (cat == "indonesia" || cat == "indodrama") {
+        if (cat == "indonesia" || cat == "indodrama") {
             // Indonesia = film asli buatan Indonesia; Indo Drama = serialnya saja.
             val indo = indonesiaSubjects(subjects, token)
             picked = ArrayList(if (cat == "indodrama") indo.filter { subjectTypeOf(it) == 2 } else indo)
