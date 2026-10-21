@@ -601,12 +601,6 @@ private fun PosterCard(p: Poster, showTitle: Boolean, onClick: () -> Unit = {}) 
             PosterImage(url = p.cover, modifier = Modifier.fillMaxSize())
         }
         if (showTitle) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(40.dp)
-                    .background(Color(0xCC000000))
-            )
             Text(
                 p.title,
                 color = Color.White,
