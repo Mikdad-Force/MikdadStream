@@ -637,6 +637,10 @@ object LocalMovieBoxClient {
     private fun countryBlob(o: JSONObject): String =
         (o.optString("countryName") + " " + o.optString("language")).lowercase(Locale.ROOT)
 
+    /** Konten berlokasi/produksi Indonesia (bukan sekadar bahasa "Bahasa"). */
+    private fun isIndonesiaCountry(o: JSONObject): Boolean =
+        o.optString("countryName").lowercase(Locale.ROOT).contains("indonesia")
+
     private fun genreBlob(o: JSONObject): String =
         (o.optString("genre") + " " + o.optString("genreList")).lowercase(Locale.ROOT)
 
@@ -752,7 +756,7 @@ object LocalMovieBoxClient {
             "japanese drama", "j drama", "japan drama", "japanese series",
             "japanese tv drama", "alice in borderland", "midnight diner", "first love",
         ),
-        "shorttv" to listOf("short drama", "short tv", "mini drama", "drama pendek"),
+        "shorttv" to listOf("mini tv indonesia", "short tv indonesia", "drama pendek indonesia"),
         "malaydrama" to listOf(
             "drama malaysia", "melayu drama", "malay drama", "drama melayu",
             "malaysian drama", "rindu", "cinta melayu",
@@ -772,13 +776,13 @@ object LocalMovieBoxClient {
     )
 
     /** Hasil pencarian (subject) untuk satu keyword; gagal -> kosong. */
-    private suspend fun searchSubjects(keyword: String, token: String): List<JSONObject> =
+    private suspend fun searchSubjects(keyword: String, token: String, page: Int = 1): List<JSONObject> =
         withContext(Dispatchers.IO) {
             try {
                 val base = activeHostOrFirst()
                 val body = JSONObject()
                     .put("keyword", keyword)
-                    .put("page", 1)
+                    .put("page", page)
                     .put("pageSize", 20)
                 val root = callJson(base, "/wefeed-mobile-bff/subject-api/search", body.toString(), token, false)
                 extractList(root)
@@ -927,16 +931,27 @@ object LocalMovieBoxClient {
         val subjects = if (cat == "shorttv") emptyList() else catalogSubjects()
         val picked: ArrayList<JSONObject>
         if (cat == "shorttv") {
-            // Short TV punya tab khusus (tabId=13), bukan bagian katalog film/serial.
-            picked = ArrayList(tabSubjects(tabOperating(SHORT_TV_TAB_ID)))
-            if (picked.size < 24) {
-                for (q in categoryQueries["shorttv"].orEmpty()) {
-                    for (s in searchSubjects(q, token)) {
-                        val id = s.optString("subjectId")
-                        if (id.isNotBlank() && picked.none { it.optString("subjectId") == id }) picked.add(s)
+            // Short TV: tab khusus (tabId=13) + pencarian, hanya konten lokasi Indonesia.
+            val pool = LinkedHashMap<String, JSONObject>()
+            fun addIndo(s: JSONObject?) {
+                if (s == null) return
+                val id = subjectIdOf(s)
+                if (id.isBlank() || pool.containsKey(id)) return
+                if (!isIndonesiaCountry(s) || subjectTypeOf(s) != 7) return
+                pool[id] = s
+            }
+            tabSubjects(tabOperating(SHORT_TV_TAB_ID)).forEach(::addIndo)
+            for (q in categoryQueries["shorttv"].orEmpty()) {
+                for (page in 1..2) searchSubjects(q, token, page).forEach(::addIndo)
+            }
+            picked = ArrayList(pool.values.sortedByDescending { subjectUpdateScore(it) })
+            // Fallback: bila tak ada konten Indonesia, tampilkan tab Short TV tanpa judul Hindi.
+            if (picked.isEmpty()) {
+                picked.addAll(
+                    tabSubjects(tabOperating(SHORT_TV_TAB_ID)).filterNot {
+                        isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
                     }
-                    if (picked.size >= 32) break
-                }
+                )
             }
             Log.i(TAG, "categoryItems shorttv tab=$SHORT_TV_TAB_ID picked=${picked.size}")
         } else if (cat == "indonesia" || cat == "indodrama") {

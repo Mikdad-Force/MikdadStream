@@ -12,6 +12,7 @@ data class AppStrings(
     val navLibrary: String,
     val navHome: String,
     val navRecommend: String = "Rekomendasi",
+    val navShortTv: String = "Short TV",
     val navDownloads: String,
     val navSettings: String,
 

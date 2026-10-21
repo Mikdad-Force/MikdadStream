@@ -30,6 +30,7 @@ data class HomeUiState(
 class HomeViewModel(
     private val repo: StreamRepository,
     private val prefs: PrefsStore,
+    private val initialCategoryId: String? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeUiState())
@@ -57,7 +58,7 @@ class HomeViewModel(
             val categories = repo.categories(sourceId)
             if (token != requestToken) return
             _state.value = _state.value.copy(categories = categories, loading = true)
-            val first = categories.firstOrNull()
+            val first = categories.firstOrNull { it.id == initialCategoryId } ?: categories.firstOrNull()
             if (first == null) {
                 _state.value = _state.value.copy(loading = false, error = "Sumber ini belum punya kategori.")
                 return

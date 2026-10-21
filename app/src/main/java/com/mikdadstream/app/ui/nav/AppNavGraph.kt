@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.NotificationsNone
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -129,6 +130,7 @@ import com.mikdadstream.app.ui.tv.TvHomeScreen
 
 private object Routes {
     const val HOME = "home"
+    const val SHORTTV = "shorttv"
     const val RECOMMEND = "recommend"
     const val SEARCH = "search"
     const val LIBRARY = "library"
@@ -171,15 +173,17 @@ private object Routes {
 private fun floatingNavItems(s: com.mikdadstream.app.ui.i18n.AppStrings) = listOf(
     // Persis mockup folder Theme: Home / Rekomendasi / Download / History
     FloatingNavItem(Routes.HOME, Icons.Rounded.Home, s.navHome, selectedIcon = Icons.Rounded.Home),
+    FloatingNavItem(Routes.SHORTTV, Icons.Rounded.SmartDisplay, s.navShortTv, selectedIcon = Icons.Rounded.SmartDisplay),
     FloatingNavItem(Routes.RECOMMEND, Icons.Rounded.AutoAwesome, s.navRecommend, selectedIcon = Icons.Rounded.AutoAwesome),
     FloatingNavItem(Routes.DOWNLOADS, Icons.Rounded.Download, s.navDownloads, selectedIcon = Icons.Rounded.Download),
     FloatingNavItem(Routes.HISTORY, Icons.Rounded.History, s.navLibrary, selectedIcon = Icons.Rounded.History),
 )
 
 private fun floatingNavIndex(route: String?): Int = when (route) {
-    Routes.RECOMMEND -> 1
-    Routes.DOWNLOADS -> 2
-    Routes.HISTORY, Routes.LIBRARY -> 3
+    Routes.SHORTTV -> 1
+    Routes.RECOMMEND -> 2
+    Routes.DOWNLOADS -> 3
+    Routes.HISTORY, Routes.LIBRARY -> 4
     else -> 0
 }
 
@@ -221,7 +225,8 @@ fun AppNavGraph(isTv: Boolean = false) {
     val headerFocus = remember { FocusRequester() }
     val routeFocus = remember { FocusRequester() }
     val railFocus = remember { FocusRequester() }
-    val showBottomBar = currentRoute == Routes.HOME || currentRoute == Routes.LIBRARY || currentRoute == Routes.RECOMMEND ||
+    val showBottomBar = currentRoute == Routes.HOME || currentRoute == Routes.SHORTTV ||
+        currentRoute == Routes.LIBRARY || currentRoute == Routes.RECOMMEND ||
         currentRoute == Routes.SETTINGS || currentRoute == Routes.SEARCH || currentRoute == Routes.DOWNLOADS ||
         currentRoute == Routes.HISTORY
 
@@ -351,6 +356,27 @@ fun AppNavGraph(isTv: Boolean = false) {
                         onSeeHistory = { navController.navigateTop(Routes.HISTORY) },
                     )
                 }
+            }
+
+            composable(Routes.SHORTTV) {
+                val vm: HomeViewModel = sharedViewModel {
+                    HomeViewModel(AppGraph.repository, AppGraph.prefs, initialCategoryId = "shorttv")
+                }
+                HomeScreen(
+                    viewModel = vm,
+                    contentPadding = padding,
+                    profile = profile,
+                    accountBadge = accountBadge,
+                    isPremium = isPremium,
+                    activeSourceName = activeSource?.safeName,
+                    onSourceClick = { mainViewModel.openSheet() },
+                    onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
+                    onSearchClick = { navController.navigateTop(Routes.SEARCH) },
+                    onNotificationClick = { navController.navigate(Routes.NOTIFICATIONS) },
+                    onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
+                    onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
+                    onSeeHistory = { navController.navigateTop(Routes.HISTORY) },
+                )
             }
 
             composable(Routes.RECOMMEND) {
