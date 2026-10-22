@@ -373,7 +373,7 @@ private fun SplashScreen() {
                 )
             }
             Text(
-                text = "Mikdad Stream",
+                text = "AkashaStream",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White,
                 fontWeight = FontWeight.Bold,

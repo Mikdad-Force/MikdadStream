@@ -114,7 +114,7 @@ private fun BrandMark() {
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_ghost),
-                    contentDescription = "Mikdad",
+                    contentDescription = "AkashaStream",
                     modifier = Modifier.size(58.dp),
                 )
             }
@@ -122,7 +122,7 @@ private fun BrandMark() {
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Mikdad",
+                text = "Akasha",
                 fontFamily = PlusJakarta,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 28.sp,
@@ -130,7 +130,7 @@ private fun BrandMark() {
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                text = "Streaming",
+                text = "Stream",
                 style = TextStyle(
                     brush = brandBrush(),
                     fontFamily = PlusJakarta,
@@ -247,7 +247,7 @@ fun SignInScreen(
         }
         Spacer(Modifier.height(18.dp))
         Text(
-            text = "Dengan melanjutkan, kamu menyetujui Ketentuan Layanan dan Kebijakan Privasi Mikdad Stream.",
+            text = "Dengan melanjutkan, kamu menyetujui Ketentuan Layanan dan Kebijakan Privasi AkashaStream.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

@@ -103,7 +103,7 @@ fun AppHeader(
             Column(Modifier.weight(1f)) {
                 Text("Halo, Mikdad", fontSize = 12.sp, color = Color(0xFF9A9BB0))
                 Row {
-                    Text("Mikdad", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                    Text("Akasha", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
                     Text("Stream", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = LocalAccent.current)
                 }
             }

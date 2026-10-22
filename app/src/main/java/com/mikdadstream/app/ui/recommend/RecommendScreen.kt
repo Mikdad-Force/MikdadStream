@@ -268,7 +268,7 @@ private fun HeaderBar(
             )
         }
         Row {
-            Text(text = "Mikdad", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Text(text = "Akasha", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
             Text(text = "Stream", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = accent)
         }
         Spacer(Modifier.weight(1f))

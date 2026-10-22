@@ -486,7 +486,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
 @Composable
 fun LegalPoliciesScreen(onBack: () -> Unit) {
     val sections = listOf(
-        "Syarat & Ketentuan" to "Dengan menggunakan Mikdad Stream, Anda setuju untuk mematuhi seluruh ketentuan layanan. " +
+        "Syarat & Ketentuan" to "Dengan menggunakan AkashaStream, Anda setuju untuk mematuhi seluruh ketentuan layanan. " +
             "Akun bersifat pribadi dan tidak boleh dibagikan tanpa izin. Konten yang tersedia hanya untuk penggunaan " +
             "pribadi dan tidak boleh diperjualbelikan. Kami berhak menangguhkan akun yang melanggar ketentuan.",
         "Kebijakan Privasi" to "Kami menghargai privasi Anda. Data yang dikumpulkan terbatas pada informasi akun, " +

@@ -262,7 +262,7 @@ private fun Header(activeSourceName: String? = null, onSourceClick: () -> Unit =
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row {
-            Text("Mikdad", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Akasha", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
             Text("Stream", color = Pink, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
         }
         Spacer(Modifier.weight(1f))

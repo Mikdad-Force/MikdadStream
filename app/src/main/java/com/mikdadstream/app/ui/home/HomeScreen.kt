@@ -394,7 +394,7 @@ private fun GreetingHeader(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Row {
-                    Text(text = "Mikdad", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                    Text(text = "Akasha", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                     Text(text = "Stream", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = accent)
                 }
             }
@@ -563,7 +563,7 @@ private fun HeroBanner(item: MediaItem, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = item.desc?.takeIf { it.isNotBlank() } ?: "Tonton sekarang di Mikdad Stream",
+                    text = item.desc?.takeIf { it.isNotBlank() } ?: "Tonton sekarang di AkashaStream",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 2,

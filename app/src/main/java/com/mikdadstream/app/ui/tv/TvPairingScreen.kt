@@ -135,7 +135,7 @@ fun TvPairingScreen(onPaired: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Buka aplikasi Mikdad Stream di ponsel, lalu pilih Pengaturan > Hubungkan Perangkat, dan pindai kode di bawah.",
+            text = "Buka aplikasi AkashaStream di ponsel, lalu pilih Pengaturan > Hubungkan Perangkat, dan pindai kode di bawah.",
             style = MaterialTheme.typography.bodyLarge,
             color = Color(0xFFB9BAC4),
             textAlign = TextAlign.Center,

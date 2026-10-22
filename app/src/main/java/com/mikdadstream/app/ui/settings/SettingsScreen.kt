@@ -662,7 +662,7 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = "Mikdad Stream — aplikasi streaming native Android. " +
+                    text = "AkashaStream — aplikasi streaming native Android. " +
                         "Nonton film, serial TV, anime, donghua, drama pendek, dan TV langsung dari satu tempat.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
