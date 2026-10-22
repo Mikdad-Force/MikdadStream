@@ -22,6 +22,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 
@@ -42,6 +44,7 @@ class StreamRepository(
     // sama / prefetch episode berikutnya langsung tampil tanpa request ulang.
     private val episodeSourceCache =
         java.util.concurrent.ConcurrentHashMap<String, Pair<Long, SourceData>>()
+    private val sourceLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
     private val nameIndex = mutableMapOf<String, String>()
     private val _modelsState = MutableStateFlow<ModelsResult?>(null)
     val modelsState: StateFlow<ModelsResult?> = _modelsState
@@ -229,15 +232,31 @@ class StreamRepository(
 
     // ---------- Sumber pemutaran ----------
 
+    private fun cachedSource(cacheKey: String, ttlMs: Long): SourceData? =
+        episodeSourceCache[cacheKey]?.let { (t, cached) ->
+            if (System.currentTimeMillis() - t < ttlMs) cached else null
+        }
+
     suspend fun source(modelId: String, episodeId: String, id: String): SourceData {
-        if (modelId.equals("moviebox-local", true)) {
-            val cacheKey = "$id|$episodeId"
-            episodeSourceCache[cacheKey]?.let { (t, cached) ->
-                if (System.currentTimeMillis() - t < 5 * 60_000L) {
-                    android.util.Log.i("MovieboxLocal", "source cache-hit id=$id ep=$episodeId")
-                    return cached
-                }
+        val cacheKey = "$modelId|$id|$episodeId"
+        val ttlMs = if (modelId.equals("moviebox-local", true)) 5 * 60_000L else 90_000L
+        cachedSource(cacheKey, ttlMs)?.let {
+            android.util.Log.i("StreamRepo", "source cache-hit model=$modelId id=$id ep=$episodeId")
+            return it
+        }
+        val lock = sourceLocks.computeIfAbsent(cacheKey) { Mutex() }
+        return lock.withLock {
+            cachedSource(cacheKey, ttlMs)?.let { return@withLock it }
+            val result = fetchSource(modelId, episodeId, id)
+            if (result.playableStreams.isNotEmpty()) {
+                episodeSourceCache[cacheKey] = System.currentTimeMillis() to result
             }
+            result
+        }
+    }
+
+    private suspend fun fetchSource(modelId: String, episodeId: String, id: String): SourceData {
+        if (modelId.equals("moviebox-local", true)) {
             val parts = episodeId.split("_")
             val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
             val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
@@ -257,11 +276,7 @@ class StreamRepository(
                     "MovieboxLocal",
                     "source streams=${streams.size} subs=${subtitles.size} id=$id ep=$episodeId se=$se epNum=$ep",
                 )
-                val result = SourceData(streams = streams, subtitles = subtitles)
-                if (streams.isNotEmpty()) {
-                    episodeSourceCache[cacheKey] = System.currentTimeMillis() to result
-                }
-                result
+                SourceData(streams = streams, subtitles = subtitles)
             }
         }
         val data = unwrap(call { api.source(apiModelId(modelId), episodeId, id) }, "Sumber video tidak tersedia.")

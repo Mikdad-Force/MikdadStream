@@ -115,6 +115,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 private data class SubOption(val group: TrackGroup?, val index: Int, val key: String, val label: String)
 
@@ -843,7 +844,13 @@ fun PlayerScreen(
             return@LaunchedEffect
         }
         try {
-            val data = AppGraph.repository.source(request.modelId, episodeId, request.contentId)
+            val data = withTimeoutOrNull(30_000L) {
+                AppGraph.repository.source(request.modelId, episodeId, request.contentId)
+            } ?: run {
+                loadingStreams = false
+                streamError = "Waktu habis memuat sumber. Coba lagi."
+                return@LaunchedEffect
+            }
             val list = data.playableStreams
             streams = list
             apiSubtitles = data.subtitles.orEmpty()
@@ -1431,6 +1438,59 @@ fun PlayerScreen(
             )
         }
 
+        // ---- Bar atas saat sumber belum siap (jangan layar hitam kosong) ----
+        if (!mediaReady && !inPip) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))
+                    )
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Kembali",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color(0x66000000))
+                        .clickable { onBack() }
+                        .padding(10.dp)
+                        .size(20.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = request.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = when {
+                            loadingStreams -> "Memuat sumber video\u2026"
+                            streamError != null -> "Sumber gagal dimuat"
+                            else -> "Menyiapkan pemutar\u2026"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.75f),
+                        maxLines = 1,
+                    )
+                }
+                if (loadingStreams) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+
         // ---- Bar atas ----
         if (showControls && mediaReady && !inPip) {
             Row(
@@ -1780,19 +1840,46 @@ fun PlayerScreen(
 
         playerError?.let { message ->
             if (streamError == null) {
-                Box(
+                Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 92.dp)
                         .clip(RoundedCornerShape(14.dp))
                         .background(Color(0xE6301018))
                         .padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         text = message,
                         style = MaterialTheme.typography.labelLarge,
                         color = Color.White,
                     )
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Color.White)
+                            .clickable {
+                                playerError = null
+                                streamError = null
+                                loadingStreams = true
+                                pendingSeek.longValue = player.currentPosition
+                                    .takeIf { it > 0L } ?: pendingSeek.longValue
+                                streams = emptyList()
+                                reload++
+                            }
+                            .padding(horizontal = 16.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Refresh,
+                            contentDescription = null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Text("Muat Ulang Sumber", style = MaterialTheme.typography.labelLarge, color = Color.Black)
+                    }
                 }
             }
         }

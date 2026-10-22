@@ -54,18 +54,24 @@ class DetailViewModel(
 
     private var contentId: String = ""
     private val prefetchAttempted = mutableSetOf<String>()
-    private val prefetchSemaphore = Semaphore(3)
+    private val prefetchSemaphoreLocal = Semaphore(3)
+    private val prefetchSemaphoreApi = Semaphore(1)
 
     /** Panaskan cache sumber episode yang terlihat agar klik langsung memutar. */
     fun prefetch(episode: EpisodeData) {
         val current = _state.value
         val detailId = current.detail?.safeId ?: return
         val modelId = current.modelId ?: return
-        if (episode.safeId.isBlank()) return
+        if (episode.safeId.isBlank() || episode.isLocked) return
         val key = "$detailId|${episode.safeId}"
         if (!prefetchAttempted.add(key)) return
+        val semaphore = if (modelId.equals("moviebox-local", true)) {
+            prefetchSemaphoreLocal
+        } else {
+            prefetchSemaphoreApi
+        }
         viewModelScope.launch {
-            prefetchSemaphore.withPermit {
+            semaphore.withPermit {
                 runCatching { repo.source(modelId, episode.safeId, detailId) }
             }
         }
