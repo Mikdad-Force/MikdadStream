@@ -109,7 +109,8 @@ fun DetailScreen(
             state = state,
             contentPadding = contentPadding,
             onBack = onBack,
-            onPlay = { request -> viewModel.preparePlay(request) { ready -> onPlay(ready) } },
+            onPlay = onPlay,
+            onPrefetch = viewModel::prefetch,
             onToggleWatchlist = { viewModel.toggleWatchlist() },
             onDownload = { episode -> viewModel.openDownloads(episode) },
             onDownloadFile = { file -> viewModel.startDownload(file) },
@@ -149,6 +150,7 @@ private fun DetailContent(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     onPlay: (PlayRequest) -> Unit,
+    onPrefetch: (EpisodeData) -> Unit,
     onToggleWatchlist: () -> Unit,
     onDownload: (EpisodeData) -> Unit,
     onDownloadFile: (MediaStream) -> Unit,
@@ -312,7 +314,7 @@ private fun DetailContent(
                         .height(50.dp)
                         .clip(RoundedCornerShape(999.dp))
                         .background(MaterialTheme.colorScheme.primary)
-                        .clickable(enabled = !state.preparing) {
+                        .clickable {
                             val request = state.history?.let { resumePlayRequest(state) }
                             onPlay(request ?: firstPlayRequest(state) ?: return@clickable)
                         }
@@ -320,22 +322,14 @@ private fun DetailContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (state.preparing) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    } else {
-                        Icon(
-                            Icons.Filled.PlayArrow,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
+                    Icon(
+                        Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
                     Text(
-                        text = if (state.preparing) "Menyiapkan\u2026" else playLabel,
+                        text = playLabel,
                         style = MaterialTheme.typography.labelLarge,
                         color = Color.White,
                         maxLines = 1,
@@ -425,6 +419,7 @@ private fun DetailContent(
                         modifier = Modifier.animateItem(),
                         episode = episode,
                         active = episode.safeId == state.history?.episodeId,
+                        onPrefetch = onPrefetch,
                         onClick = {
                             val request = playRequestFor(state, episode)
                             if (request != null) onPlay(request)
@@ -726,10 +721,12 @@ private fun TabsRow(
 private fun EpisodeRow(
     episode: EpisodeData,
     active: Boolean,
+    onPrefetch: (EpisodeData) -> Unit,
     onClick: () -> Unit,
     onDownload: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    LaunchedEffect(episode.safeId) { onPrefetch(episode) }
     Row(
         modifier = modifier
             .fillMaxWidth()

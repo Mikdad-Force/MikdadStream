@@ -654,7 +654,7 @@ private fun NavGraphBuilder.detailDestination(
                 val ready = vm.state.first { !it.loading }
                 if (ready.error == null && ready.detail != null) {
                     val request = vm.resumeHistory() ?: vm.playRequest()
-                    if (request != null) vm.preparePlay(request) { ready -> onPlay(ready) }
+                    if (request != null) onPlay(request)
                     else snackbarHostState.showSnackbar("Belum ada episode untuk diputar.")
                 }
             }

@@ -13,6 +13,8 @@ import com.mikdadstream.app.data.repository.StreamRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 data class DetailUiState(
     val loading: Boolean = true,
@@ -26,7 +28,6 @@ data class DetailUiState(
     val loadingDownloads: Boolean = false,
     val downloadError: String? = null,
     val downloadLocked: Boolean = false,
-    val preparing: Boolean = false,
 )
 
 /** Permintaan pemutaran yang diteruskan ke PlayerActivity. */
@@ -52,6 +53,23 @@ class DetailViewModel(
     val state: StateFlow<DetailUiState> = _state
 
     private var contentId: String = ""
+    private val prefetchAttempted = mutableSetOf<String>()
+    private val prefetchSemaphore = Semaphore(3)
+
+    /** Panaskan cache sumber episode yang terlihat agar klik langsung memutar. */
+    fun prefetch(episode: EpisodeData) {
+        val current = _state.value
+        val detailId = current.detail?.safeId ?: return
+        val modelId = current.modelId ?: return
+        if (episode.safeId.isBlank()) return
+        val key = "$detailId|${episode.safeId}"
+        if (!prefetchAttempted.add(key)) return
+        viewModelScope.launch {
+            prefetchSemaphore.withPermit {
+                runCatching { repo.source(modelId, episode.safeId, detailId) }
+            }
+        }
+    }
 
     fun load(id: String, modelId: String?, sourceName: String?) {
         if (id.isBlank()) {
@@ -75,6 +93,10 @@ class DetailViewModel(
                     inWatchlist = inList,
                     history = history,
                 )
+                val resume = history?.episodeId?.let { episodeId ->
+                    detail.episodeList.firstOrNull { it.safeId == episodeId }
+                } ?: detail.episodeList.firstOrNull()
+                if (resume != null) prefetch(resume)
             } catch (e: ApiError) {
                 _state.value = DetailUiState(loading = false, error = e.message)
             }
@@ -151,31 +173,6 @@ class DetailViewModel(
             episodes = detail.episodeList,
             startPositionMs = history.positionMs,
         )
-    }
-
-    /** Preload sumber video agar PlayerActivity terbuka langsung siap (tanpa lag). */
-    fun preparePlay(target: PlayRequest, onReady: (PlayRequest) -> Unit) {
-        if (target.episodeId.isBlank()) {
-            onReady(target)
-            return
-        }
-        if (_state.value.preparing) return
-        _state.value = _state.value.copy(preparing = true)
-        viewModelScope.launch {
-            val ready = try {
-                val data = repo.source(target.modelId, target.episodeId, target.contentId)
-                val streams = data.playableStreams
-                if (streams.isEmpty()) {
-                    target
-                } else {
-                    target.copy(streams = streams, subtitles = data.subtitles.orEmpty())
-                }
-            } catch (e: Exception) {
-                target
-            }
-            _state.value = _state.value.copy(preparing = false)
-            onReady(ready)
-        }
     }
 
     fun openDownloads(episode: EpisodeData) {
