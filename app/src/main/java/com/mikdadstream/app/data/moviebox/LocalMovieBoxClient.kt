@@ -47,6 +47,7 @@ object LocalMovieBoxClient {
     private const val BOOT_PATH = "/wefeed-mobile-bff/tab-operating"
     const val SUBJECT_GET_PATH = "/wefeed-mobile-bff/subject-api/get"
     const val PLAY_INFO_PATH = "/wefeed-mobile-bff/subject-api/play-info"
+    private const val H5_BASE = "https://h5-api.aoneroom.com"
 
     private const val SECRET_DEFAULT = "76iRl07s0xSN9jqmEWAt79EBJZulIQIsV64FZr2O"
     private const val SIGN_BODY_MAX = 102400
@@ -1788,6 +1789,114 @@ object LocalMovieBoxClient {
     private val episodeRidCache =
         java.util.concurrent.ConcurrentHashMap<String, Pair<Long, String>>()
 
+    private fun h5Headers(): Map<String, String> {
+        val ts = System.currentTimeMillis() / 1000
+        val clientToken = "$ts," + md5Hex(ts.toString().reversed().toByteArray(Charsets.UTF_8))
+        val info = JSONObject().put("timezone", java.util.TimeZone.getDefault().id)
+        return linkedMapOf(
+            "Accept" to "application/json",
+            "X-Client-Info" to info.toString(),
+            "X-Request-Lang" to "en",
+            "X-Client-Token" to clientToken,
+            "X-Vip-Restrict" to "1",
+            "X-No-High-Risk-Restrict" to "0",
+            "X-Source" to "",
+            "Origin" to "https://movie-box.co",
+            "Referer" to "https://movie-box.co/",
+            "User-Agent" to "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36",
+        )
+    }
+
+    private fun callH5Json(pathAndQuery: String): JSONObject? = runCatching {
+        val builder = Request.Builder().url(H5_BASE + pathAndQuery).get()
+        h5Headers().forEach { (k, v) -> builder.header(k, v) }
+        http.newCall(builder.build()).execute().use { resp ->
+            val body = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                Log.w(TAG, "H5 HTTP ${resp.code} $pathAndQuery")
+                null
+            } else if (body.isBlank()) {
+                null
+            } else {
+                JSONObject(body)
+            }
+        }
+    }.getOrNull()
+
+    /**
+     * Short TV (subjectType 7) memakai post UGC di H5, bukan play-info.
+     * play-info hanya mengembalikan trailer macdn; post UGC berisi MP4 asli
+     * (bcdn.hakunaymatata.com/dramabox/...). Post biasanya hanya tersedia
+     * untuk episode yang benar-benar diunggah, jadi cocokkan dulu lewat
+     * Content-Disposition (contoh: "...-S1E2-480P.mp4") agar episode lain
+     * tidak memutar video episode yang salah.
+     */
+    private fun h5VideoMatchesEpisode(url: String, se: Int, ep: Int): Boolean {
+        val disposition = runCatching {
+            http.newCall(
+                Request.Builder().url(url)
+                    .head()
+                    .header("User-Agent", "ExoPlayerLib/2.19.1")
+                    .build()
+            ).execute().use { resp ->
+                resp.header("Content-Disposition") ?: resp.header("content-disposition") ?: ""
+            }
+        }.getOrDefault("")
+        if (disposition.isBlank()) return ep <= 1
+        val match = Regex("(?i)S(\\d+)E(\\d+)").find(disposition) ?: return ep <= 1
+        val s = match.groupValues[1].toIntOrNull() ?: return ep <= 1
+        val e = match.groupValues[2].toIntOrNull() ?: return ep <= 1
+        return s == se && e == ep
+    }
+
+    private fun h5Quality(video: JSONObject): String = when (video.optInt("definition", 0)) {
+        3 -> "480"
+        5 -> "720"
+        7 -> "1080"
+        else -> video.optInt("height", 0).takeIf { it > 0 }?.toString() ?: "Auto"
+    }
+
+    private fun fetchH5ShortTvStreams(subjectId: String, se: Int, ep: Int): List<MediaStream> {
+        val result = ArrayList<MediaStream>()
+        val seenQuality = HashSet<String>()
+        var page = 0
+        while (page < 5) {
+            val root = callH5Json(
+                "/wefeed-h5-bff/post/list/subject?id=$subjectId&page=$page&perPage=12"
+            ) ?: break
+            val items = root.optJSONObject("data")?.optJSONArray("items") ?: break
+            if (items.length() == 0) break
+            for (i in 0 until items.length()) {
+                val post = items.optJSONObject(i) ?: continue
+                val videos = post.optJSONObject("media")?.optJSONArray("video") ?: continue
+                if (videos.length() == 0) continue
+                val firstUrl = videos.optJSONObject(0)?.optString("url").orEmpty()
+                if (firstUrl.isBlank() || isTrapUrl(firstUrl)) continue
+                if (!h5VideoMatchesEpisode(firstUrl, se, ep)) continue
+                for (j in 0 until videos.length()) {
+                    val video = videos.optJSONObject(j) ?: continue
+                    val url = video.optString("url").takeIf { it.isNotBlank() && !isTrapUrl(it) }
+                        ?: continue
+                    val quality = h5Quality(video)
+                    if (!seenQuality.add(quality)) continue
+                    result.add(
+                        MediaStream(
+                            server = "Moviebox UGC",
+                            format = "mp4",
+                            quality = quality,
+                            url = url,
+                            headers = mapOf("User-Agent" to "ExoPlayerLib/2.19.1"),
+                        )
+                    )
+                }
+            }
+            page++
+        }
+        return result.sortedByDescending {
+            it.quality?.filter(Char::isDigit)?.toIntOrNull() ?: 0
+        }
+    }
+
     suspend fun fetchStreams(subjectId: String, se: Int = 1, ep: Int = 1): List<MediaStream>? =
         withContext(Dispatchers.IO) {
             val token = boot() ?: return@withContext null
@@ -1801,6 +1910,20 @@ object LocalMovieBoxClient {
             val resourceId = rdArr?.optJSONObject((ep - 1).coerceIn(0, lastIdx))
                 ?.optString("resourceId")?.takeIf { it.isNotBlank() }
                 ?: rdArr?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+
+            // Short TV: sumber asli ada di post UGC H5, bukan play-info (trailer).
+            if (detailData?.optInt("subjectType", 0) == 7) {
+                val h5Streams = fetchH5ShortTvStreams(
+                    subjectId,
+                    if (se > 0) se else 1,
+                    if (ep > 0) ep else 1,
+                )
+                if (h5Streams.isNotEmpty()) {
+                    Log.i(TAG, "UGC H5 streams=${h5Streams.size} subj=${subjectId.takeLast(6)} se=$se ep=$ep")
+                    return@withContext h5Streams
+                }
+                Log.w(TAG, "UGC H5 empty subj=${subjectId.takeLast(6)} se=$se ep=$ep")
+            }
 
             val variants = listOf(
                 // rid unik per episode: panggil play-info dengan rid dulu (SANS se/ep)
