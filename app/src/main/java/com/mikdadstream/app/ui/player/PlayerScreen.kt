@@ -1329,6 +1329,23 @@ fun PlayerScreen(
         if (!searchFocused) activityRef.value?.hideSystemBars()
     }
 
+    // Masuk Picture-in-Picture: tutup panel & menu supaya tidak ada overlay
+    // yang menggantung di jendela PiP.
+    LaunchedEffect(inPip) {
+        if (inPip) {
+            showSources = false
+            showEpisodes = false
+            showSpeedMenu = false
+            showSubMenu = false
+            showSyncMenu = false
+            showQualityMenu = false
+            showSleepMenu = false
+            searchFocused = false
+            PlayerRemoteController.textInputActive = false
+            focusManager.clearFocus()
+        }
+    }
+
     BackHandler {
         when {
             showSpeedMenu -> showSpeedMenu = false
