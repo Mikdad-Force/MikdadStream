@@ -51,6 +51,11 @@ class PrefsStore(context: Context) {
 
     init {
         CountrySelection.code = _region.value
+        // Utama (client Moviebox lokal) selalu dipakai saat aplikasi dibuka.
+        if (_activeSource.value != DEFAULT_SOURCE) {
+            sp.edit { putString(KEY_SOURCE, DEFAULT_SOURCE) }
+            _activeSource.value = DEFAULT_SOURCE
+        }
     }
 
     val accessToken: StateFlow<String?> = _accessToken
@@ -194,7 +199,7 @@ class PrefsStore(context: Context) {
     fun isSourceHidden(id: String): Boolean = _hiddenSources.value.contains(id.lowercase().trim())
 
     companion object {
-        const val DEFAULT_SOURCE = "moviebox"
+        const val DEFAULT_SOURCE = "moviebox-local"
         const val THEME_SYSTEM = 0
         const val THEME_DARK = 1
         const val THEME_LIGHT = 2

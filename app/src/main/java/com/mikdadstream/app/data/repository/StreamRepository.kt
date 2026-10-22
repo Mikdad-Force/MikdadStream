@@ -90,18 +90,19 @@ class StreamRepository(
         val baseModels = envelope.data.orEmpty().filter { !it.safeId.isBlank() }
         val localModel = SourceModel(
             id = "moviebox-local",
-            name = "Moviebox Local",
+            name = "Utama",
             status = "active",
             contentType = "movie_tv",
-            description = "Sumber video Moviebox via client lokal aplikasi",
+            description = "Sumber video utama aplikasi",
         )
-        val models = baseModels + localModel
+        val models = listOf(localModel) + baseModels
         val result = ModelsResult(models, envelope.searchAllMovie ?: true)
         nameIndex.clear()
         result.models.forEach { model ->
             nameIndex[normalize(model.safeName)] = model.safeId
             nameIndex[normalize(model.safeId)] = model.safeId
         }
+        // Alias lama agar riwayat/pencarian "Moviebox Local" tetap dikenali.
         nameIndex[normalize("Moviebox Local")] = "moviebox-local"
         nameIndex[normalize("movieboxlocal")] = "moviebox-local"
         modelsCache = result
@@ -166,7 +167,7 @@ class StreamRepository(
             android.util.Log.i("MovieboxLocal", "videos cat=$categoryId page=$page items=${items.size} hasMore=$more")
             return VideosData(
                 type = "movie_tv",
-                moduleName = "Moviebox Local",
+                moduleName = "Utama",
                 items = items,
                 page = page,
                 hasMore = more,
@@ -198,7 +199,7 @@ class StreamRepository(
         if (modelId.equals("moviebox-local", true)) {
             val d = LocalMovieBoxClient.subjectDetailData(id)
             android.util.Log.i("MovieboxLocal", "detail id=$id episodes=${d?.episodeList?.size}")
-            return d ?: throw ApiError("Detail Moviebox Local tidak ditemukan.")
+            return d ?: throw ApiError("Detail Utama tidak ditemukan.")
         }
         return unwrap(call { api.detail(apiModelId(modelId), id) }, "Detail tidak ditemukan.")
     }

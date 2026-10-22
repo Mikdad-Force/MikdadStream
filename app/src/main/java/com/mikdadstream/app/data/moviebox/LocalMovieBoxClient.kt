@@ -357,7 +357,7 @@ object LocalMovieBoxClient {
             hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
             out.add(
                 MediaStream(
-                    server = "Moviebox Local",
+                    server = "Utama",
                     format = fmt,
                     quality = entry.optString("resolution", "").takeIf { it.isNotBlank() } ?: "Auto",
                     url = url,
@@ -450,7 +450,7 @@ object LocalMovieBoxClient {
             cover = cover,
             type = type,
             episodeCount = if (episodeCount > 0) episodeCount else null,
-            source = "Moviebox Local",
+            source = "Utama",
             detailPath = detailPath,
         )
     }
@@ -1614,7 +1614,7 @@ object LocalMovieBoxClient {
         // PENTING: tanpa Referer — CDN (bcdn.hakunaymatata.com) memblokir request yang membawa Referer (HTTP 429/433).
         hdrs["User-Agent"] = "ExoPlayerLib/2.19.1"
         return MediaStream(
-            server = "Moviebox Local",
+            server = "Utama",
             format = fmt,
             quality = res.optString("resolutions").takeIf { it.isNotBlank() }
                 ?: res.optString("quality").takeIf { it.isNotBlank() } ?: "Auto",
