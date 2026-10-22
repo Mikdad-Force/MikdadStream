@@ -52,6 +52,7 @@
             android:screenOrientation="sensorLandscape"
             android:supportsPictureInPicture="true"
             android:theme="@style/Theme.MikdadStream.Player"
+            android:windowSoftInputMode="adjustResize"
             tools:ignore="DiscouragedApi" />
 
         <provider

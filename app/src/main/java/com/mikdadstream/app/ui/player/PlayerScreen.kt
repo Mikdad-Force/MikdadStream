@@ -18,22 +18,30 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.HighQuality
@@ -44,6 +52,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Timer
@@ -51,8 +60,10 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -66,6 +77,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,12 +85,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -147,6 +164,9 @@ internal object PlayerRemoteController {
     var seekBack: () -> Unit = {}
     var seekForward: () -> Unit = {}
     var showControls: () -> Unit = {}
+    // true saat kolom teks (cari episode) aktif -> tombol remote tidak boleh
+    // dialihkan ke pemutar.
+    var textInputActive: Boolean = false
 
     fun reset() {
         ready = false
@@ -157,6 +177,7 @@ internal object PlayerRemoteController {
         seekBack = {}
         seekForward = {}
         showControls = {}
+        textInputActive = false
     }
 }
 
@@ -424,12 +445,22 @@ fun PlayerScreen(
     ) -> Unit,
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val scope = rememberCoroutineScope()
 
-    var episodeId by remember { mutableStateOf(request.episodeId) }
-    var episodeNumber by remember { mutableIntStateOf(request.episodeNumber) }
+    // Episode aktif & posisi disimpan lewat rememberSaveable: kalau activity
+    // dibuat ulang (mis. sistem kills proses atau konfigurasi berubah) pemutar
+    // lanjut di episode yang sama, bukan balik ke episode awal.
+    var episodeId by rememberSaveable { mutableStateOf(request.episodeId) }
+    var episodeNumber by rememberSaveable { mutableIntStateOf(request.episodeNumber) }
     var episodes by remember { mutableStateOf(request.episodes) }
+    // Kolom cari episode ("ketik episode").
+    var episodeQuery by rememberSaveable { mutableStateOf("") }
+    var searchFocused by remember { mutableStateOf(false) }
+    // Posisi terakhir yang diketahui — dipakai sebagai titik lanjut saat
+    // activity dibuat ulang.
+    var resumePositionMs by rememberSaveable { mutableLongStateOf(0L) }
 
     var streams by remember { mutableStateOf<List<MediaStream>>(emptyList()) }
     var apiSubtitles by remember { mutableStateOf<List<SubtitleTrack>>(emptyList()) }
@@ -524,6 +555,11 @@ fun PlayerScreen(
             .build()
     }
     val pendingSeek = remember { mutableLongStateOf(request.startPositionMs) }
+    // Lanjut dari posisi terakhir bila activity dibuat ulang.
+    LaunchedEffect(Unit) {
+        val resume = resumePositionMs
+        if (resume > pendingSeek.longValue) pendingSeek.longValue = resume
+    }
     var reload by remember { mutableIntStateOf(0) }
     val lastPosition = remember { mutableLongStateOf(0L) }
     val lastDuration = remember { mutableLongStateOf(0L) }
@@ -532,6 +568,7 @@ fun PlayerScreen(
     val mediaReady = streamError == null && streams.isNotEmpty() && !loadingStreams
 
     fun saveProgressNow() {
+        resumePositionMs = lastPosition.longValue
         onProgress(
             request.modelId,
             request.contentId,
@@ -547,12 +584,16 @@ fun PlayerScreen(
     fun playEpisode(target: EpisodeData) {
         saveProgressNow()
         pendingSeek.longValue = 0L
+        resumePositionMs = 0L
         userSeek = null
         episodeId = target.safeId
         episodeNumber = target.safeNumber
         streams = emptyList()
         playerError = null
         showEpisodes = false
+        searchFocused = false
+        PlayerRemoteController.textInputActive = false
+        focusManager.clearFocus()
         loadingStreams = true
     }
 
@@ -1282,6 +1323,12 @@ fun PlayerScreen(
         }
     }
 
+    // Keyboard ditutup (kolom cari episode ditinggalkan) -> bar sistem
+    // disembunyikan lagi supaya pemutar tetap fullscreen.
+    LaunchedEffect(searchFocused) {
+        if (!searchFocused) activityRef.value?.hideSystemBars()
+    }
+
     BackHandler {
         when {
             showSpeedMenu -> showSpeedMenu = false
@@ -1289,6 +1336,13 @@ fun PlayerScreen(
             showSyncMenu -> showSyncMenu = false
             showSleepMenu -> showSleepMenu = false
             showQualityMenu -> showQualityMenu = false
+            // Kolom cari episode aktif: tombol kembali dulu menutup keyboard,
+            // baru berikutnya menutup panel — pemutar tidak ikut tertutup.
+            searchFocused -> {
+                searchFocused = false
+                PlayerRemoteController.textInputActive = false
+                focusManager.clearFocus()
+            }
             showSources -> showSources = false
             showEpisodes -> showEpisodes = false
             showControls && mediaReady -> showControls = false
@@ -1498,32 +1552,37 @@ fun PlayerScreen(
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
                     .background(
-                        Brush.verticalGradient(listOf(Color(0xCC000000), Color.Transparent))
+                        Brush.verticalGradient(listOf(Color(0xE6000000), Color.Transparent))
                     )
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Kembali",
-                    tint = Color.White,
+                Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(Color(0x66000000))
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x33FFFFFF))
                         .focusRequester(backFocus)
                         .focusProperties { down = controlFocus }
                         .clickable {
                             saveProgressNow()
                             onBack()
-                        }
-                        .padding(10.dp)
-                        .size(20.dp),
-                )
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Kembali",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = request.title,
                         style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
                         color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1534,9 +1593,21 @@ fun PlayerScreen(
                             selectedStream?.label?.takeIf { it.isNotBlank() },
                         ).joinToString(" \u2022 "),
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.75f),
+                        color = Color.White.copy(alpha = 0.72f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (episodeNumber > 0) {
+                    Text(
+                        text = "EP $episodeNumber",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                 }
                 if (sleepEndsAt > 0) {
@@ -1548,8 +1619,8 @@ fun PlayerScreen(
                         color = Color.White,
                         modifier = Modifier
                             .clip(RoundedCornerShape(999.dp))
-                            .background(Color(0x66FFFFFF))
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                            .background(Color(0x33FFFFFF))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
                     )
                 }
             }
@@ -1560,15 +1631,16 @@ fun PlayerScreen(
             Row(
                 modifier = Modifier.align(Alignment.Center),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(32.dp),
+                horizontalArrangement = Arrangement.spacedBy(30.dp),
             ) {
                 Icon(
                     Icons.Filled.Replay10,
                     contentDescription = "Mundur 10 detik",
                     tint = Color.White,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(Color(0x33000000))
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x40FFFFFF))
                         .focusRequester(rewindFocus)
                         .focusProperties {
                             right = controlFocus
@@ -1576,15 +1648,15 @@ fun PlayerScreen(
                             down = bottomFirstFocus
                         }
                         .clickable { seekBy(-10_000L) }
-                        .padding(14.dp)
-                        .size(30.dp),
+                        .padding(14.dp),
                 )
                 Icon(
                     if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = if (isPlaying) "Jeda" else "Putar",
                     tint = Color.Black,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
+                        .size(66.dp)
+                        .clip(CircleShape)
                         .background(Color.White)
                         .focusRequester(controlFocus)
                         .focusProperties {
@@ -1596,16 +1668,16 @@ fun PlayerScreen(
                         .clickable {
                             if (player.isPlaying) player.pause() else player.play()
                         }
-                        .padding(16.dp)
-                        .size(34.dp),
+                        .padding(18.dp),
                 )
                 Icon(
                     Icons.Filled.Forward10,
                     contentDescription = "Maju 10 detik",
                     tint = Color.White,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(Color(0x33000000))
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x40FFFFFF))
                         .focusRequester(forwardFocus)
                         .focusProperties {
                             left = controlFocus
@@ -1613,8 +1685,7 @@ fun PlayerScreen(
                             down = bottomFirstFocus
                         }
                         .clickable { seekBy(10_000L) }
-                        .padding(14.dp)
-                        .size(30.dp),
+                        .padding(14.dp),
                 )
             }
         }
@@ -1626,125 +1697,136 @@ fun PlayerScreen(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .background(
-                        Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))
+                        Brush.verticalGradient(listOf(Color.Transparent, Color(0xD9000000)))
                     )
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xB31A1D24))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(
-                        text = formatTime(userSeek ?: uiPosition),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White,
-                    )
-                    Slider(
-                        value = (userSeek ?: uiPosition)
-                            .toFloat()
-                            .coerceIn(0f, (uiDuration.coerceAtLeast(1L)).toFloat()),
-                        onValueChange = { userSeek = it.toLong() },
-                        onValueChangeFinished = {
-                            userSeek?.let { t -> seekTo(t, show = false) }
-                            userSeek = null
-                        },
-                        valueRange = 0f..(uiDuration.coerceAtLeast(1L)).toFloat(),
-                        modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color.White,
-                            activeTrackColor = Color.White,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.25f),
-                        ),
-                    )
-                    Text(
-                        text = "-" + formatTime((uiDuration - (userSeek ?: uiPosition)).coerceAtLeast(0L)),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.75f),
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        CtlButton(
-                            icon = Icons.Filled.Layers,
-                            label = "Sumber",
-                            modifier = Modifier
-                                .focusRequester(bottomFirstFocus)
-                                .focusProperties { up = controlFocus },
-                        ) {
-                            showSources = true
-                        }
-                        if (episodes.size > 1) {
-                            CtlButton(
-                                icon = Icons.AutoMirrored.Filled.PlaylistPlay,
-                                label = "Episode",
-                            ) { showEpisodes = true }
-                        }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = formatTime(userSeek ?: uiPosition),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White,
+                        )
+                        Slider(
+                            value = (userSeek ?: uiPosition)
+                                .toFloat()
+                                .coerceIn(0f, (uiDuration.coerceAtLeast(1L)).toFloat()),
+                            onValueChange = { userSeek = it.toLong() },
+                            onValueChangeFinished = {
+                                userSeek?.let { t -> seekTo(t, show = false) }
+                                userSeek = null
+                            },
+                            valueRange = 0f..(uiDuration.coerceAtLeast(1L)).toFloat(),
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Color.White,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.22f),
+                            ),
+                        )
+                        Text(
+                            text = "-" + formatTime((uiDuration - (userSeek ?: uiPosition)).coerceAtLeast(0L)),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.7f),
+                        )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        CtlButton(
-                            text = formatSpeed(speed),
-                            label = "Kecepatan",
-                            modifier = Modifier.focusProperties { up = controlFocus },
-                        ) {
-                            showSpeedMenu = true
-                        }
-                        CtlButton(
-                            icon = Icons.Filled.AspectRatio,
-                            label = resizeLabels[resizeModeIx],
-                        ) {
-                            resizeModeIx = (resizeModeIx + 1) % resizeModes.size
-                        }
-                        CtlButton(
-                            icon = Icons.Filled.Subtitles,
-                            label = "Subtitle",
-                            tint = if (selectedSubKey != null) MaterialTheme.colorScheme.primary
-                            else Color.White,
-                        ) {
-                            refreshSubOptions()
-                            showSubMenu = true
-                        }
-                        CtlButton(
-                            icon = Icons.Filled.Speed,
-                            label = if (subOffsetMs == 0L) "Sync" else formatOffset(subOffsetMs),
-                            tint = if (subOffsetMs != 0L) MaterialTheme.colorScheme.primary
-                            else Color.White,
-                        ) {
-                            showSyncMenu = true
-                        }
-                        if (videoQualities.size > 1) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             CtlButton(
-                                icon = Icons.Filled.HighQuality,
-                                label = selectedVideoHeight?.let { "${it}p" } ?: "Auto",
-                                tint = if (selectedVideoHeight != null) MaterialTheme.colorScheme.primary
+                                icon = Icons.Filled.Layers,
+                                label = "Sumber",
+                                modifier = Modifier
+                                    .focusRequester(bottomFirstFocus)
+                                    .focusProperties { up = controlFocus },
+                            ) {
+                                showSources = true
+                            }
+                            if (episodes.size > 1) {
+                                CtlButton(
+                                    icon = Icons.AutoMirrored.Filled.PlaylistPlay,
+                                    label = "Episode",
+                                ) { showEpisodes = true }
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            CtlButton(
+                                text = formatSpeed(speed),
+                                label = "Kecepatan",
+                                modifier = Modifier.focusProperties { up = controlFocus },
+                            ) {
+                                showSpeedMenu = true
+                            }
+                            CtlButton(
+                                icon = Icons.Filled.AspectRatio,
+                                label = resizeLabels[resizeModeIx],
+                            ) {
+                                resizeModeIx = (resizeModeIx + 1) % resizeModes.size
+                            }
+                            CtlButton(
+                                icon = Icons.Filled.Subtitles,
+                                label = "Subtitle",
+                                tint = if (selectedSubKey != null) MaterialTheme.colorScheme.primary
                                 else Color.White,
                             ) {
-                                refreshVideoQualities()
-                                showQualityMenu = true
+                                refreshSubOptions()
+                                showSubMenu = true
                             }
+                            CtlButton(
+                                icon = Icons.Filled.Speed,
+                                label = if (subOffsetMs == 0L) "Sync" else formatOffset(subOffsetMs),
+                                tint = if (subOffsetMs != 0L) MaterialTheme.colorScheme.primary
+                                else Color.White,
+                            ) {
+                                showSyncMenu = true
+                            }
+                            if (videoQualities.size > 1) {
+                                CtlButton(
+                                    icon = Icons.Filled.HighQuality,
+                                    label = selectedVideoHeight?.let { "${it}p" } ?: "Auto",
+                                    tint = if (selectedVideoHeight != null) MaterialTheme.colorScheme.primary
+                                    else Color.White,
+                                ) {
+                                    refreshVideoQualities()
+                                    showQualityMenu = true
+                                }
+                            }
+                            val act = activityRef.value
+                            if (act != null) {
+                                CtlButton(icon = Icons.Filled.ScreenRotation, label = "Rotasi") {
+                                    toggleOrientation()
+                                }
+                                CtlButton(icon = Icons.Filled.PictureInPicture, label = "PiP") {
+                                    act.enterPip()
+                                }
+                            }
+                            CtlButton(
+                                icon = Icons.Filled.Timer,
+                                label = if (sleepEndsAt > 0) {
+                                    "${((sleepEndsAt - System.currentTimeMillis()) / 60_000L + 1L).coerceAtLeast(0L)}m"
+                                } else {
+                                    "Timer"
+                                },
+                                tint = if (sleepEndsAt > 0) MaterialTheme.colorScheme.primary
+                                else Color.White,
+                            ) { showSleepMenu = true }
                         }
-                        val act = activityRef.value
-                        if (act != null) {
-                            CtlButton(icon = Icons.Filled.ScreenRotation, label = "Rotasi") {
-                                toggleOrientation()
-                            }
-                            CtlButton(icon = Icons.Filled.PictureInPicture, label = "PiP") {
-                                act.enterPip()
-                            }
-                        }
-                        CtlButton(
-                            icon = Icons.Filled.Timer,
-                            label = if (sleepEndsAt > 0) {
-                                "${((sleepEndsAt - System.currentTimeMillis()) / 60_000L + 1L).coerceAtLeast(0L)}m"
-                            } else {
-                                "Timer"
-                            },
-                            tint = if (sleepEndsAt > 0) MaterialTheme.colorScheme.primary
-                            else Color.White,
-                        ) { showSleepMenu = true }
                     }
                 }
             }
@@ -1771,15 +1853,30 @@ fun PlayerScreen(
         // ---- Status memuat / galat ----
         if (loadingStreams && streams.isEmpty()) {
             Column(
-                modifier = Modifier.align(Alignment.Center),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xCC101216))
+                    .padding(horizontal = 24.dp, vertical = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                CircularProgressIndicator(color = Color.White)
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.5.dp,
+                    modifier = Modifier.size(30.dp),
+                )
                 Text(
                     text = "Mencari sumber terbaik\u2026",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.85f),
+                )
+                Text(
+                    text = request.title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.55f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -2015,81 +2112,99 @@ fun PlayerScreen(
         )
     }
 
-    // ---- Sheet sumber ----
+    // ---- Panel sumber (dalam jendela pemutar) ----
     if (showSources) {
-        val sheetFocus = remember { FocusRequester() }
-        TvRequestFocusOnShow(sheetFocus)
-        ModalBottomSheet(
-            onDismissRequest = { showSources = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                modifier = Modifier
-                    .focusRequester(sheetFocus)
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+        val panelFocus = remember { FocusRequester() }
+        TvRequestFocusOnShow(panelFocus)
+        PlayerPanel(onDismiss = { showSources = false }) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "Sumber Pemutaran",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                if (streams.isEmpty()) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Sumber Pemutaran",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = if (streams.isEmpty()) "Belum ada sumber tersedia."
+                        else "${streams.size} sumber ditemukan",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.6f),
+                    )
+                }
+                IconButton(
+                    modifier = Modifier.focusRequester(panelFocus),
+                    onClick = { showSources = false },
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = "Tutup", tint = Color.White)
+                }
+            }
+            if (streams.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text(
                         text = "Belum ada sumber tersedia.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 12.dp),
+                        color = Color.White.copy(alpha = 0.7f),
                     )
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxWidth().height(320.dp)) {
-                        items(streams.indices.toList()) { index ->
-                            val stream = streams[index]
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(
-                                        if (index == selectedIndex) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                    )
-                                    .clickable {
-                                        saveProgressNow()
-                                        pendingSeek.longValue = player.currentPosition
-                                        selectedIndex = index
-                                        showSources = false
-                                    }
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(streams.indices.toList()) { index ->
+                        val stream = streams[index]
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (index == selectedIndex) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                    else Color(0xFF23262E)
+                                )
+                                .clickable {
+                                    saveProgressNow()
+                                    pendingSeek.longValue = player.currentPosition
+                                    selectedIndex = index
+                                    showSources = false
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.Layers,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stream.label,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = stream.kindLabel + if (stream.isDrm == true) " \u2022 DRM" else "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(alpha = 0.6f),
+                                )
+                            }
+                            if (index == selectedIndex) {
                                 Icon(
-                                    Icons.Filled.Layers,
-                                    contentDescription = null,
+                                    Icons.Filled.CheckCircle,
+                                    contentDescription = "Terpilih",
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(18.dp),
                                 )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = stream.label,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onBackground,
-                                    )
-                                    Text(
-                                        text = stream.kindLabel + if (stream.isDrm == true) " \u2022 DRM" else "",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                if (index == selectedIndex) {
-                                    Icon(
-                                        Icons.Filled.CheckCircle,
-                                        contentDescription = "Terpilih",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
                             }
                         }
                     }
@@ -2098,53 +2213,177 @@ fun PlayerScreen(
         }
     }
 
-    // ---- Sheet episode ----
+    // ---- Panel episode + kolom cari ("ketik episode") ----
     if (showEpisodes) {
-        val sheetFocus = remember { FocusRequester() }
-        TvRequestFocusOnShow(sheetFocus)
-        ModalBottomSheet(
-            onDismissRequest = { showEpisodes = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                modifier = Modifier
-                    .focusRequester(sheetFocus)
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+        val panelFocus = remember { FocusRequester() }
+        TvRequestFocusOnShow(panelFocus)
+        val filtered = remember(episodes, episodeQuery) { filterEpisodes(episodes, episodeQuery) }
+        PlayerPanel(onDismiss = {
+            showEpisodes = false
+            searchFocused = false
+            PlayerRemoteController.textInputActive = false
+            focusManager.clearFocus()
+        }) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "Daftar Episode",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                LazyColumn(modifier = Modifier.fillMaxWidth().height(320.dp)) {
-                    items(episodes, key = { it.safeId }) { episode ->
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Daftar Episode",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = if (episodeQuery.isBlank()) {
+                            "${episodes.size} episode tersedia"
+                        } else {
+                            "${filtered.size} dari ${episodes.size} episode"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.6f),
+                    )
+                }
+                IconButton(
+                    modifier = Modifier.focusRequester(panelFocus),
+                    onClick = {
+                        showEpisodes = false
+                        searchFocused = false
+                        PlayerRemoteController.textInputActive = false
+                        focusManager.clearFocus()
+                    },
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = "Tutup", tint = Color.White)
+                }
+            }
+
+            OutlinedTextField(
+                value = episodeQuery,
+                onValueChange = { episodeQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focus ->
+                        searchFocused = focus.isFocused
+                        PlayerRemoteController.textInputActive = focus.isFocused
+                    },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                placeholder = {
+                    Text(
+                        text = "Ketik nomor atau judul episode",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.45f),
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Filled.Search,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                trailingIcon = {
+                    if (episodeQuery.isNotEmpty()) {
+                        IconButton(onClick = { episodeQuery = "" }) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Hapus pencarian",
+                                tint = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                },
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                // Enter tidak menutup panel/keyboard supaya pengguna bisa
+                // menyunting kata kunci lalu memilih episode.
+                keyboardActions = KeyboardActions(onSearch = {}),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color(0xFF2A2E37),
+                    unfocusedContainerColor = Color(0xFF1F222A),
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                ),
+            )
+
+            Text(
+                text = "Ketik nomor episode untuk lompat cepat, atau cari judulnya.",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.5f),
+            )
+
+            if (filtered.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(120.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "Episode tidak ditemukan",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.7f),
+                    )
+                }
+            } else {                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    itemsIndexed(filtered, key = { index, _ -> "episode-$index" }) { _, episode ->
                         val active = episode.safeId == episodeId
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(
-                                    if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                    else Color(0xFF23262E)
                                 )
                                 .clickable { playEpisode(episode) }
-                                .padding(14.dp),
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Text(
-                                text = if (episode.safeNumber > 0) "EP ${episode.safeNumber}" else "\u2014",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            Text(
-                                text = episode.badgeLabel ?: "Putar",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.weight(1f),
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (active) MaterialTheme.colorScheme.primary
+                                        else Color(0xFF2E323B)
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = if (episode.safeNumber > 0) "${episode.safeNumber}" else "\u2014",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (active) Color.White else Color.White.copy(alpha = 0.85f),
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = episode.badgeLabel ?: "Episode ${episode.safeNumber}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = listOfNotNull(
+                                        episode.durationSeconds?.takeIf { it > 0 }?.let { "${it / 60} menit" },
+                                        episode.lockedReason?.takeIf { it.isNotBlank() },
+                                    ).joinToString(" \u2022 ").ifBlank { "Ketuk untuk memutar" },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                             if (active) {
                                 Icon(
                                     Icons.Filled.CheckCircle,
@@ -2158,6 +2397,66 @@ fun PlayerScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Saring daftar episode berdasarkan kata kunci.
+ * Angka -> cari nomor episode (persis atau sebagian), teks -> cari judul.
+ */
+private fun filterEpisodes(list: List<EpisodeData>, query: String): List<EpisodeData> {
+    val q = query.trim()
+    if (q.isEmpty()) return list
+    val number = q.toIntOrNull()
+    if (number != null) {
+        // Nomor persis selalu tampil paling atas biar bisa langsung diputar.
+        return list
+            .filter { it.safeNumber == number || it.safeNumber.toString().contains(q) }
+            .sortedBy { if (it.safeNumber == number) 0 else 1 }
+    }
+    return list.filter { episode ->
+        episode.badgeLabel?.contains(q, ignoreCase = true) == true ||
+            episode.safeId.contains(q, ignoreCase = true)
+    }
+}
+
+/**
+ * Panel overlay di dalam jendela pemutar (bukan bottom sheet/dialog terpisah).
+ * Dipakai untuk daftar episode & sumber: keyboard saat mengetik episode tetap
+ * di jendela yang sama, jadi pemutar tidak ikut tertutup.
+ */
+@Composable
+private fun PlayerPanel(
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val panelTop = remember { mutableIntStateOf(0) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding()
+            .background(Color(0xB3000000))
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    // Ketukan di dalam panel tidak menutup panel.
+                    if (offset.y < panelTop.intValue) onDismiss()
+                }
+            },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.82f)
+                .onGloballyPositioned { panelTop.intValue = it.positionInRoot().y.toInt() }
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color(0xF216181F))
+                .focusGroup()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            content = content,
+        )
     }
 }
 

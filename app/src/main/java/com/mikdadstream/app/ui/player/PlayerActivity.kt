@@ -67,11 +67,28 @@ class PlayerActivity : ComponentActivity() {
     }
 
     /**
+     * Sembunyikan lagi bar sistem (mis. setelah keyboard ditutup) supaya tampilan
+     * pemutar tetap fullscreen.
+     */
+    fun hideSystemBars() {
+        WindowInsetsControllerCompat(window, window.decorView)
+            .hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    /**
      * Dukungan remote TV / D-pad. Tombol media selalu ditangani. Saat kontrol
      * tersembunyi, D-pad mengontrol pemutaran langsung; saat kontrol tampil,
      * D-pad diteruskan ke Compose agar bisa menjelajah tombol kontrol.
+     *
+     * Pengecualian: saat kolom teks (cari episode) aktif, semua tombol
+     * diteruskan ke keyboard. Kalau tidak, Enter/karakter yang diketik ikut
+     * tertangkap pemutar (toggle play/pause) sehingga mengetik episode terasa
+     * seperti pemutar keluar sendiri.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (PlayerRemoteController.textInputActive) {
+            return super.dispatchKeyEvent(event)
+        }
         if (PlayerRemoteController.ready && event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
