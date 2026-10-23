@@ -92,7 +92,32 @@ class MikdadStreamApp : Application(), coil.ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        installCrashBreadcrumb()
         AppGraph.init(this)
         com.mikdadstream.app.data.moviebox.MovieboxSyncJob.maybeRun(this)
+    }
+
+    /**
+     * Simpan jejak crash terakhir ke files/diag/crash-last.txt. Bila pemain
+     * "keluar sendiri" (mis. di Android TV), file ini membuat penyebab
+     * crash dapat dilaporkan tanpa perlu adb.
+     */
+    private fun installCrashBreadcrumb() {
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                val dir = java.io.File(filesDir, "diag")
+                dir.mkdirs()
+                val stamp = java.text.SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm:ss",
+                    java.util.Locale.US,
+                ).format(java.util.Date())
+                java.io.File(dir, "crash-last.txt").writeText(
+                    "=== $stamp thread=${thread.name} app=${BuildConfig.VERSION_NAME}\n" +
+                        android.util.Log.getStackTraceString(error).take(60_000),
+                )
+            }
+            prev?.uncaughtException(thread, error)
+        }
     }
 }

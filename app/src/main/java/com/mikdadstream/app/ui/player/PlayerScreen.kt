@@ -125,6 +125,7 @@ import com.mikdadstream.app.data.remote.MediaStream
 import com.mikdadstream.app.data.remote.SubtitleTrack
 import com.mikdadstream.app.ui.detail.PlayRequest
 import com.mikdadstream.app.ui.tv.TvRequestFocusOnShow
+import com.mikdadstream.app.ui.tv.isTelevision
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1346,6 +1347,12 @@ fun PlayerScreen(
         }
     }
 
+    // Android TV: BACK tidak boleh langsung menutup pemutar (mencegah pemutar
+    // "keluar sendiri" balik ke layar film karena tekanan BACK tercecer di
+    // remote/firmware). Tekan pertama menampilkan kontrol; tekan kedua dalam
+    // 2,5 detik keluar. Ponsel tetap satu tekan seperti sebelumnya.
+    val isTv = remember { context.isTelevision() }
+    var lastGuardBack by remember { mutableLongStateOf(0L) }
     BackHandler {
         when {
             showSpeedMenu -> showSpeedMenu = false
@@ -1362,10 +1369,18 @@ fun PlayerScreen(
             }
             showSources -> showSources = false
             showEpisodes -> showEpisodes = false
-            showControls && mediaReady -> showControls = false
+            showControls && mediaReady && !isTv -> showControls = false
             else -> {
-                saveProgressNow()
-                onBack()
+                val now = System.currentTimeMillis()
+                if (isTv && (lastGuardBack == 0L || now - lastGuardBack > 2_500)) {
+                    lastGuardBack = now
+                    showControls = true
+                    runCatching { controlFocus.requestFocus() }
+                } else {
+                    lastGuardBack = 0L
+                    saveProgressNow()
+                    onBack()
+                }
             }
         }
     }

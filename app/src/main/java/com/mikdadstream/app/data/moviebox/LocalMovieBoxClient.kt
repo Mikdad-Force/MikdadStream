@@ -1066,8 +1066,9 @@ object LocalMovieBoxClient {
         // Indonesia & digabung per film (versi dub/Hindi hilang).
         val needsFilter = cat != "indonesia" && cat != "indodrama"
         val qualified = if (needsFilter) filterIndoOnly(picked, token) else picked
-        // Kategori tidak boleh kosong: jika filter subtitle Indonesia tidak
-        // menemukan apa pun, tampilkan hasil mentah (tanpa judul Hindi).
+        // Terbaru/terupdate di atas: kategori mengikuti episode terakhir yang
+        // rilis — judul yang baru update episode atau film yang baru dirilis
+        // masuk paling atas (skor uploadTime resource, fallback releaseDate).
         val usable = if (needsFilter && qualified.isEmpty() && picked.isNotEmpty()) {
             Log.w(TAG, "categoryItems $cat filter kosong -> fallback tanpa filter")
             picked.filterNot {
@@ -1075,7 +1076,7 @@ object LocalMovieBoxClient {
             }
         } else {
             qualified
-        }
+        }.sortedByDescending { subjectUpdateScore(it) }
         val out = ArrayList<MediaItem>()
         val seen = HashSet<String>()
         for (s in usable) {
