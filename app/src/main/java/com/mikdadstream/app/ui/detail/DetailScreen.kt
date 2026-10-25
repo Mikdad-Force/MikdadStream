@@ -559,6 +559,7 @@ private fun firstPlayRequest(state: DetailUiState): PlayRequest? {
     val detail = state.detail ?: return null
     val modelId = state.modelId ?: return null
     val episode = detail.episodeList.firstOrNull() ?: return null
+    val cached = state.cachedSourceFor(episode.safeId)
     return PlayRequest(
         modelId = modelId,
         contentId = detail.safeId,
@@ -567,6 +568,8 @@ private fun firstPlayRequest(state: DetailUiState): PlayRequest? {
         title = detail.safeTitle,
         cover = detail.cover,
         episodes = detail.episodeList,
+        streams = cached?.playableStreams.orEmpty(),
+        subtitles = cached?.subtitles.orEmpty(),
     )
 }
 
@@ -576,6 +579,7 @@ private fun resumePlayRequest(state: DetailUiState): PlayRequest? {
     val history = state.history ?: return null
     val episode = detail.episodeList.firstOrNull { it.safeId == history.episodeId }
         ?: detail.episodeList.firstOrNull() ?: return null
+    val cached = state.cachedSourceFor(episode.safeId)
     return PlayRequest(
         modelId = modelId,
         contentId = detail.safeId,
@@ -585,6 +589,8 @@ private fun resumePlayRequest(state: DetailUiState): PlayRequest? {
         cover = detail.cover,
         episodes = detail.episodeList,
         startPositionMs = if (episode.safeId == history.episodeId) history.positionMs else 0L,
+        streams = cached?.playableStreams.orEmpty(),
+        subtitles = cached?.subtitles.orEmpty(),
     )
 }
 
@@ -592,6 +598,7 @@ private fun playRequestFor(state: DetailUiState, episode: EpisodeData): PlayRequ
     val detail = state.detail ?: return null
     val modelId = state.modelId ?: return null
     val history = state.history
+    val cached = state.cachedSourceFor(episode.safeId)
     return PlayRequest(
         modelId = modelId,
         contentId = detail.safeId,
@@ -601,6 +608,8 @@ private fun playRequestFor(state: DetailUiState, episode: EpisodeData): PlayRequ
         cover = detail.cover,
         episodes = detail.episodeList,
         startPositionMs = if (history?.episodeId == episode.safeId) history.positionMs else 0L,
+        streams = cached?.playableStreams.orEmpty(),
+        subtitles = cached?.subtitles.orEmpty(),
     )
 }
 

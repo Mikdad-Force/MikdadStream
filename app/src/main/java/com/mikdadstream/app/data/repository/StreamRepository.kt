@@ -245,14 +245,28 @@ class StreamRepository(
             return it
         }
         val lock = sourceLocks.computeIfAbsent(cacheKey) { Mutex() }
-        return lock.withLock {
-            cachedSource(cacheKey, ttlMs)?.let { return@withLock it }
-            val result = fetchSource(modelId, episodeId, id)
-            if (result.playableStreams.isNotEmpty()) {
-                episodeSourceCache[cacheKey] = System.currentTimeMillis() to result
+        try {
+            return lock.withLock {
+                cachedSource(cacheKey, ttlMs)?.let { return@withLock it }
+                val result = fetchSource(modelId, episodeId, id)
+                if (result.playableStreams.isNotEmpty()) {
+                    pruneSourceCache(ttlMs)
+                    episodeSourceCache[cacheKey] = System.currentTimeMillis() to result
+                }
+                result
             }
-            result
+        } finally {
+            // Lepas kunci setelah dipakai: prefetch banyak episode tidak boleh
+            // membuat peta kunci tumbuh tanpa batas.
+            sourceLocks.remove(cacheKey, lock)
         }
+    }
+
+    /** Buang entri cache sumber yang sudah kedaluwarsa (cache dibatasi 24 entri). */
+    private fun pruneSourceCache(ttlMs: Long) {
+        if (episodeSourceCache.size <= 24) return
+        val now = System.currentTimeMillis()
+        episodeSourceCache.entries.removeIf { (now - it.value.first) >= ttlMs }
     }
 
     private suspend fun fetchSource(modelId: String, episodeId: String, id: String): SourceData {

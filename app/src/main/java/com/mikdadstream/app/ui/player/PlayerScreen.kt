@@ -550,6 +550,14 @@ fun PlayerScreen(
     var contentKindRetry by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     // Penanda agar LaunchedEffect pemasangan stream berjalan ulang setelah retry.
     var contentRetryTrigger by remember { mutableIntStateOf(0) }
+    // ---- Muat sumber / terapkan stream ----
+    // Dipaksa naik tiap kali sumber harus dimuat ulang, sehingga efek pemuatan
+    // tetap jalan walau episodeId tidak berubah (sebelumnya klik episode yang
+    // sama membuat spinner "Mencari sumber" menggantung tanpa batas).
+    var streamLoadTrigger by remember { mutableIntStateOf(0) }
+    // Episode yang terakhir benar-benar dipasang ke ExoPlayer: dipakai untuk
+    // mempertahankan posisi saat apply ulang (subtitle/sumber menyusul).
+    var appliedEpisodeId by remember { mutableStateOf<String?>(null) }
     var hud by remember { mutableStateOf<HudInfo?>(null) }
     var hudJob by remember { mutableStateOf<Job?>(null) }
     var sleepEndsAt by remember { mutableLongStateOf(0L) }
@@ -634,6 +642,16 @@ fun PlayerScreen(
     }
 
     fun playEpisode(target: EpisodeData) {
+        // Klik episode yang sedang diputar: jangan bersihkan sumber (efek muat
+        // tidak jalan karena episodeId tidak berubah -> spinner menggantung).
+        // Cukup tutup panel.
+        if (target.safeId == episodeId) {
+            showEpisodes = false
+            searchFocused = false
+            PlayerRemoteController.textInputActive = false
+            focusManager.clearFocus()
+            return
+        }
         saveProgressNow()
         pendingSeek.longValue = 0L
         resumePositionMs = 0L
@@ -647,6 +665,7 @@ fun PlayerScreen(
         PlayerRemoteController.textInputActive = false
         focusManager.clearFocus()
         loadingStreams = true
+        streamLoadTrigger++
     }
 
     fun showHud(icon: ImageVector?, text: String) {
@@ -873,7 +892,7 @@ fun PlayerScreen(
     }
 
     // ---- Muat sumber video dari API ----
-    LaunchedEffect(episodeId, reload) {
+    LaunchedEffect(episodeId, reload, streamLoadTrigger) {
         loadingStreams = true
         streamError = null
         val local = request.localUrl
@@ -905,35 +924,46 @@ fun PlayerScreen(
         )
         if (reload == 0 && episodeId == request.episodeId && request.streams.isNotEmpty()) {
             val list = request.streams
+            // Pasang sumber + pilih stream SEGERA: video mulai tanpa menunggu
+            // subtitle. Subtitle menyusul belakangan (apply ulang otomatis).
             streams = list
+            selectedIndex = pickStreamIndex(list)
+            loadingStreams = false
             // Prefetch sudah memuat Indonesia (per-episode sejak v2.1.32) ->
             // pakai langsung, JANGAN fetch ulang. Fetch ulang dulu membuat
             // video mulai lalu di-reload lagi saat daftar baru tiba.
             if (prefetchedHasIndo) {
                 apiSubtitles = request.subtitles
                 Log.i("PlayerScreen", "subtitle prefetch dipakai (${request.subtitles.size})")
-            } else {
-                val parts = episodeId.split("_")
-                val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
-                val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
-                val fresh = runCatching {
-                    com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
-                        .fetchSubtitles(request.contentId, se, ep)
-                }.getOrDefault(emptyList())
-                fun indoOf(s: SubtitleTrack) =
-                    normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia"
-                apiSubtitles = when {
-                    fresh.any(::indoOf) -> fresh
-                    fresh.isNotEmpty() -> fresh
-                    else -> request.subtitles
-                }
-                Log.i(
-                    "PlayerScreen",
-                    "subtitle segar: ${apiSubtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}",
-                )
+                return@LaunchedEffect
             }
-            selectedIndex = pickStreamIndex(list)
-            loadingStreams = false
+            // Hanya Moviebox Local yang contentId-nya id Moviebox; sumber lain
+            // memanggilnya hanya membuang waktu pemutaran.
+            if (!request.modelId.equals("moviebox-local", true)) {
+                apiSubtitles = request.subtitles
+                return@LaunchedEffect
+            }
+            // Kosongkan dulu: subtitle episode SEBELUMNYA jangan sempat terpasang
+            // di video baru selagi subtitle segar diambil (apply ulang otomatis).
+            apiSubtitles = emptyList()
+            val parts = episodeId.split("_")
+            val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
+            val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
+            val fresh = runCatching {
+                com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
+                    .fetchSubtitles(request.contentId, se, ep)
+            }.getOrDefault(emptyList())
+            fun indoOf(s: SubtitleTrack) =
+                normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia"
+            apiSubtitles = when {
+                fresh.any(::indoOf) -> fresh
+                fresh.isNotEmpty() -> fresh
+                else -> request.subtitles
+            }
+            Log.i(
+                "PlayerScreen",
+                "subtitle segar: ${apiSubtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}",
+            )
             return@LaunchedEffect
         }
         try {
@@ -945,13 +975,22 @@ fun PlayerScreen(
                 return@LaunchedEffect
             }
             val list = data.playableStreams
+            // Sumber dipasang SEBELUM fetch subtitle cadangan: video langsung
+            // berputar, subtitle menyusul tanpa menunda pemutaran.
             streams = list
+            selectedIndex = pickStreamIndex(list)
+            loadingStreams = false
             apiSubtitles = data.subtitles.orEmpty()
             Log.i("PlayerScreen", "subtitle source: ${apiSubtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}")
-            // Bila daftar tidak memuat Indonesia, coba sekali lagi langsung ke API.
+            if (list.isEmpty()) {
+                streamError = "Tidak ada sumber pemutaran untuk episode ini."
+                return@LaunchedEffect
+            }
+            // Bila daftar tidak memuat Indonesia, coba sekali lagi langsung ke API
+            // (hanya Moviebox Local; sumber lain tidak punya id Moviebox).
             fun isIndo(s: SubtitleTrack): Boolean =
                 normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia"
-            if (apiSubtitles.none(::isIndo)) {
+            if (request.modelId.equals("moviebox-local", true) && apiSubtitles.none(::isIndo)) {
                 val parts = episodeId.split("_")
                 val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
                 val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
@@ -962,11 +1001,6 @@ fun PlayerScreen(
                 Log.i("PlayerScreen", "subtitle retry: ${retry.size} track, indo=${retry.any(::isIndo)}")
                 if (retry.any(::isIndo)) apiSubtitles = retry
             }
-            selectedIndex = pickStreamIndex(list)
-            loadingStreams = false
-            if (list.isEmpty()) {
-                streamError = "Tidak ada sumber pemutaran untuk episode ini."
-            }
         } catch (e: ApiError) {
             loadingStreams = false
             streamError = e.message
@@ -976,30 +1010,46 @@ fun PlayerScreen(
         }
     }
 
-    // Prefetch episode berikutnya di latar belakang: saat pengguna menekan
-    // "Episode selanjutnya", sumber sudah ada di cache -> pemutaran instan.
+    // Prefetch sumber episode SEBELUM & SESUDAH yang sedang diputar di latar
+    // belakang: saat panel episode dibuka / pengguna menekan "Episode
+    // berikutnya", sumber sudah ada di cache repository -> pemutaran instan.
     LaunchedEffect(episodeId, loadingStreams, episodes) {
         if (loadingStreams || streams.isEmpty()) return@LaunchedEffect
         if (!request.modelId.equals("moviebox-local", true)) return@LaunchedEffect
         val idx = episodes.indexOfFirst { it.safeId == episodeId }
-        val next = episodes.getOrNull(idx + 1) ?: return@LaunchedEffect
-        delay(2500)
-        runCatching {
-            AppGraph.repository.source(request.modelId, next.safeId, request.contentId)
+        if (idx < 0) return@LaunchedEffect
+        // Urut dari yang paling mungkin diklik: episode berikutnya dulu.
+        val targets = listOf(idx + 1, idx + 2, idx + 3, idx - 1)
+            .mapNotNull { episodes.getOrNull(it) }
+        if (targets.isEmpty()) return@LaunchedEffect
+        delay(800)
+        for (target in targets) {
+            runCatching {
+                AppGraph.repository.source(request.modelId, target.safeId, request.contentId)
+            }
+            Log.i("PlayerScreen", "prefetch episode: ${target.safeId}")
+            delay(300)
         }
-        Log.i("PlayerScreen", "prefetch episode berikut: ${next.safeId}")
     }
 
     // ---- Terapkan stream terpilih ke ExoPlayer (pemutar native) ----
     LaunchedEffect(
+        streams,
         selectedIndex,
         episodeId,
         apiSubtitles,
         subOffsetTrigger,
         contentRetryTrigger,
+        streamLoadTrigger,
     ) {
         val stream = streams.getOrNull(selectedIndex) ?: return@LaunchedEffect
         val url = resolveStreamUrl(stream.safeUrl) ?: return@LaunchedEffect
+        // Episode yang sama di-apply ulang (subtitle/sumber/sub sinkron menyusul
+        // setelah video berjalan): lanjut dari posisi sekarang, jangan dari awal.
+        val resumeNow = if (hasStartedOnce && appliedEpisodeId == episodeId) {
+            player.currentPosition.takeIf { it > 0L }
+        } else null
+        appliedEpisodeId = episodeId
         playerError = null
         activeStreamUrl = url
         activeStreamFormat = stream.format
@@ -1135,7 +1185,7 @@ fun PlayerScreen(
                 .build()
         }
         player.setMediaItem(builder.build())
-        val seek = pendingSeek.longValue
+        val seek = resumeNow ?: pendingSeek.longValue
         if (seek > 0L) player.seekTo(seek)
         player.prepare()
         player.playWhenReady = wasPlayWhenReady

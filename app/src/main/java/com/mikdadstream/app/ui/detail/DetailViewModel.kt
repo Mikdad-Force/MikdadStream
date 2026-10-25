@@ -8,6 +8,7 @@ import com.mikdadstream.app.data.remote.ApiError
 import com.mikdadstream.app.data.remote.DetailData
 import com.mikdadstream.app.data.remote.EpisodeData
 import com.mikdadstream.app.data.remote.MediaStream
+import com.mikdadstream.app.data.remote.SourceData
 import com.mikdadstream.app.data.remote.SubtitleTrack
 import com.mikdadstream.app.data.repository.StreamRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,7 +29,12 @@ data class DetailUiState(
     val loadingDownloads: Boolean = false,
     val downloadError: String? = null,
     val downloadLocked: Boolean = false,
-)
+    /** Sumber episode yang sudah dipanen prefetch: dipakai pemutar seketika. */
+    val sourceCache: Map<String, SourceData> = emptyMap(),
+) {
+    /** Sumber episode dari hasil prefetch (null bila belum ada). */
+    fun cachedSourceFor(episodeId: String): SourceData? = sourceCache[episodeId]
+}
 
 /** Permintaan pemutaran yang diteruskan ke PlayerActivity. */
 data class PlayRequest(
@@ -57,6 +63,18 @@ class DetailViewModel(
     private val prefetchSemaphoreLocal = Semaphore(3)
     private val prefetchSemaphoreApi = Semaphore(1)
 
+    /** Simpan hasil prefetch ke cache UI agar pemutar memakainya seketika. */
+    private fun rememberSource(episodeId: String, data: SourceData) {
+        if (episodeId.isBlank() || data.playableStreams.isEmpty()) return
+        _state.value = _state.value.copy(
+            sourceCache = (_state.value.sourceCache + (episodeId to data)).let { map ->
+                if (map.size <= 48) map else map.entries.sortedByDescending {
+                    it.value.hashCode()
+                }.take(48).associate { it.key to it.value }
+            },
+        )
+    }
+
     /** Panaskan cache sumber episode yang terlihat agar klik langsung memutar. */
     fun prefetch(episode: EpisodeData) {
         val current = _state.value
@@ -65,6 +83,8 @@ class DetailViewModel(
         if (episode.safeId.isBlank() || episode.isLocked) return
         val key = "$detailId|${episode.safeId}"
         if (!prefetchAttempted.add(key)) return
+        // Sudah ada di cache UI: tidak perlu diambil ulang.
+        if (_state.value.sourceCache.containsKey(episode.safeId)) return
         val semaphore = if (modelId.equals("moviebox-local", true)) {
             prefetchSemaphoreLocal
         } else {
@@ -73,8 +93,20 @@ class DetailViewModel(
         viewModelScope.launch {
             semaphore.withPermit {
                 runCatching { repo.source(modelId, episode.safeId, detailId) }
+                    .onSuccess { rememberSource(episode.safeId, it) }
             }
         }
+    }
+
+    /** Panaskan sumber beberapa episode di sekitar yang dipilih (window). */
+    private fun prefetchWindow(around: EpisodeData) {
+        val episodes = _state.value.detail?.episodeList.orEmpty()
+        if (episodes.isEmpty()) return
+        val idx = episodes.indexOfFirst { it.safeId == around.safeId }
+        if (idx < 0) return
+        listOf(idx + 1, idx + 2, idx - 1)
+            .mapNotNull { episodes.getOrNull(it) }
+            .forEach { prefetch(it) }
     }
 
     fun load(id: String, modelId: String?, sourceName: String?) {
@@ -102,7 +134,10 @@ class DetailViewModel(
                 val resume = history?.episodeId?.let { episodeId ->
                     detail.episodeList.firstOrNull { it.safeId == episodeId }
                 } ?: detail.episodeList.firstOrNull()
-                if (resume != null) prefetch(resume)
+                if (resume != null) {
+                    prefetch(resume)
+                    prefetchWindow(resume)
+                }
             } catch (e: ApiError) {
                 _state.value = DetailUiState(loading = false, error = e.message)
             }
@@ -150,6 +185,10 @@ class DetailViewModel(
         val resume = if (episode == null && current.history?.episodeId == target.safeId) {
             current.history.positionMs
         } else 0L
+        // Sumber prefetch ikut dikirim: pemutar langsung berputar tanpa fetch.
+        val cached = current.sourceCache[target.safeId]
+        // Episode terpilih dipanen lebih dulu agar klik berikutnya instan.
+        prefetch(target)
         return PlayRequest(
             modelId = modelId,
             contentId = detail.safeId,
@@ -159,6 +198,8 @@ class DetailViewModel(
             cover = detail.cover,
             episodes = episodes,
             startPositionMs = resume,
+            streams = cached?.playableStreams.orEmpty(),
+            subtitles = cached?.subtitles.orEmpty(),
         )
     }
 
@@ -169,6 +210,7 @@ class DetailViewModel(
         val modelId = current.modelId ?: return null
         val episode = detail.episodeList.firstOrNull { it.safeId == history.episodeId }
             ?: detail.episodeList.firstOrNull() ?: return null
+        val cached = current.sourceCache[episode.safeId]
         return PlayRequest(
             modelId = modelId,
             contentId = detail.safeId,
@@ -178,6 +220,8 @@ class DetailViewModel(
             cover = detail.cover,
             episodes = detail.episodeList,
             startPositionMs = history.positionMs,
+            streams = cached?.playableStreams.orEmpty(),
+            subtitles = cached?.subtitles.orEmpty(),
         )
     }
 
