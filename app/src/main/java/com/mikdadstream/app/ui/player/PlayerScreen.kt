@@ -102,6 +102,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem as ExoMediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.ParserException
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -188,6 +190,43 @@ private fun resolveStreamUrl(url: String?): String? {
     if (u.startsWith("/")) return BuildConfig.API_BASE_URL.trimEnd('/') + u
     return u
 }
+
+/**
+ * Jenis konten stream: "hls", "dash", atau null (biarkan ExoPlayer menebak).
+ *
+ * ExoPlayer 1.4.1 hanya memilih parser HLS bila URI berakhiran `.m3u8` ATAU
+ * MediaItem membawa MIME `application/x-mpegURL`. Banyak CDN memberi URL tanpa
+ * ekstensi (mis. `/playlist?token=...`) sehingga pemutar jatuh ke parser
+ * progressive dan gagal membaca playlist. Field `format` dari API dipakai
+ * sebagai penentu cadangan agar sumber HLS selalu dikenali.
+ */
+private fun inferStreamKind(url: String, format: String?): String? {
+    val u = url.lowercase()
+    // Ekstensi dicek pada PATH saja (bukan query) agar parameter ber-".mpd"/
+    // ".m3u8" di URL tidak salah menentukan parser.
+    val path = u.substringBefore('?')
+    if (path.contains(".m3u8")) return "hls"
+    if (path.contains(".mpd")) return "dash"
+    return when (format?.lowercase()?.trim()) {
+        "hls", "m3u8" -> "hls"
+        "dash" -> "dash"
+        else -> null
+    }
+}
+
+/** MIME untuk jenis stream. null = biarkan ExoPlayer menebak dari URI. */
+private fun streamMimeType(kind: String?): String? = when (kind) {
+    "hls" -> MimeTypes.APPLICATION_M3U8
+    "dash" -> MimeTypes.APPLICATION_MPD
+    // Bukan manifest: memaksa ExoPlayer memakai parser progressive
+    // tanpa peduli ekstensi URI.
+    "progressive" -> MimeTypes.VIDEO_MP4
+    else -> null
+}
+
+/** Jenis berikutnya saat parser gagal membaca isi stream (percobaan ulang sekali). */
+private fun alternateStreamKind(current: String?): String =
+    if (current == "hls") "progressive" else "hls"
 
 /**
  * Normalisasi kode bahasa ke satu format agar perbandingan konsisten.
@@ -502,6 +541,15 @@ fun PlayerScreen(
     var showQualityMenu by remember { mutableStateOf(false) }
     var videoQualities by remember { mutableStateOf<List<Int>>(emptyList()) }
     var selectedVideoHeight by remember { mutableStateOf<Int?>(null) }
+    // ---- Jenis konten stream (HLS/DASH) + percobaan ulang otomatis ----
+    // URL & format stream yang sedang diputar (dipakai listener onPlayerError).
+    var activeStreamUrl by remember { mutableStateOf<String?>(null) }
+    var activeStreamFormat by remember { mutableStateOf<String?>(null) }
+    // Pemaksaan jenis konten per URL akibat kegagalan parser ("hls"/"dash"/
+    // "progressive"). Kosong = masih memakai tebakan otomatis.
+    var contentKindRetry by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    // Penanda agar LaunchedEffect pemasangan stream berjalan ulang setelah retry.
+    var contentRetryTrigger by remember { mutableIntStateOf(0) }
     var hud by remember { mutableStateOf<HudInfo?>(null) }
     var hudJob by remember { mutableStateOf<Job?>(null) }
     var sleepEndsAt by remember { mutableLongStateOf(0L) }
@@ -534,6 +582,9 @@ fun PlayerScreen(
                 val dataSource = DefaultHttpDataSource.Factory()
                     .setConnectTimeoutMs(20_000)
                     .setReadTimeoutMs(45_000)
+                    // Playlist & segmen HLS sering diarahkan lintas protokol
+                    // (http -> https) ke CDN berbeda; tanpa ini beban gagal 3xx.
+                    .setAllowCrossProtocolRedirects(true)
                     .createDataSource() as DefaultHttpDataSource
                 val headers = streamHeaders.get()
                 headers.forEach { (key, value) ->
@@ -940,10 +991,18 @@ fun PlayerScreen(
     }
 
     // ---- Terapkan stream terpilih ke ExoPlayer (pemutar native) ----
-    LaunchedEffect(selectedIndex, episodeId, apiSubtitles, subOffsetTrigger) {
+    LaunchedEffect(
+        selectedIndex,
+        episodeId,
+        apiSubtitles,
+        subOffsetTrigger,
+        contentRetryTrigger,
+    ) {
         val stream = streams.getOrNull(selectedIndex) ?: return@LaunchedEffect
         val url = resolveStreamUrl(stream.safeUrl) ?: return@LaunchedEffect
         playerError = null
+        activeStreamUrl = url
+        activeStreamFormat = stream.format
         // Cegah playback ganda: hentikan media sebelumnya sebelum memuat yang baru.
         // Simpan niat putar/jeda agar reload (ganti subtitle/kualitas) tidak
         // memaksa video berputar sendiri saat pengguna sedang menjeda.
@@ -951,7 +1010,13 @@ fun PlayerScreen(
         player.stop()
         player.clearMediaItems()
         streamHeaders.set(stream.headers.orEmpty())
-        val builder = ExoMediaItem.Builder().setUri(url)
+        // Pasang MIME tipe konten eksplisit: HLS/DASH tetap dikenali meski URL
+        // tidak berakhiran .m3u8/.mpd (lihat inferStreamKind).
+        val kind = contentKindRetry[url] ?: inferStreamKind(url, stream.format)
+        Log.i("PlayerScreen", "pasang sumber: kind=${kind ?: "auto"} format=${stream.format} url=$url")
+        val builder = ExoMediaItem.Builder().setUri(url).also { b ->
+            streamMimeType(kind)?.let { b.setMimeType(it) }
+        }
 
         // ---- DIAGNOSTIK: cetak daftar kode API, track diterima, normalisasi, cocokan "id" ----
         val apiCodes = apiSubtitles.map { normalizeLangCode(it.lang ?: it.label ?: "") }
@@ -1129,6 +1194,36 @@ fun PlayerScreen(
                 "playerError: code=${error.errorCodeName} msg=${error.message}\n" +
                     error.stackTraceToString(),
             )
+            // ---- Percobaan ulang jenis konten (HLS <-> progressive) ----
+            // Bila parser tidak mengenali isi stream, atau server mengirim tipe
+            // konten yang tidak terduga, kemungkinan besar URL ini playlist HLS
+            // tanpa ekstensi .m3u8. Ganti jenis konten SEKALI per URL (anti-loop)
+            // sebelum menampilkan error ke pengguna.
+            val url = activeStreamUrl
+            var cause: Throwable? = error
+            var depth = 0
+            var parseFailed = false
+            while (cause != null && depth < 6) {
+                if (cause is ParserException) {
+                    parseFailed = true
+                    break
+                }
+                cause = cause.cause
+                depth++
+            }
+            val badContentType =
+                error.errorCode == PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE
+            if (url != null && url !in contentKindRetry && (parseFailed || badContentType)) {
+                val next = alternateStreamKind(inferStreamKind(url, activeStreamFormat))
+                contentKindRetry = contentKindRetry + (url to next)
+                contentRetryTrigger++
+                Log.w(
+                    "PlayerScreen",
+                    "gagal membaca stream (${error.errorCodeName}) -> coba ulang sebagai $next: $url",
+                )
+                showHud(null, "Mencoba mode ${next.uppercase()}…")
+                return
+            }
             playerError = "Pemutaran gagal (${error.errorCodeName}). Coba ganti sumber."
             saveProgressNow()
         }
