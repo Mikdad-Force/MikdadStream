@@ -999,7 +999,9 @@ fun PlayerScreen(
                         .fetchSubtitles(request.contentId, se, ep)
                 }.getOrDefault(emptyList())
                 Log.i("PlayerScreen", "subtitle retry: ${retry.size} track, indo=${retry.any(::isIndo)}")
-                if (retry.any(::isIndo)) apiSubtitles = retry
+                // Pakai juga track non-Indonesia bila tidak ada Indonesia sama
+                // sekali: menu subtitle tetap sinkron dengan yang tersedia.
+                if (retry.isNotEmpty()) apiSubtitles = retry
             }
         } catch (e: ApiError) {
             loadingStreams = false
@@ -1022,13 +1024,13 @@ fun PlayerScreen(
         val targets = listOf(idx + 1, idx + 2, idx + 3, idx - 1)
             .mapNotNull { episodes.getOrNull(it) }
         if (targets.isEmpty()) return@LaunchedEffect
-        delay(800)
+        delay(300)
         for (target in targets) {
             runCatching {
                 AppGraph.repository.source(request.modelId, target.safeId, request.contentId)
             }
             Log.i("PlayerScreen", "prefetch episode: ${target.safeId}")
-            delay(300)
+            delay(120)
         }
     }
 
@@ -1703,7 +1705,7 @@ fun PlayerScreen(
                     )
                     Text(
                         text = when {
-                            loadingStreams -> "Memuat sumber video\u2026"
+                            loadingStreams -> "Menyiapkan pemutar\u2026"
                             streamError != null -> "Sumber gagal dimuat"
                             else -> "Menyiapkan pemutar\u2026"
                         },
@@ -2027,35 +2029,18 @@ fun PlayerScreen(
             }
         }
 
-        // ---- Status memuat / galat ----
+        // ---- Status memuat ----
+        // Hanya spinner kecil ala Moviebox: tanpa teks "Mencari sumber".
+        // Sumber dipasang seketika bila sudah di-prefetch dari layar detail;
+        // bila belum, URL dicari secepat mungkin di latar belakang.
         if (loadingStreams && streams.isEmpty()) {
-            Column(
+            CircularProgressIndicator(
+                color = Color.White,
+                strokeWidth = 2.5.dp,
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color(0xCC101216))
-                    .padding(horizontal = 24.dp, vertical = 20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                CircularProgressIndicator(
-                    color = Color.White,
-                    strokeWidth = 2.5.dp,
-                    modifier = Modifier.size(30.dp),
-                )
-                Text(
-                    text = "Mencari sumber terbaik\u2026",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.85f),
-                )
-                Text(
-                    text = request.title,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.55f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+                    .size(34.dp),
+            )
         }
 
         streamError?.let { message ->

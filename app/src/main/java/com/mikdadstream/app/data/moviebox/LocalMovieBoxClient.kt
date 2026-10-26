@@ -13,15 +13,23 @@ import java.util.Base64 as JavaBase64
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.concurrent.withLock
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -62,6 +70,10 @@ object LocalMovieBoxClient {
     private val tokenLock = ReentrantLock()
     @Volatile private var guestToken: String? = null
     @Volatile private var activeHostVar: String? = null
+
+    // Scope latar untuk "race" varian play-info: hasil pertama yang valid dipakai
+    // tanpa menunggu varian lain yang masih berjalan (tidak menahan pemutaran).
+    private val fetchScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     val activeHost: String? get() = activeHostVar
 
@@ -401,7 +413,10 @@ object LocalMovieBoxClient {
     suspend fun subjectDetail(subjectId: String): JSONObject? = withContext(Dispatchers.IO) {
         val token = boot() ?: return@withContext null
         val base = activeHostOrFirst()
-        callJson(base, "$SUBJECT_GET_PATH?subject_id=$subjectId", null, token, false)
+        // Pakai cache yang sama dengan fetchStreams: detail yang sudah dimuat
+        // layar detail langsung dipakai saat mencari URL video (hemat 1 request
+        // sehingga pemutaran lebih cepat / tanpa "mencari sumber").
+        fetchSubjectCached(base, subjectId, token)
     }
 
     suspend fun seasonInfo(subjectId: String): JSONObject? = withContext(Dispatchers.IO) {
@@ -1926,7 +1941,11 @@ object LocalMovieBoxClient {
                 Log.w(TAG, "UGC H5 empty subj=${subjectId.takeLast(6)} se=$se ep=$ep")
             }
 
-            val variants = listOf(
+            // Ketiga varian play-info DIPANGGIL PARALEL: varian pertama yang
+            // mengembalikan stream valid langsung dipakai. Dulu berurutan
+            // (3x round-trip bila varian awal gagal) sehingga pemutar lama
+            // menunggu di spinner "Mencari sumber".
+            val variants = listOf<suspend () -> JSONObject?>(
                 // rid unik per episode: panggil play-info dengan rid dulu (SANS se/ep)
                 // supaya server MENGHORMATI episode yang dipilih (Sebelumnya varian
                 // se/ep+rid bisa diabaikan server lalu jatuh ke {1,1} -> EP1 diputar).
@@ -1934,33 +1953,67 @@ object LocalMovieBoxClient {
                 { fetchPlayInfo(base, subjectId, if (se > 0) se else 1, if (ep > 0) ep else 1, resourceId, token) },
                 { fetchPlayInfo(base, subjectId, if (se > 0) se else 1, if (ep > 0) ep else 1, null, token) },
             )
-            for (call in variants) {
-                val root = call() ?: continue
-                if (root.optInt("code", -1) != 0) {
-                    Log.w(TAG, "play-info code=${root.optInt("code", -1)} msg=${root.optString("message", "")} url=${call.toString()}")
-                    continue
+            return@withContext run {
+                // Fallback "real streams" dijalankan SEKALI walau beberapa varian
+                // paralel sama-sama gagal/trap (hindari 3x request yang sama).
+                val realMutex = Mutex()
+                var realCache: List<MediaStream>? = null
+                suspend fun realStreamsOnce(): List<MediaStream> =
+                    realMutex.withLock {
+                        realCache ?: fetchRealStreams(
+                            subjectId,
+                            resourceId,
+                            if (se > 0) se else 1,
+                            if (ep > 0) ep else 1,
+                        ).also { realCache = it }
+                    }
+
+                suspend fun runVariant(call: suspend () -> JSONObject?): List<MediaStream>? {
+                    val root = runCatching { call() }.getOrNull() ?: return null
+                    if (root.optInt("code", -1) != 0) {
+                        Log.w(TAG, "play-info code=${root.optInt("code", -1)} msg=${root.optString("message", "")}")
+                        return null
+                    }
+                    val data = root.optJSONObject("data") ?: return null
+                    val streams = buildStreams(data)
+                    Log.i(TAG, "play-info streams count=${streams.size} subj=${subjectId.takeLast(6)} se=$se ep=$ep")
+                    val trap = streams.firstOrNull()?.url?.let { isTrapUrl(it) } == true
+                    if (streams.isEmpty() || trap) {
+                        val real = realStreamsOnce()
+                        android.util.Log.w(
+                            TAG,
+                            "fetchRealStreams result=${real.size} empty=${streams.isEmpty()} trap=$trap subj=${subjectId.takeLast(6)}",
+                        )
+                        if (real.isNotEmpty()) return real
+                        // Trap tanpa pengganti: jangan kembalikan iklan; kosongkan
+                        // (hasil final) agar tidak memutar ad.
+                        if (trap) return emptyList()
+                        // Streams kosong & fallback kosong: varian lain.
+                        return null
+                    }
+                    Log.i(TAG, "Moviebox Local stream count=${streams.size} subj=${subjectId.takeLast(6)}")
+                    return streams
                 }
-                val data = root.optJSONObject("data") ?: continue
-                val streams = buildStreams(data)
-                Log.i(TAG, "play-info streams count=${streams.size} subj=${subjectId.takeLast(6)} se=$se ep=$ep")
-            val trap = streams.firstOrNull()?.url?.let { isTrapUrl(it) } == true
-            if (streams.isEmpty() || trap) {
-                val real = fetchRealStreams(subjectId, resourceId, if (se > 0) se else 1, if (ep > 0) ep else 1)
-                android.util.Log.w(TAG, "fetchRealStreams result=${real.size} empty=${streams.isEmpty()} trap=$trap subj=${subjectId.takeLast(6)}")
-                if (real.isNotEmpty()) {
-                    Log.i(TAG, "Moviebox Local real streams=${real.size} subj=${subjectId.takeLast(6)}")
-                    return@withContext real
+                // Hasil pertama yang valid langsung dipakai tanpa menunggu varian
+                // lain (CompletableDeferred selesai seketika; berbeda dengan
+                // coroutineScope yang menunggu semua child).
+                val done = CompletableDeferred<List<MediaStream>?>()
+                val trapOnly = AtomicReference<List<MediaStream>?>(null)
+                val remaining = AtomicInteger(variants.size)
+                variants.forEach { call ->
+                    fetchScope.launch {
+                        val r = runCatching { runVariant(call) }.getOrNull()
+                        if (r != null && r.isNotEmpty()) {
+                            done.complete(r)
+                        } else if (r != null) {
+                            trapOnly.compareAndSet(null, r)
+                        }
+                        if (remaining.decrementAndGet() == 0 && !done.isCompleted) {
+                            done.complete(trapOnly.get())
+                        }
+                    }
                 }
-                // Trap tanpa pengganti: jangan kembalikan iklan; kosongkan agar tidak memutar ad.
-                if (trap) return@withContext emptyList()
-                // Streams kosong & fallback kosong: coba varian play-info berikutnya.
-                continue
+                done.await()
             }
-            if (streams.isNotEmpty()) {
-                Log.i(TAG, "Moviebox Local stream count=${streams.size} subj=${subjectId.takeLast(6)}")
-                return@withContext streams
-            }
-            }
-            null
         }
 }

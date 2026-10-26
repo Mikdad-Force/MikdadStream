@@ -18,8 +18,6 @@ import com.mikdadstream.app.data.remote.SourceData
 import com.mikdadstream.app.data.remote.SourceModel
 import com.mikdadstream.app.data.remote.VideosData
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -274,24 +272,18 @@ class StreamRepository(
             val parts = episodeId.split("_")
             val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
             val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
-            // Stream & subtitle diambil PARALEL: sebelumnya berurutan sehingga
-            // klik episode menunggu dua rangkaian request.
-            return coroutineScope {
-                val streamsAsync = async {
-                    LocalMovieBoxClient.fetchStreams(id, se, ep) ?: emptyList()
-                }
-                val subsAsync = async {
-                    runCatching { LocalMovieBoxClient.fetchSubtitles(id, se, ep) }
-                        .getOrDefault(emptyList())
-                }
-                val streams = streamsAsync.await()
-                val subtitles = subsAsync.await()
-                android.util.Log.i(
-                    "MovieboxLocal",
-                    "source streams=${streams.size} subs=${subtitles.size} id=$id ep=$episodeId se=$se epNum=$ep",
-                )
-                SourceData(streams = streams, subtitles = subtitles)
-            }
+            // Stream SAJA yang menentukan mulainya video. Subtitle TIDAK diambil
+            // di sini: unduhan + konversi VTT-nya bisa berdetik-detik dan dulu
+            // membuat pemutar menunggu di spinner "Mencari sumber" padahal
+            // URL video sudah siap. Pemutar mengambil subtitle sendiri SETELAH
+            // video berputar (lihat PlayerScreen).
+            val streams = runCatching { LocalMovieBoxClient.fetchStreams(id, se, ep) }
+                .getOrNull().orEmpty()
+            android.util.Log.i(
+                "MovieboxLocal",
+                "source streams=${streams.size} id=$id ep=$episodeId se=$se epNum=$ep (subtitle menyusul di pemutar)",
+            )
+            return SourceData(streams = streams, subtitles = emptyList())
         }
         val data = unwrap(call { api.source(apiModelId(modelId), episodeId, id) }, "Sumber video tidak tersedia.")
         val refreshed = MovieboxResolver.maybeRefresh(data, id)
