@@ -3,10 +3,13 @@ package com.mikdadstream.app.ui.tv
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -31,6 +34,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -238,20 +244,53 @@ private fun Sidebar(currentRoute: String? = null, onNavigate: (String) -> Unit) 
 private fun NavItem(icon: ImageVector, active: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.05f else 1f, tween(120), label = "navScale")
-    Box(
-        Modifier
-            .size(56.dp)
-            .scale(scale)
-            .clip(CircleShape)
-            .background(if (active) Pink else Color.Transparent)
-            .border(if (focused) 3.dp else 0.dp, Color.White, CircleShape)
-            .onFocusChanged { focused = it.isFocused }
-            .focusable()
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, null, tint = if (active) Color.White else Color.White.copy(alpha = 0.8f), modifier = Modifier.size(24.dp))
+    // Indikator fokus putih bawaan TV (TvFocusIndication) dimatikan khusus untuk
+    // item navbar: lingkaran putihnya menabrak background sidebar yang gelap.
+    // Sorotan fokus kini mengikuti warna tema - latar gelap seperti pill header
+    // plus ring Pink aksen - supaya rapi dan konsisten dengan desain TV.
+    CompositionLocalProvider(LocalIndication provides NoNavIndication) {
+        Box(
+            Modifier
+                .size(56.dp)
+                .scale(scale)
+                .clip(CircleShape)
+                .background(
+                    when {
+                        active -> Pink
+                        focused -> PillBg
+                        else -> Color.Transparent
+                    }
+                )
+                .border(
+                    width = if (focused) 2.dp else 0.dp,
+                    color = Pink,
+                    shape = CircleShape,
+                )
+                .onFocusChanged { focused = it.isFocused }
+                .focusable()
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = if (active) Color.White else Color.White.copy(alpha = 0.8f), modifier = Modifier.size(24.dp))
+        }
     }
+}
+
+/**
+ * Indikasi tanpa gambaran (transparan) untuk navbar TV.
+ * Mencegah TvFocusIndication (putih) menggambar lingkaran/kotak fokus di
+ * item navbar; sorotan fokus digambar sendiri oleh NavItem dengan warna tema.
+ */
+private object NoNavIndication : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode =
+        object : Modifier.Node(), DrawModifierNode {
+            override fun ContentDrawScope.draw() {
+                drawContent()
+            }
+        }
+
+    override fun equals(other: Any?): Boolean = other === this
+    override fun hashCode(): Int = System.identityHashCode(this)
 }
 
 // ───────── Header ─────────
