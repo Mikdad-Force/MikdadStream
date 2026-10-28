@@ -65,10 +65,12 @@ object TvFocusIndication : IndicationNodeFactory {
         override fun ContentDrawScope.draw() {
             val z = currentZoom()
             if (abs(z - 1f) < 0.002f) {
-                drawContent()
+                this@draw.drawContent()
             } else {
                 // Zoom ditarik dari pusat komponen: layout tetap, hanya visual.
-                scale(z, z, center) { drawContent() }
+                // Receiver eksplisit: drawContent() berasal dari ContentDrawScope,
+                // bukan dari lambda receiver scale{} (DrawScope).
+                scale(z, z, center) { this@draw.drawContent() }
             }
         }
     }

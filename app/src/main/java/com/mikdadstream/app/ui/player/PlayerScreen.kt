@@ -1936,10 +1936,15 @@ fun PlayerScreen(
                             value = (userSeek ?: uiPosition)
                                 .toFloat()
                                 .coerceIn(0f, (uiDuration.coerceAtLeast(1L)).toFloat()),
-                            onValueChange = { userSeek = it.toLong() },
-                            onValueChangeStarted = {
-                                scrubbing = true
-                                showControls = true
+                            onValueChange = { v ->
+                                userSeek = v.toLong()
+                                // Slider di material3 versi ini tidak punya
+                                // onValueChangeStarted -> mulai scrub saat nilai
+                                // pertama berubah (seret/tap).
+                                if (!scrubbing) {
+                                    scrubbing = true
+                                    showControls = true
+                                }
                             },
                             onValueChangeFinished = {
                                 userSeek?.let { t -> seekTo(t, show = false) }
