@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -91,12 +92,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
@@ -136,6 +139,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.roundToInt
 
 private data class SubOption(val group: TrackGroup?, val index: Int, val key: String, val label: String)
 
@@ -521,6 +525,18 @@ fun PlayerScreen(
     var uiPosition by remember { mutableLongStateOf(0L) }
     var uiDuration by remember { mutableLongStateOf(0L) }
     var userSeek by remember { mutableStateOf<Long?>(null) }
+    // ---- Scrub dengan bubble pratinjau ----
+    // scrubbing: pengguna sedang menyeret thumb; sisanya posisi (px) milik
+    // layout untuk menempatkan bubble tepat di atas thumb dan di atas panel.
+    var scrubbing by remember { mutableStateOf(false) }
+    var sliderRootX by remember { mutableFloatStateOf(0f) }
+    var sliderRootY by remember { mutableFloatStateOf(0f) }
+    var sliderW by remember { mutableIntStateOf(0) }
+    var rootHeight by remember { mutableIntStateOf(0) }
+    var rootTopY by remember { mutableFloatStateOf(0f) }
+    var rootLeftX by remember { mutableFloatStateOf(0f) }
+    var bubbleW by remember { mutableIntStateOf(0) }
+    var bubbleH by remember { mutableIntStateOf(0) }
     var speed by remember { mutableFloatStateOf(1f) }
     var showSpeedMenu by remember { mutableStateOf(false) }
     var showSubMenu by remember { mutableStateOf(false) }
@@ -656,6 +672,7 @@ fun PlayerScreen(
         pendingSeek.longValue = 0L
         resumePositionMs = 0L
         userSeek = null
+        scrubbing = false
         episodeId = target.safeId
         episodeNumber = target.safeNumber
         streams = emptyList()
@@ -839,7 +856,9 @@ fun PlayerScreen(
         player.seekTo(t)
         uiPosition = t
         lastPosition.longValue = t
-        if (show) showHud(null, formatTime(t))
+        if (show) {
+            showHud(null, "${formatTime(t)}  \u2022  sisa ${formatTime(dur - t)}")
+        }
     }
 
     fun seekBy(deltaMs: Long) {
@@ -1446,8 +1465,8 @@ fun PlayerScreen(
     }
 
     // ---- Sembunyikan kontrol otomatis ----
-    LaunchedEffect(showControls, isPlaying, showSpeedMenu, showSubMenu, showSyncMenu, showSleepMenu, showQualityMenu, showSources, showEpisodes, inPip) {
-        if (showControls && isPlaying && !inPip &&
+    LaunchedEffect(showControls, isPlaying, scrubbing, showSpeedMenu, showSubMenu, showSyncMenu, showSleepMenu, showQualityMenu, showSources, showEpisodes, inPip) {
+        if (showControls && isPlaying && !inPip && !scrubbing &&
             !showSpeedMenu && !showSubMenu && !showSyncMenu && !showSleepMenu && !showQualityMenu && !showSources && !showEpisodes
         ) {
             delay(3_500)
@@ -1489,6 +1508,7 @@ fun PlayerScreen(
             showQualityMenu = false
             showSleepMenu = false
             searchFocused = false
+            scrubbing = false
             PlayerRemoteController.textInputActive = false
             focusManager.clearFocus()
         }
@@ -1532,7 +1552,17 @@ fun PlayerScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .onSizeChanged { rootHeight = it.height }
+            .onGloballyPositioned {
+                val p = it.positionInRoot()
+                rootTopY = p.y
+                rootLeftX = p.x
+            },
+    ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -1640,7 +1670,10 @@ fun PlayerScreen(
                                                     val target = gesture.startPos +
                                                         ((gesture.accX / size.width) * dur).toLong()
                                                     val t = target.coerceIn(0L, dur)
-                                                    showHud(null, formatTime(t))
+                                                    showHud(
+                                                        null,
+                                                        "${formatTime(t)}  \u2022  sisa ${formatTime(dur - t)}",
+                                                    )
                                                     val now = System.currentTimeMillis()
                                                     if (now - gesture.lastLiveSeekAt > 350) {
                                                         gesture.lastLiveSeekAt = now
@@ -1904,12 +1937,25 @@ fun PlayerScreen(
                                 .toFloat()
                                 .coerceIn(0f, (uiDuration.coerceAtLeast(1L)).toFloat()),
                             onValueChange = { userSeek = it.toLong() },
+                            onValueChangeStarted = {
+                                scrubbing = true
+                                showControls = true
+                            },
                             onValueChangeFinished = {
                                 userSeek?.let { t -> seekTo(t, show = false) }
                                 userSeek = null
+                                scrubbing = false
                             },
                             valueRange = 0f..(uiDuration.coerceAtLeast(1L)).toFloat(),
-                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 8.dp)
+                                .onSizeChanged { sliderW = it.width }
+                                .onGloballyPositioned { c ->
+                                    val p = c.positionInRoot()
+                                    sliderRootX = p.x
+                                    sliderRootY = p.y
+                                },
                             colors = SliderDefaults.colors(
                                 thumbColor = Color.White,
                                 activeTrackColor = Color.White,
@@ -2008,6 +2054,51 @@ fun PlayerScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // ---- Bubble pratinjau saat scrub (seret thumb seek bar) ----
+        // Menempel tepat di atas thumb: waktu target + sisa durasi, mengikuti
+        // posisi jempol selama pengguna menyeret scrubber.
+        if (scrubbing && !inPip && uiDuration > 0L) {
+            val scrubPos = userSeek ?: uiPosition
+            val frac = scrubPos.toFloat().coerceIn(0f, uiDuration.toFloat()) / uiDuration.toFloat()
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .onSizeChanged {
+                        bubbleW = it.width
+                        bubbleH = it.height
+                    }
+                    .offset {
+                        val bw = if (bubbleW > 0) bubbleW.toFloat() else 96.dp.toPx()
+                        val bh = if (bubbleH > 0) bubbleH.toFloat() else 52.dp.toPx()
+                        val pad = 14.dp.toPx()
+                        val span = (sliderW - 2 * pad).coerceAtLeast(0f)
+                        val thumbX = sliderRootX + pad + frac * span
+                        val maxX = (sliderRootX + sliderW - bw).coerceAtLeast(0f)
+                        IntOffset(
+                            x = (thumbX - rootLeftX - bw / 2f).coerceIn(0f, maxX).roundToInt(),
+                            y = -(rootHeight - (sliderRootY - rootTopY) + 16.dp.toPx() + bh)
+                                .roundToInt(),
+                        )
+                    }
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xF0101014))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = formatTime(scrubPos),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                )
+                Text(
+                    text = "sisa " + formatTime((uiDuration - scrubPos).coerceAtLeast(0L)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.65f),
+                )
             }
         }
 
