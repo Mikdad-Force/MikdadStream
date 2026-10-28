@@ -184,8 +184,8 @@ fun MikdadStreamTheme(
         shapes = AppShapes,
     ) {
         // Aksen aktif bisa dibaca komponen mana pun via LocalAccent.current.
-        // Ring fokus D-pad HANYA untuk TV; di ponsel sentuh pakai ripple
-        // bawaan supaya tidak muncul bingkai putih setiap menu ditekan.
+        // Indikasi fokus TV memakai ZOOM halus tanpa ring putih (TvFocusIndication);
+        // di ponsel sentuh pakai ripple bawaan supaya tidak ada bingkai saat ditekan.
         val context = LocalContext.current
         val tv = remember(context) { context.isTelevision() }
         val baseIndication = LocalIndication.current

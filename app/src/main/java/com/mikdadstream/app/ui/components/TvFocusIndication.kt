@@ -5,25 +5,28 @@ import androidx.compose.foundation.interaction.FocusInteraction
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.invalidateDraw
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /**
- * Penanda fokus untuk remote / D-pad. Berbeda dengan ripple bawaan yang nyaris
- * tidak terlihat, indikator ini selalu menggambar bingkai biru yang jelas plus
- * latar tipis sehingga posisi pergerakan remote selalu kelihatan, di layar
- * Android TV maupun Android.
+ * Penanda fokus untuk remote / D-pad TANPA ring putih.
+ *
+ * Fokus hanya ditandai dengan ZOOM (perbesaran) pada komponen yang sedang
+ * disorot, sehingga tampilan TV bersih dan mengikuti warna background
+ * masing-masing komponen. Umpan balik tekan (sentuh) memakai pengecilan
+ * kecil, juga tanpa bingkai.
  */
 object TvFocusIndication : IndicationNodeFactory {
+
+    /** Zoom saat fokus: komponen sedikit membesar, tanpa bingkai/ring. */
+    private const val FOCUS_ZOOM = 1.06f
+    /** Zoom saat ditekan: sedikit mengecil sebagai umpan balik sentuh. */
+    private const val PRESS_ZOOM = 0.97f
 
     override fun create(interactionSource: InteractionSource): DelegatableNode =
         FocusNode(interactionSource)
@@ -43,54 +46,30 @@ object TvFocusIndication : IndicationNodeFactory {
             coroutineScope.launch {
                 source.interactions.collect { interaction ->
                     when (interaction) {
-                        is FocusInteraction.Focus -> {
-                            focused = true
-                            invalidateDraw()
-                        }
-                        is FocusInteraction.Unfocus -> {
-                            focused = false
-                            invalidateDraw()
-                        }
-                        is PressInteraction.Press -> {
-                            pressed = true
-                            invalidateDraw()
-                        }
-                        is PressInteraction.Release, is PressInteraction.Cancel -> {
-                            pressed = false
-                            invalidateDraw()
-                        }
+                        is FocusInteraction.Focus -> focused = true
+                        is FocusInteraction.Unfocus -> focused = false
+                        is PressInteraction.Press -> pressed = true
+                        is PressInteraction.Release, is PressInteraction.Cancel -> pressed = false
                     }
+                    invalidateDraw()
                 }
             }
         }
 
+        private fun currentZoom(): Float = when {
+            focused -> FOCUS_ZOOM
+            pressed -> PRESS_ZOOM
+            else -> 1f
+        }
+
         override fun ContentDrawScope.draw() {
-            val radius = 12.dp.toPx()
-            val corner = CornerRadius(radius, radius)
-            if (focused) {
-                drawRoundRect(color = FocusPrimary.copy(alpha = 0.16f), cornerRadius = corner)
-            }
-            drawContent()
-            if (pressed && !focused) {
-                drawRoundRect(color = Color.White.copy(alpha = 0.12f), cornerRadius = corner)
-            }
-            if (focused || pressed) {
-                val stroke = 2.dp.toPx()
-                val inset = 1.5.dp.toPx()
-                drawRoundRect(
-                    color = if (focused) FocusPrimary else Color.White.copy(alpha = 0.65f),
-                    topLeft = Offset(inset, inset),
-                    size = Size(
-                        (size.width - inset * 2f).coerceAtLeast(0f),
-                        (size.height - inset * 2f).coerceAtLeast(0f),
-                    ),
-                    cornerRadius = corner,
-                    style = Stroke(width = stroke),
-                )
+            val z = currentZoom()
+            if (abs(z - 1f) < 0.002f) {
+                drawContent()
+            } else {
+                // Zoom ditarik dari pusat komponen: layout tetap, hanya visual.
+                scale(z, z, center) { drawContent() }
             }
         }
     }
-
-    // Ring fokus D-pad: persis gaya mockup TV (border putih TextMain).
-    private val FocusPrimary = Color(0xFFF4F4F8)
 }

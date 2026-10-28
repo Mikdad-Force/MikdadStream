@@ -243,29 +243,17 @@ private fun Sidebar(currentRoute: String? = null, onNavigate: (String) -> Unit) 
 @Composable
 private fun NavItem(icon: ImageVector, active: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.05f else 1f, tween(120), label = "navScale")
-    // Indikator fokus putih bawaan TV (TvFocusIndication) dimatikan khusus untuk
-    // item navbar: lingkaran putihnya menabrak background sidebar yang gelap.
-    // Sorotan fokus kini mengikuti warna tema - latar gelap seperti pill header
-    // plus ring Pink aksen - supaya rapi dan konsisten dengan desain TV.
+    // Penanda fokus navbar: hanya ZOOM (tanpa ring putih, tanpa border/background
+    // khusus) sesuai permintaan. Indikasi global TV dimatikan di sini supaya
+    // zoom tidak dobel dengan zoom lokal ini.
+    val scale by animateFloatAsState(if (focused) 1.15f else 1f, tween(140), label = "navScale")
     CompositionLocalProvider(LocalIndication provides NoNavIndication) {
         Box(
             Modifier
                 .size(56.dp)
                 .scale(scale)
                 .clip(CircleShape)
-                .background(
-                    when {
-                        active -> Pink
-                        focused -> PillBg
-                        else -> Color.Transparent
-                    }
-                )
-                .border(
-                    width = if (focused) 2.dp else 0.dp,
-                    color = Pink,
-                    shape = CircleShape,
-                )
+                .background(if (active) Pink else Color.Transparent)
                 .onFocusChanged { focused = it.isFocused }
                 .focusable()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
@@ -277,9 +265,9 @@ private fun NavItem(icon: ImageVector, active: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * Indikasi tanpa gambaran (transparan) untuk navbar TV.
- * Mencegah TvFocusIndication (putih) menggambar lingkaran/kotak fokus di
- * item navbar; sorotan fokus digambar sendiri oleh NavItem dengan warna tema.
+ * Indikasi tanpa gambaran (transparan) untuk komponen navbar/poster TV yang
+ * menandai fokus dengan zoom lokal sendiri, sehingga tidak digambar dua kali
+ * oleh TvFocusIndication.
  */
 private object NoNavIndication : IndicationNodeFactory {
     override fun create(interactionSource: InteractionSource): DelegatableNode =
@@ -306,17 +294,17 @@ private fun Header(activeSourceName: String? = null, onSourceClick: () -> Unit =
         }
         Spacer(Modifier.weight(1f))
         var focused by remember { mutableStateOf(false) }
+        // Fokus D-pad: hanya ZOOM, tanpa ring putih (border tetap tipis netral).
+        val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "pillZoom")
+        CompositionLocalProvider(LocalIndication provides NoNavIndication) {
         Row(
             Modifier
                 .width(389.dp)
                 .height(57.dp)
+                .scale(zoom)
                 .clip(RoundedCornerShape(28.dp))
                 .background(PillBg)
-                .border(
-                    if (focused) 3.dp else 1.dp,
-                    if (focused) Color.White else Color(0xFF2A2A35),
-                    RoundedCornerShape(28.dp)
-                )
+                .border(1.dp, Color(0xFF2A2A35), RoundedCornerShape(28.dp))
                 .onFocusChanged { focused = it.isFocused }
                 .focusable()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onSourceClick)
@@ -330,6 +318,7 @@ private fun Header(activeSourceName: String? = null, onSourceClick: () -> Unit =
             Text(activeSourceName?.takeIf { it.isNotBlank() } ?: "Server 1 HD", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
             Icon(Icons.Filled.KeyboardArrowDown, null, tint = Muted, modifier = Modifier.size(24.dp))
+        }
         }
     }
 }
@@ -408,18 +397,19 @@ private fun Hero(
 @Composable
 private fun HeroButton(text: String, filled: Boolean, width: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     var focused by remember { mutableStateOf(false) }
+    // Fokus D-pad: hanya ZOOM, tanpa ring putih.
+    val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "btnZoom")
     val shape = RoundedCornerShape(29.dp)
+    CompositionLocalProvider(LocalIndication provides NoNavIndication) {
     Box(
         modifier
             .width(width)
             .height(58.dp)
+            .scale(zoom)
             .clip(shape)
             .background(if (filled) Pink else Color.Transparent)
             .border(
-                BorderStroke(
-                    if (focused) 3.dp else 2.dp,
-                    if (focused) Color.White else if (filled) Pink else OutlineBtn
-                ),
+                BorderStroke(2.dp, if (filled) Pink else OutlineBtn),
                 shape
             )
             .onFocusChanged { focused = it.isFocused }
@@ -428,6 +418,7 @@ private fun HeroButton(text: String, filled: Boolean, width: androidx.compose.ui
         contentAlignment = Alignment.Center
     ) {
         Text(text, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    }
     }
 }
 
@@ -461,19 +452,18 @@ private fun CategoryChipsRow(
             item {
                 val isActive = activeCategory == null
                 var focused by remember { mutableStateOf(false) }
+                // Fokus D-pad: hanya ZOOM, tanpa ring putih.
+                val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "chipZoom")
                 val chipModifier = Modifier
                     .width(160.dp)
                     .height(52.dp)
+                    .scale(zoom)
                     .clip(RoundedCornerShape(26.dp))
-                    .background(
-                        if (isActive) Pink
-                        else if (focused) Color.White.copy(alpha = 0.12f)
-                        else Color.Transparent
-                    )
+                    .background(if (isActive) Pink else Color.Transparent)
                     .border(
                         BorderStroke(
-                            if (focused) 3.dp else if (isActive) 2.dp else 1.dp,
-                            if (focused) Color.White else if (isActive) Pink else Color.White.copy(alpha = 0.4f)
+                            if (isActive) 2.dp else 1.dp,
+                            if (isActive) Pink else Color.White.copy(alpha = 0.4f)
                         ),
                         RoundedCornerShape(26.dp)
                     )
@@ -484,6 +474,7 @@ private fun CategoryChipsRow(
                         indication = null,
                         onClick = { onCategorySelected(null) }
                     )
+                CompositionLocalProvider(LocalIndication provides NoNavIndication) {
                 Box(modifier = chipModifier, contentAlignment = Alignment.Center) {
                     Text(
                         text = "Semua Film",
@@ -492,25 +483,25 @@ private fun CategoryChipsRow(
                         fontWeight = FontWeight.Bold,
                     )
                 }
+                }
             }
             item(key = "spacer") { Spacer(modifier = Modifier.width(12.dp)) }
         }
         items(categories, key = { it.id }) { category ->
             val isActive = category.id == activeCategory?.id
             var focused by remember { mutableStateOf(false) }
+            // Fokus D-pad: hanya ZOOM, tanpa ring putih.
+            val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "chipZoom")
             val chipModifier = Modifier
                 .width(160.dp)
                 .height(52.dp)
+                .scale(zoom)
                 .clip(RoundedCornerShape(26.dp))
-                .background(
-                    if (isActive) Pink
-                    else if (focused) Color.White.copy(alpha = 0.12f)
-                    else Color.Transparent
-                )
+                .background(if (isActive) Pink else Color.Transparent)
                 .border(
                     BorderStroke(
-                        if (focused) 3.dp else if (isActive) 2.dp else 1.dp,
-                        if (focused) Color.White else if (isActive) Pink else Color.White.copy(alpha = 0.4f)
+                        if (isActive) 2.dp else 1.dp,
+                        if (isActive) Pink else Color.White.copy(alpha = 0.4f)
                     ),
                     RoundedCornerShape(26.dp)
                 )
@@ -521,6 +512,7 @@ private fun CategoryChipsRow(
                     indication = null,
                     onClick = { onCategorySelected(category) }
                 )
+            CompositionLocalProvider(LocalIndication provides NoNavIndication) {
             Box(modifier = chipModifier, contentAlignment = Alignment.Center) {
                 Text(
                     text = category.name,
@@ -528,6 +520,7 @@ private fun CategoryChipsRow(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                 )
+            }
             }
         }
     }
@@ -626,10 +619,14 @@ private fun PosterRow(items: List<Poster>, showTitle: Boolean, onItemClick: (Pos
 @Composable
 private fun PosterCard(p: Poster, showTitle: Boolean, onClick: () -> Unit = {}) {
     var focused by remember { mutableStateOf(false) }
+    // Penanda fokus poster: hanya ZOOM, tanpa ring putih D-pad.
+    val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "posterZoom")
     val shape = RoundedCornerShape(8.dp)
+    CompositionLocalProvider(LocalIndication provides NoNavIndication) {
     Box(
         Modifier
             .aspectRatio(2f / 3f)
+            .scale(zoom)
             .clip(shape)
             .background(p.bg)
             .onFocusChanged { focused = it.isFocused }
@@ -658,8 +655,6 @@ private fun PosterCard(p: Poster, showTitle: Boolean, onClick: () -> Unit = {}) 
                 Box(Modifier.fillMaxHeight().fillMaxWidth(it).background(Pink))
             }
         }
-        if (focused) {
-            Box(Modifier.fillMaxSize().border(3.dp, Color.White, shape))
-        }
+    }
     }
 }
