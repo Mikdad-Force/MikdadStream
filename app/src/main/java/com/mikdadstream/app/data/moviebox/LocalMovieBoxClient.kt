@@ -1255,7 +1255,7 @@ object LocalMovieBoxClient {
             }
             // Unduh/konversi semua subtitle PARALEL: sebelumnya berurutan
             // (9 bahasa = 9 request beruntun) sehingga klik episode terasa lama.
-            val validTracks = tracks.filterNot { isMalay(it.lang) || isMalay(it.label) }
+            val validTracks = tracks.filterNot { isMalay(it.lang) }
             coroutineScope {
                 validTracks.map { t ->
                     async { prepareSubtitleOne(t, dir) }
@@ -1500,17 +1500,23 @@ object LocalMovieBoxClient {
             val url = c.optString("url").takeIf { it.isNotBlank() } ?: continue
             val lan = c.optString("lan").takeIf { it.isNotBlank() } ?: continue
             val lanName = c.optString("lanName")
-            if (isMalay(lan) || isMalay(lanName)) continue
             val norm = normalizedCaptionLang(lan)
-            if (norm == "ms" || isMalay(norm)) continue
+            // Buang HANYA yang kode bahasanya benar-benar Melayu. Jangan menyaring
+            // berdasarkan label/nama: API sering memberi lanName tidak akurat
+            // (mis. track berisi teks Indonesia tapi dilabeli "Malay"), dan
+            // filter label pernah membuang subtitle Indonesia yang valid sampai
+            // pengguna tidak bisa memilih Indonesia sama sekali.
+            if (norm == "ms") continue
             // Dedup per kode bahasa hasil normalisasi (hindari track dobel).
             if (!seen.add(norm)) continue
             out.add(
                 SubtitleTrack(
-                    // Label Indonesia diseragamkan "Indonesia" agar menu subtitle
-                    // dan pemilihan otomatis mengenali bahasa yang sama.
-                    label = lanName.takeIf { !it.isNullOrBlank() }
-                        ?: if (norm == "id") "Indonesia" else lan,
+                    // Label diturunkan dari KODE bahasa, bukan lanName mentah:
+                    // lanName dari API bisa salah (mis. "Malay" untuk teks
+                    // Indonesia), sehingga menu dan pemilihan otomatis jadi
+                    // keliru. Kode "id" selalu tampil sebagai "Indonesia".
+                    label = if (norm == "id") "Indonesia"
+                    else lanName.takeIf { !it.isNullOrBlank() } ?: lan,
                     lang = norm,
                     url = url,
                 )
@@ -1616,7 +1622,7 @@ object LocalMovieBoxClient {
                 // dilarang hanyalah memakai packRid milik EPISODE 1 di atas.
                 // HANYA sumber langsung (subjek + resourceId milik video ini).
                 val caps = extCaptionsFor(subjectId, rid, token, se, ep)
-                val out = captionsToTracks(caps).filterNot { isMalay(it.lang) || isMalay(it.label) }
+                val out = captionsToTracks(caps).filterNot { isMalay(it.lang) }
                 Log.i(
                     TAG,
                     "fetchSubtitles caps=${caps?.length() ?: 0} out=${out.size} subj=$subjectId " +
@@ -1626,7 +1632,7 @@ object LocalMovieBoxClient {
                 // dub US/UK/India), ambil caption dari versi ASLI film yang sama
                 // (dubs.original) — video film sama, jadi tetap sinkron.
                 val hasIndo = out.any {
-                    !isMalay(it.lang) && !isMalay(it.label) && (it.lang == "id" || it.label?.contains("ndonesi", true) == true)
+                    !isMalay(it.lang) && (it.lang == "id" || it.label?.contains("ndonesi", true) == true)
                 }
                 if (!hasIndo) {
                     val dubs = detailData?.optJSONArray("dubs")
@@ -1639,9 +1645,9 @@ object LocalMovieBoxClient {
                         val origRid = episodeResourceId(origId, token, se, ep)
                             ?: subjectDetailDataForRid(origId, ep) ?: rid
                         val origCaps = extCaptionsFor(origId, origRid, token, se, ep)
-                        val origOut = captionsToTracks(origCaps).filterNot { isMalay(it.lang) || isMalay(it.label) }
+                        val origOut = captionsToTracks(origCaps).filterNot { isMalay(it.lang) }
                         val origIndo = origOut.any {
-                            !isMalay(it.lang) && !isMalay(it.label) && (it.lang == "id" || it.label?.contains("ndonesi", true) == true)
+                            !isMalay(it.lang) && (it.lang == "id" || it.label?.contains("ndonesi", true) == true)
                         }
                         Log.i(
                             TAG,

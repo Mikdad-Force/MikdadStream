@@ -866,11 +866,12 @@ fun PlayerScreen(
             if (g.type != C.TRACK_TYPE_TEXT) return@forEach
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
-                if (isMalay(f.language) || isMalay(f.label)) continue
+                val trackCode = normalizeLangCode(f.language)
+                // Buang Melayu dari KODE bahasa saja (label tidak akurat).
+                if (trackCode == "ms") continue
                 // Cocokkan lewat kode ternormalisasi ATAU nama bahasa. Sumber kode
                 // tidak seragam ("id"/"in"/"ind"/"Indonesian"), jadi perbandingan
                 // harus melalui normalisasi dua sisi agar tidak gagal palsu.
-                val trackCode = normalizeLangCode(f.language)
                 val labelCode = subtitleLangName(f.label)
                     ?.let { normalizeLangCode(it) }.orEmpty()
                 // labelCode kosong tidak boleh cocok dengan code kosong.
@@ -904,13 +905,14 @@ fun PlayerScreen(
             val tg = g.mediaTrackGroup
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
-                // Filter out Melayu completely
-                if (isMalay(f.language) || isMalay(f.label)) continue
+                // Buang Melayu dari KODE bahasa saja; label API tidak akurat
+                // (pernah melabeli teks Indonesia sebagai "Malay").
                 val code = normalizeLangCode(f.language)
-                if (isMalay(code) || code == "ms") continue
+                if (code == "ms" || isMalay(code)) continue
                 if (!seenCodes.add(code)) continue
                 val langName = subtitleLangName(f.language) ?: subtitleLangName(f.label)
-                val label = langName
+                val label = if (code == "id") "Indonesia"
+                else langName
                     ?: f.label?.takeIf { it.isNotBlank() }
                     ?: f.language?.takeIf { it.isNotBlank() }
                     ?: "Subtitle ${opts.size + 1}"
@@ -923,11 +925,11 @@ fun PlayerScreen(
         // di pemutar (mis. track gagal diparse). Menu jadi selalu sinkron dengan
         // daftar bahasa video; memilihnya memicu muat ulang track.
         apiSubtitles.forEach { s ->
-            if (isMalay(s.lang) || isMalay(s.label)) return@forEach
-            val code = normalizeLangCode(s.lang ?: s.label)
-            if (code.isBlank() || isMalay(code) || code == "ms" || code in seenCodes) return@forEach
+            val code = normalizeLangCode(s.lang)
+            if (code.isBlank() || code == "ms" || isMalay(code) || code in seenCodes) return@forEach
             seenCodes.add(code)
-            val label = subtitleLangName(code) ?: s.label?.takeIf { it.isNotBlank() } ?: code
+            val label = if (code == "id") "Indonesia"
+            else subtitleLangName(code) ?: s.label?.takeIf { it.isNotBlank() } ?: code
             opts.add(SubOption(null, -1, "api:$code", label))
         }
         subOptions = opts.sortedBy { if (it.label == "Indonesia") 0 else 1 }
@@ -1108,13 +1110,15 @@ fun PlayerScreen(
         // Hanya pakai jalur cepat bila subtitle ikut ter-prefetch DAN benar-benar
         // memuat Indonesia. Bila prefetch ada tapi tanpa Indonesia (mis. metadata
         // beda/versi dub), jangan pakai jalur cepat -> lanjut fetch langsung.
-        // Jangan pernah pakai subtitle Melayu: filter ketat agar tidak ada track Melayu
+        // Jangan pernah pakai subtitle Melayu. Saring HANYA dari kode bahasa:
+        // label dari API tidak bisa dipercaya (track berisi teks Indonesia bisa
+        // dilabeli "Malay"), dan menyaring label membuat subtitle Indonesia
+        // hilang sehingga Indonesia "gagal dimuat" saat dipilih.
         fun cleanSubs(list: List<SubtitleTrack>): List<SubtitleTrack> =
-            list.filterNot { isMalay(it.lang) || isMalay(it.label) || normalizeLangCode(it.lang ?: it.label) == "ms" }
+            list.filterNot { normalizeLangCode(it.lang) == "ms" }
 
         fun indoOf(s: SubtitleTrack): Boolean =
-            !isMalay(s.lang) && !isMalay(s.label) &&
-                (normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia")
+            normalizeLangCode(s.lang) == "id" || subtitleLangName(s.label) == "Indonesia"
 
         val prefetchedClean = cleanSubs(request.subtitles)
         val prefetchedHasIndo = prefetchedClean.any(::indoOf)
@@ -1278,8 +1282,8 @@ fun PlayerScreen(
 
         // Terapkan offset sinkronisasi: bila pengguna menggeser waktu subtitle,
         // setiap file subtitle digeser lalu dipakai versi lokalnya.
-        // Hapus semua subtitle Melayu (sesuai instruksi: "Jangan Memakai Melayu").
-        val cleanApiSubs = apiSubtitles.filterNot { isMalay(it.lang) || isMalay(it.label) || normalizeLangCode(it.lang ?: it.label) == "ms" }
+        // Hapus subtitle Melayu HANYA berdasarkan kode bahasa (label tidak akurat).
+        val cleanApiSubs = apiSubtitles.filterNot { normalizeLangCode(it.lang) == "ms" }
         val sourceSubs = if (subOffsetMs == 0L) {
             cleanApiSubs
         } else {
@@ -1307,12 +1311,13 @@ fun PlayerScreen(
         val seenLang = LinkedHashSet<String>()
         val played = activeSubs.mapNotNull { s ->
             val u = s.url?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            if (isMalay(s.lang) || isMalay(s.label)) return@mapNotNull null
+            // Saring dari kode bahasa saja: label API tidak bisa dipercaya dan
+            // pernah membuat subtitle Indonesia (berlabel "Malay") hilang.
+            val lang = normalizeLangCode(s.lang)
+            if (lang == "ms" || isMalay(lang)) return@mapNotNull null
             // MIME dipilih dari ISI file lokal (sniff WEBVTT/SRT) bila tersedia,
             // bukan hanya dari ekstensi URL.
             val mime = detectSubtitleMime(u)
-            val lang = normalizeLangCode(s.lang ?: s.label)
-            if (isMalay(lang) || lang == "ms") return@mapNotNull null
             // Dedup: satu track per kode hasil normalisasi (setId jadi unik per track).
             if (!seenLang.add(lang)) return@mapNotNull null
             val headPreview = localSubtitleHead(u)?.trimStart()?.take(24)
