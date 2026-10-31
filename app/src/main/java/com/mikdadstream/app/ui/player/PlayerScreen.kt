@@ -889,6 +889,9 @@ fun PlayerScreen(
                         "PlayerScreen",
                         "Pilih subtitle $code: lang=${f.language} label=${f.label} idx=$i",
                     )
+                    com.mikdadstream.app.data.local.SubtitleLog.add(
+                        "BERHASIL pilih '$code' -> track lang=${f.language} label=${f.label}",
+                    )
                     return true
                 }
             }
@@ -975,9 +978,12 @@ fun PlayerScreen(
                 .build()
             selectedSubKey = null
             forcedSubLang = ""
+            com.mikdadstream.app.data.local.SubtitleLog.add("Pengguna memilih: Nonaktif")
             showHud(Icons.Filled.Subtitles, "Subtitle nonaktif")
             return
         }
+
+        com.mikdadstream.app.data.local.SubtitleLog.add("Pengguna memilih: $code (${opt?.label ?: "?"})")
 
         if (applyLanguage(code)) {
             forcedSubLang = code
@@ -1279,6 +1285,10 @@ fun PlayerScreen(
         val apiCodes = apiSubtitles.map { normalizeLangCode(it.lang ?: it.label ?: "") }
         Log.d("PlayerScreen", "subtitle API codes: $apiCodes")
         Log.d("PlayerScreen", "subtitle received: ${apiSubtitles.map { (it.lang ?: "") + "|" + (it.label ?: "") }}")
+        com.mikdadstream.app.data.local.SubtitleLog.add(
+            "API kirim ${apiSubtitles.size} track: " +
+                apiSubtitles.joinToString(", ") { "${it.lang ?: "?"}/${it.label ?: "?"}" },
+        )
 
         // Terapkan offset sinkronisasi: bila pengguna menggeser waktu subtitle,
         // setiap file subtitle digeser lalu dipakai versi lokalnya.
@@ -1345,6 +1355,11 @@ fun PlayerScreen(
         installedHasIndo = played.any { it.first == "id" }
         Log.d("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.language ?: "") + "/" + (it.label ?: "") }}")
         Log.d("PlayerScreen", "id match: api=${apiCodes.contains("id")} installed=$installedHasIndo visible=${subs.any { it.label == "Indonesia" }}")
+        com.mikdadstream.app.data.local.SubtitleLog.add(
+            "Terpasang ${subs.size} track: " +
+                (subs.joinToString(", ") { "${it.language}/${it.label}" }.ifEmpty { "-" }) +
+                " | Indonesia dari API=${apiCodes.contains("id")}",
+        )
         // DIAGNOSTIK 2: cetak SEMUA SubtitleConfiguration sebelum prepare():
         // id (unik "sub_<lang>"), language (hasil normalizeLangCode), label,
         // mimeType, dan URI (lokal file:// -> VTT hasil konversi, atau remote).
@@ -1407,6 +1422,9 @@ fun PlayerScreen(
                 delay(250)
             }
             Log.w("PlayerScreen", "Subtitle $wanted belum tersedia di track pemutar")
+            com.mikdadstream.app.data.local.SubtitleLog.add(
+                "GAGAL pasang '$wanted': tidak ada track cocok dari ${subs.size} track terpasang",
+            )
             // Untuk auto-subtitle (dari Lokasi Negara) tidak perlu mengganggu
             // pengguna dengan HUD: subtitle otomatis bersifat best-effort.
             if (subtitleUserChosen) {

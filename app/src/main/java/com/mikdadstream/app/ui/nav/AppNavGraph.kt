@@ -108,6 +108,7 @@ import com.mikdadstream.app.ui.account.EditProfileScreen
 import com.mikdadstream.app.ui.account.ChangePasswordScreen
 import com.mikdadstream.app.ui.account.LanguageScreen
 import com.mikdadstream.app.ui.account.LocationScreen
+import com.mikdadstream.app.ui.account.SubtitleLogScreen
 import com.mikdadstream.app.ui.account.NotificationsScreen
 import com.mikdadstream.app.ui.account.SecurityScreen
 import com.mikdadstream.app.ui.account.HelpSupportScreen
@@ -152,6 +153,7 @@ private object Routes {
     const val CHANGE_PASSWORD = "change_password"
     const val LANGUAGE = "language"
     const val LOCATION = "location"
+    const val SUBTITLE_LOG = "subtitle_log"
     const val NOTIFICATIONS = "notifications"
     const val SECURITY = "security"
     const val HELP = "help"
@@ -468,6 +470,7 @@ fun AppNavGraph(isTv: Boolean = false) {
                     onOpenSources = { mainViewModel.openSheet() },
                     onOpenLanguage = { navController.navigate(Routes.LANGUAGE) },
                     onOpenLocation = { navController.navigate(Routes.LOCATION) },
+                    onOpenSubtitleLog = { navController.navigate(Routes.SUBTITLE_LOG) },
                     onOpenPremium = { navController.navigate(Routes.SUBSCRIPTION) },
                     onPairDevice = { navController.navigate(Routes.PAIR_DEVICE) },
                     onOpenDesignKit = { navController.navigate(Routes.KIT) },
@@ -495,6 +498,7 @@ fun AppNavGraph(isTv: Boolean = false) {
             composable(Routes.CHANGE_PASSWORD) { ChangePasswordScreen(back) }
             composable(Routes.LANGUAGE) { LanguageScreen(back) }
             composable(Routes.LOCATION) { LocationScreen(back) }
+            composable(Routes.SUBTITLE_LOG) { SubtitleLogScreen(back) }
             composable(Routes.NOTIFICATIONS) { NotificationsScreen(back) }
             composable(Routes.SECURITY) { SecurityScreen(back) }
             composable(Routes.HELP) { HelpSupportScreen(back) }

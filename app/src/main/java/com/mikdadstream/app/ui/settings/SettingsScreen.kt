@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Translate
@@ -100,6 +101,7 @@ fun SettingsScreen(
     onOpenSources: () -> Unit,
     onOpenLanguage: () -> Unit = {},
     onOpenLocation: () -> Unit = {},
+    onOpenSubtitleLog: () -> Unit = {},
     onOpenPremium: () -> Unit = {},
     onPairDevice: () -> Unit = {},
     onOpenDesignKit: () -> Unit = {},
@@ -464,6 +466,45 @@ fun SettingsScreen(
                 }
                 Text(
                     text = "Ganti",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            SettingsDivider()
+
+            // Log subtitle: untuk memeriksa sendiri apakah track Indonesia
+            // dikirim API dan berhasil dipasang, tanpa perlu adb logcat.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenSubtitleLog)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Subtitles,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Log Subtitle",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    Text(
+                        text = "Catatan track subtitle saat memutar film",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = "Lihat",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -666,5 +667,78 @@ fun FamilySharingScreen(onBack: () -> Unit) {
         }
 
         StreamOutlineButton(text = "Tambah Anggota", onClick = {})
+    }
+}
+
+/**
+ * Catatan subtitle: menampilkan track yang dikirim API, yang terpasang, dan
+ * hasil pemilihan. Berguna memastikan apakah masalah subtitle berasal dari API
+ * atau dari aplikasi, tanpa perlu `adb logcat`.
+ */
+@Composable
+fun SubtitleLogScreen(onBack: () -> Unit) {
+    val lines by com.mikdadstream.app.data.local.SubtitleLog.lines.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    AccountScaffold(title = "Log Subtitle", onBack = onBack) {
+        Text(
+            text = "Catatan ${lines.size} baris terakhir. Salin lalu kirimkan bila " +
+                "subtitle tidak muncul.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        if (lines.isEmpty()) {
+            Text(
+                text = "Belum ada catatan. Putar film lalu pilih subtitle.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            StreamCard {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    // Terbaru di atas agar kejadian terakhir langsung terlihat.
+                    lines.asReversed().forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        StreamPrimaryButton(
+            text = "Salin ke Clipboard",
+            onClick = {
+                val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                    as? android.content.ClipboardManager
+                cm?.setPrimaryClip(
+                    android.content.ClipData.newPlainText(
+                        "Log Subtitle",
+                        com.mikdadstream.app.data.local.SubtitleLog.asText(),
+                    ),
+                )
+                android.widget.Toast
+                    .makeText(context, "Log disalin", android.widget.Toast.LENGTH_SHORT)
+                    .show()
+            },
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        StreamOutlineButton(
+            text = "Hapus Log",
+            onClick = { com.mikdadstream.app.data.local.SubtitleLog.clear() },
+        )
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
