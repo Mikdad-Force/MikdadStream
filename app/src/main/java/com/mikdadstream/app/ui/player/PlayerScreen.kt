@@ -853,8 +853,16 @@ fun PlayerScreen(
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
                 if (isMalay(f.language) || isMalay(f.label)) continue
-                val match = (normalizeLangCode(f.language) == code && !isMalay(f.language)) ||
-                    (code == "id" && subtitleLangName(f.label) == "Indonesia" && !isMalay(f.label))
+                // Cocokkan lewat kode ternormalisasi ATAU nama bahasa. Sumber kode
+                // tidak seragam ("id"/"in"/"ind"/"Indonesian"), jadi perbandingan
+                // harus melalui normalisasi dua sisi agar tidak gagal palsu.
+                val trackCode = normalizeLangCode(f.language)
+                val labelCode = subtitleLangName(f.label)
+                    ?.let { normalizeLangCode(it) }.orEmpty()
+                // labelCode kosong tidak boleh cocok dengan code kosong.
+                val match = trackCode == code ||
+                    (labelCode.isNotEmpty() && labelCode == code) ||
+                    (code == "id" && subtitleLangName(f.label) == "Indonesia")
                 if (match) {
                     val bp = player.trackSelectionParameters.buildUpon()
                         .clearOverridesOfType(C.TRACK_TYPE_TEXT)
@@ -954,9 +962,10 @@ fun PlayerScreen(
             return
         }
 
-        // Track belum terdaftar di pemutar (mis. masih dimuat): pasang
-        // SubtitleConfiguration-nya lewat reload ringan di latar belakang.
-        if (code == forcedSubLang) return
+        // Track tidak tersedia saat ini. Simpan pilihan lalu minta LaunchedEffect
+        // menerapkannya (ia menunggu track muncul). Ini bukan klaim "gagal":
+        // pesan netral dan pemasangan tetap dicoba.
+        if (code == forcedSubLang && applyLanguage(code)) return
         forcedSubLang = code
         pendingSeek.longValue = player.currentPosition
         subOffsetTrigger++
@@ -1265,22 +1274,14 @@ fun PlayerScreen(
         }
         Log.i("PlayerScreen", "subtitle offset=${subOffsetMs}ms tracks=${sourceSubs.size}")
 
-        // Kunci bahasa: bila pengguna memilih bahasa tertentu, hanya track itu
-        // yang dipasang ke pemutar (tidak ada fallback ke bahasa lain).
-        var activeSubs = when (val f = forcedSubLang) {
-            null -> sourceSubs
-            "" -> emptyList()
-            else -> sourceSubs.filter { normalizeLangCode(it.lang ?: it.label) == f }
-        }
-        // Jangan sampai subtitle sama sekali hilang hanya karena bahasa pilihan
-        // tidak ada di sumber: tampilkan semua track + beri tahu pengguna.
-        if (!forcedSubLang.isNullOrEmpty() && activeSubs.isEmpty() && sourceSubs.isNotEmpty()) {
-            Log.w("PlayerScreen", "bahasa ${forcedSubLang} tidak ada di sumber -> fallback semua track")
-            activeSubs = sourceSubs
-            forcedSubLang = null
-            showHud(Icons.Filled.Subtitles, "Bahasa pilihan tidak tersedia")
-        }
-        Log.i("PlayerScreen", "subtitle forced=${forcedSubLang ?: "all"} active=${activeSubs.size}/${sourceSubs.size}")
+        // SEMUA track dipasang sebagai SubtitleConfiguration. Bahasa yang dipilih
+        // pengguna diterapkan lewat TrackSelectionOverride (applyLanguage), BUKAN
+        // dengan menyaring daftar ini. Menyaring di sini pernah membuat track
+        // Indonesia hilang total ketika kode bahasa dari API ("in"/"ind"/
+        // "Indonesian") tidak persis sama dengan kode pilihan, sehingga muncul
+        // pesan "gagal dimuat".
+        val activeSubs = if (forcedSubLang == "") emptyList() else sourceSubs
+        Log.i("PlayerScreen", "subtitle forced=${forcedSubLang ?: "all"} installed=${activeSubs.size}/${sourceSubs.size}")
 
         val seenLang = LinkedHashSet<String>()
         val played = activeSubs.mapNotNull { s ->
@@ -1379,8 +1380,10 @@ fun PlayerScreen(
                 if (applyLanguage(wanted)) return@LaunchedEffect
                 delay(250)
             }
-            Log.w("PlayerScreen", "Subtitle $wanted tidak berhasil dipasang")
-            showHud(Icons.Filled.Subtitles, "Subtitle $wanted gagal dimuat")
+            // Track tidak ditemukan setelah ~6 detik. Pakai kalimat netral, bukan
+            // klaim "gagal dimuat", karena track bisa muncul pada percobaan ulang.
+            Log.w("PlayerScreen", "Subtitle $wanted belum tersedia di track pemutar")
+            showHud(Icons.Filled.Subtitles, "Subtitle belum tersedia, coba lagi")
         }
     }
 
