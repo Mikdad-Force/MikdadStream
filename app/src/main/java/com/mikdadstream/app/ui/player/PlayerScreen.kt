@@ -74,6 +74,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -694,7 +695,20 @@ fun PlayerScreen(
     // Bahasa subtitle yang DIKUNCI pengguna. null = semua track dipasang,
     // "" = nonaktif, kode lain = HANYA track itu yang dipasang (tidak mungkin
     // jatuh ke bahasa lain seperti Melayu saat memilih Indonesia).
-    var forcedSubLang by remember { mutableStateOf<String?>(null) }
+    // Subtitle otomatis mengikuti Lokasi Negara di Pengaturan: Indonesia -> "id"
+    // sehingga subtitle Indonesia langsung tampil tanpa memilih manual. Ini
+    // berbeda dari "auto-terkunci": pengguna tetap bebas mengganti/mematikan
+    // lewat menu Subtitle (subtitleUserChosen).
+    val autoSubLang = AppGraph.prefs.autoSubtitleLang
+        .collectAsState().value
+    var forcedSubLang by remember(autoSubLang) {
+        mutableStateOf<String?>(autoSubLang.takeIf { it.isNotBlank() })
+    }
+    // Ganti Lokasi Negara = preferensi subtitle baru: lupakan pilihan manual
+    // sebelumnya agar subtitle bahasa negara baru bisa dipasang otomatis.
+    LaunchedEffect(autoSubLang) {
+        subtitleUserChosen = false
+    }
     // Sinkronisasi subtitle manual: offset waktu subtitle terhadap video.
     var hasStartedOnce by remember { mutableStateOf(false) }
     var subOffsetMs by rememberSaveable { mutableLongStateOf(0L) }
@@ -918,14 +932,21 @@ fun PlayerScreen(
         }
         subOptions = opts.sortedBy { if (it.label == "Indonesia") 0 else 1 }
         selectedSubKey = selectedKey
-        // ---- Tanpa auto-pilih ----
-        // Subtitle dibiarkan NONAKTIF sampai pengguna memilih sendiri dari menu.
-        // Jangan auto-pasang Indonesia dan jangan paksa menonaktifkan tipe TEXT:
-        // keduanya membuat pengguna "terkunci" pada satu bahasa.
-        if (!subtitleUserChosen && selectedSubKey == null) {
-            player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                .build()
+        // ---- Auto-subtitle dari Lokasi Negara ----
+        // Bila pengguna belum memilih manual, pasang subtitle sesuai lokasi
+        // negara (Indonesia -> Indonesia). Dipanggil juga saat track baru
+        // terdaftar, karena subtitle sering muncul belakangan. Jika belum ada
+        // track yang cocok, jangan matikan tipe TEXT: biarkan track terpasang
+        // begitu muncul lalu diterapkan oleh LaunchedEffect pemasangan.
+        val wanted = forcedSubLang
+        if (!subtitleUserChosen) {
+            if (!wanted.isNullOrBlank()) {
+                applyLanguage(wanted)
+            } else if (selectedSubKey == null) {
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build()
+            }
         }
     }
 
@@ -1380,10 +1401,12 @@ fun PlayerScreen(
                 if (applyLanguage(wanted)) return@LaunchedEffect
                 delay(250)
             }
-            // Track tidak ditemukan setelah ~6 detik. Pakai kalimat netral, bukan
-            // klaim "gagal dimuat", karena track bisa muncul pada percobaan ulang.
             Log.w("PlayerScreen", "Subtitle $wanted belum tersedia di track pemutar")
-            showHud(Icons.Filled.Subtitles, "Subtitle belum tersedia, coba lagi")
+            // Untuk auto-subtitle (dari Lokasi Negara) tidak perlu mengganggu
+            // pengguna dengan HUD: subtitle otomatis bersifat best-effort.
+            if (subtitleUserChosen) {
+                showHud(Icons.Filled.Subtitles, "Subtitle belum tersedia, coba lagi")
+            }
         }
     }
 

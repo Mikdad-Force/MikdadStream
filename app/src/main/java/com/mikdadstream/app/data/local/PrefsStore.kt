@@ -5,6 +5,7 @@ import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
+import java.util.Locale
 import java.util.UUID
 
 data class Profile(
@@ -44,6 +45,13 @@ class PrefsStore(context: Context) {
     private val _region = MutableStateFlow(
         CountryLocations.byCode(sp.getString(KEY_REGION, DEFAULT_REGION)).code,
     )
+    /**
+     * Bahasa subtitle yang dipasang OTOMATIS saat memutar film, diturunkan dari
+     * lokasi negara: Indonesia -> "id", Malaysia -> "ms", dst. Nilai "" berarti
+     * tidak ada auto-subtitle. Selalu diturunkan dari [_region] agar tidak bisa
+     * basi terhadap lokasi yang dipilih.
+     */
+    private val _autoSubtitleLang = MutableStateFlow(autoSubtitleFor(_region.value))
     private val _premiumUnlocked = MutableStateFlow(sp.getBoolean(KEY_PREMIUM_UNLOCK, false))
     private val _serverStatus = MutableStateFlow<String?>(null)
     private val _hiddenSources = MutableStateFlow(sp.getStringSet(KEY_HIDDEN, null)?.toSet() ?: emptySet())
@@ -65,6 +73,7 @@ class PrefsStore(context: Context) {
     val accent: StateFlow<Int> = _accent
     val language: StateFlow<String> = _language
     val region: StateFlow<String> = _region
+    val autoSubtitleLang: StateFlow<String> = _autoSubtitleLang
     val premiumUnlocked: StateFlow<Boolean> = _premiumUnlocked
     val serverStatus: StateFlow<String?> = _serverStatus
     val hiddenSources: StateFlow<Set<String>> = _hiddenSources
@@ -158,7 +167,20 @@ class PrefsStore(context: Context) {
         val normalized = CountryLocations.byCode(code).code
         sp.edit { putString(KEY_REGION, normalized) }
         _region.value = normalized
+        // Subtitle otomatis mengikuti lokasi negara.
+        _autoSubtitleLang.value = autoSubtitleFor(normalized)
         CountrySelection.code = normalized
+    }
+
+    /**
+     * Bahasa subtitle otomatis untuk sebuah negara. Indonesia -> "id" agar film
+     * yang diputar langsung menampilkan subtitle Indonesia; Malaysia -> "ms".
+     * "" = tidak ada auto-subtitle (pengguna memilih sendiri di pemutar).
+     */
+    fun autoSubtitleFor(region: String): String = when (region.uppercase(Locale.ROOT)) {
+        "ID" -> "id"
+        "MY" -> "ms"
+        else -> ""
     }
 
     fun setPremiumUnlocked(value: Boolean) {
