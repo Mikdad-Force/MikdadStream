@@ -245,14 +245,10 @@ private fun Sidebar(currentRoute: String? = null, onNavigate: (String) -> Unit) 
 @Composable
 private fun NavItem(icon: ImageVector, active: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    // Penanda fokus navbar: perbesaran + ring putih jelas agar perpindahan D-pad terlihat tegas.
-    val scale by animateFloatAsState(if (focused) 1.15f else 1f, tween(140), label = "navScale")
     CompositionLocalProvider(LocalIndication provides NoNavIndication) {
         Box(
             Modifier
-                .zIndex(if (focused) 1f else 0f)
                 .size(56.dp)
-                .scale(scale)
                 .clip(CircleShape)
                 .background(
                     when {
@@ -306,14 +302,11 @@ private fun Header(activeSourceName: String? = null, onSourceClick: () -> Unit =
         }
         Spacer(Modifier.weight(1f))
         var focused by remember { mutableStateOf(false) }
-        val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "pillZoom")
         CompositionLocalProvider(LocalIndication provides NoNavIndication) {
         Row(
             Modifier
-                .zIndex(if (focused) 1f else 0f)
                 .width(389.dp)
                 .height(57.dp)
-                .scale(zoom)
                 .clip(RoundedCornerShape(28.dp))
                 .background(if (focused) Color(0xFF282836) else PillBg)
                 .border(
@@ -413,15 +406,12 @@ private fun Hero(
 @Composable
 private fun HeroButton(text: String, filled: Boolean, width: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     var focused by remember { mutableStateOf(false) }
-    val zoom by animateFloatAsState(if (focused) 1.08f else 1f, tween(140), label = "btnZoom")
     val shape = RoundedCornerShape(29.dp)
     CompositionLocalProvider(LocalIndication provides NoNavIndication) {
     Box(
         modifier
-            .zIndex(if (focused) 1f else 0f)
             .width(width)
             .height(58.dp)
-            .scale(zoom)
             .clip(shape)
             .background(
                 when {
@@ -477,12 +467,9 @@ private fun CategoryChipsRow(
             item {
                 val isActive = activeCategory == null
                 var focused by remember { mutableStateOf(false) }
-                val zoom by animateFloatAsState(if (focused) 1.08f else 1f, tween(140), label = "chipZoom")
                 val chipModifier = Modifier
-                    .zIndex(if (focused) 1f else 0f)
                     .width(160.dp)
                     .height(52.dp)
-                    .scale(zoom)
                     .clip(RoundedCornerShape(26.dp))
                     .background(
                         when {
@@ -521,12 +508,9 @@ private fun CategoryChipsRow(
         items(categories, key = { it.id }) { category ->
             val isActive = category.id == activeCategory?.id
             var focused by remember { mutableStateOf(false) }
-            val zoom by animateFloatAsState(if (focused) 1.08f else 1f, tween(140), label = "chipZoom")
             val chipModifier = Modifier
-                .zIndex(if (focused) 1f else 0f)
                 .width(160.dp)
                 .height(52.dp)
-                .scale(zoom)
                 .clip(RoundedCornerShape(26.dp))
                 .background(
                     when {
@@ -657,15 +641,11 @@ private fun PosterRow(items: List<Poster>, showTitle: Boolean, onItemClick: (Pos
 @Composable
 private fun PosterCard(p: Poster, showTitle: Boolean, onClick: () -> Unit = {}) {
     var focused by remember { mutableStateOf(false) }
-    // Penanda fokus poster: perbesaran + ring putih D-pad agar perpindahan fokus jelas.
-    val zoom by animateFloatAsState(if (focused) 1.08f else 1f, tween(140), label = "posterZoom")
     val shape = RoundedCornerShape(10.dp)
     CompositionLocalProvider(LocalIndication provides NoNavIndication) {
     Box(
         Modifier
-            .zIndex(if (focused) 1f else 0f)
             .aspectRatio(2f / 3f)
-            .scale(zoom)
             .clip(shape)
             .background(p.bg)
             .onFocusChanged { focused = it.isFocused }
@@ -695,7 +675,13 @@ private fun PosterCard(p: Poster, showTitle: Boolean, onClick: () -> Unit = {}) 
             }
         }
         if (focused) {
-            Box(Modifier.fillMaxSize().border(3.dp, Color.White, shape))
+            // Ring putih tegas 3.5.dp + overlay highlight tanpa perbesaran agar daftar tetap stabil dan mulus
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = 0.12f))
+                    .border(3.5.dp, Color.White, shape)
+            )
         }
     }
     }

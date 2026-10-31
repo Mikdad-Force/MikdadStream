@@ -27,10 +27,6 @@ import kotlin.math.abs
 object TvFocusIndication : IndicationNodeFactory {
 
     /** Zoom saat fokus: komponen membesar agar menonjol di layar TV. */
-    private const val FOCUS_ZOOM = 1.06f
-    /** Zoom saat ditekan: sedikit mengecil sebagai umpan balik sentuh/klik. */
-    private const val PRESS_ZOOM = 0.97f
-
     private val FocusRingColor = Color(0xFFFFFFFF)
     private val FocusBgColor = Color(0x28FFFFFF)
 
@@ -62,14 +58,7 @@ object TvFocusIndication : IndicationNodeFactory {
             }
         }
 
-        private fun currentZoom(): Float = when {
-            focused -> FOCUS_ZOOM
-            pressed -> PRESS_ZOOM
-            else -> 1f
-        }
-
         override fun ContentDrawScope.draw() {
-            val z = currentZoom()
             val minDim = minOf(size.width, size.height)
             // Adaptif: jika tombol lingkaran/persegi kecil, ikuti radius lingkaran; selain itu 12.dp
             val cornerRadius = if (abs(size.width - size.height) < 8.dp.toPx() && minDim < 80.dp.toPx()) {
@@ -79,32 +68,23 @@ object TvFocusIndication : IndicationNodeFactory {
             }
             val corner = CornerRadius(cornerRadius, cornerRadius)
 
-            if (abs(z - 1f) < 0.002f) {
-                if (focused) {
-                    drawRoundRect(color = FocusBgColor, cornerRadius = corner)
-                }
-                this@draw.drawContent()
-            } else {
-                scale(z, z, center) {
-                    if (focused) {
-                        drawRoundRect(color = FocusBgColor, cornerRadius = corner)
-                    }
-                    this@draw.drawContent()
-                    if (focused || pressed) {
-                        val stroke = 2.5.dp.toPx()
-                        val inset = stroke / 2f
-                        drawRoundRect(
-                            color = if (focused) FocusRingColor else Color.White.copy(alpha = 0.65f),
-                            topLeft = Offset(inset, inset),
-                            size = Size(
-                                (size.width - inset * 2f).coerceAtLeast(0f),
-                                (size.height - inset * 2f).coerceAtLeast(0f),
-                            ),
-                            cornerRadius = corner,
-                            style = Stroke(width = stroke),
-                        )
-                    }
-                }
+            if (focused) {
+                drawRoundRect(color = FocusBgColor, cornerRadius = corner)
+            }
+            this@draw.drawContent()
+            if (focused || pressed) {
+                val stroke = 2.5.dp.toPx()
+                val inset = stroke / 2f
+                drawRoundRect(
+                    color = if (focused) FocusRingColor else Color.White.copy(alpha = 0.65f),
+                    topLeft = Offset(inset, inset),
+                    size = Size(
+                        (size.width - inset * 2f).coerceAtLeast(0f),
+                        (size.height - inset * 2f).coerceAtLeast(0f),
+                    ),
+                    cornerRadius = corner,
+                    style = Stroke(width = stroke),
+                )
             }
         }
     }
