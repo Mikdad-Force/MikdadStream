@@ -40,6 +40,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -99,6 +101,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -792,6 +795,9 @@ fun PlayerScreen(
     // scrubbing: pengguna sedang menyeret thumb; sisanya posisi (px) milik
     // layout untuk menempatkan bubble tepat di atas thumb dan di atas panel.
     var scrubbing by remember { mutableStateOf(false) }
+    // Pratinjau gambar saat scrub (meniru YouTube). Null selama belum siap atau
+    // bila stream tidak mendukung pengambilan frame.
+    var scrubThumb by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var sliderRootX by remember { mutableFloatStateOf(0f) }
     var sliderRootY by remember { mutableFloatStateOf(0f) }
     var sliderW by remember { mutableIntStateOf(0) }
@@ -880,6 +886,15 @@ fun PlayerScreen(
 
     val streamHeaders = remember {
         java.util.concurrent.atomic.AtomicReference<Map<String, String>>(emptyMap())
+    }
+    // Loader pratinjau untuk URL stream aktif, memakai header yang sama dengan
+    // pemutar (banyak CDN menolak permintaan tanpa Referer/User-Agent).
+    // Dibuat ulang tiap URL berubah dan dilepas agar retriever tidak bocor.
+    val thumbLoaderRef = remember(activeStreamUrl) {
+        activeStreamUrl?.let { java.lang.ref.WeakReference(ThumbnailLoader(it, streamHeaders.get())) }
+    }
+    androidx.compose.runtime.DisposableEffect(thumbLoaderRef) {
+        onDispose { thumbLoaderRef?.get()?.release() }
     }
     val dataSourceFactory = remember {
         val httpFactory = object : androidx.media3.datasource.DataSource.Factory {
@@ -1869,6 +1884,23 @@ fun PlayerScreen(
         scrubbing = false
         tvSeekPending = false
     }
+    // Ambil gambar pratinjau selama pengguna menggeser (sentuh maupun D-pad).
+    // Ditunda 150 ms agar menggeser cepat tidak membanjiri MediaMetadataRetriever.
+    LaunchedEffect(scrubbing, userSeek) {
+        if (!scrubbing) {
+            scrubThumb = null
+            return@LaunchedEffect
+        }
+        val target = userSeek ?: return@LaunchedEffect
+        delay(150)
+        val bmp = thumbLoaderRef?.get()?.frameAt(target)
+        // Hanya pakai hasil bila pengguna belum menggeser lagi. Bitmap lama
+        // tidak di-recycle manual: bisa saja masih dirender Compose dan
+        // me-recycle-nya menyebabkan crash. Biarkan GC yang mengurus.
+        if (bmp != null && (userSeek ?: -1L) == target) {
+            scrubThumb = bmp
+        }
+    }
     var lastGuardBack by remember { mutableLongStateOf(0L) }
     BackHandler {
         when {
@@ -2438,9 +2470,23 @@ fun PlayerScreen(
                     }
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color(0xF0101014))
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .padding(horizontal = if (scrubThumb != null) 6.dp else 14.dp, vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                // Gambar pratinjau (seperti YouTube). Hanya muncul bila frame
+                // berhasil diambil; kalau tidak, bubble tetap menampilkan waktu.
+                scrubThumb?.let { bmp ->
+                    androidx.compose.foundation.Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier
+                            .width(160.dp)
+                            .height(90.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
                 Text(
                     text = formatTime(scrubPos),
                     style = MaterialTheme.typography.titleMedium,
