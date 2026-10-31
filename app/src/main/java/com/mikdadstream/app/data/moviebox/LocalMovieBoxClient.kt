@@ -1040,9 +1040,16 @@ object LocalMovieBoxClient {
             if (System.currentTimeMillis() - t < 1_800_000L && list.isNotEmpty()) return@withContext list
         }
         val token = boot() ?: return@withContext emptyList()
-        // TRENDING: ambil langsung dari trendingAll (cepat, tanpa probe subtitle ke tiap judul)
+        // TRENDING = film yang paling banyak ditonton pengguna Indonesia.
+        // Endpoint trending/v2 sudah berupa daftar "trending and popular" yang
+        // disaring server berdasarkan region ID (lihat clientInfo().region),
+        // jadi URUTAN ASLI dari server dipertahankan apa adanya sebagai sinyal
+        // popularitas. Jangan urutkan ulang (mis. by upload time) dan jangan
+        // saring dengan filterIndoOnly (itu "punya subtitle Indonesia", bukan
+        // "banyak ditonton") karena keduanya merusak peringkat trending.
         if (cat == "trending") {
             val raw = trendingAll()
+            // Hanya buang judul Hindi: bukan audiens target aplikasi ini.
             val use = raw.filterNot {
                 isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
             }
@@ -1052,7 +1059,7 @@ object LocalMovieBoxClient {
                 val m = mapSubjectToMediaItem(s) ?: continue
                 if (seen.add(m.id ?: "")) out.add(m)
             }
-            Log.i(TAG, "categoryItems trending count=${out.size}")
+            Log.i(TAG, "categoryItems trending raw=${raw.size} out=${out.size}")
             categoryCache[cat] = System.currentTimeMillis() to out
             return@withContext out
         }
@@ -1097,11 +1104,13 @@ object LocalMovieBoxClient {
 
     suspend fun trendingItems(): List<MediaItem> =
         withContext(Dispatchers.IO) {
-            val token = boot() ?: return@withContext emptyList()
-            val flat = trendingAll()
-            val filtered = runCatching { filterIndoOnly(flat, token) }.getOrDefault(emptyList())
-            val use = filtered.ifEmpty { flat }
-            use.mapNotNull { mapSubjectToMediaItem(it) }
+            // Trending = paling banyak ditonton di Indonesia: pakai urutan server
+            // (region ID) apa adanya, hanya buang Hindi. Jangan filterIndoOnly.
+            trendingAll()
+                .filterNot {
+                    isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
+                }
+                .mapNotNull { mapSubjectToMediaItem(it) }
         }
 
     suspend fun searchItems(keyword: String, page: Int = 1): List<MediaItem> =
