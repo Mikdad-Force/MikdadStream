@@ -1345,30 +1345,46 @@ object LocalMovieBoxClient {
                 }
     }
 
+    /**
+     * Ubah timestamp pada BARIS TIMING saja menjadi format WebVTT baku
+     * ("HH:MM:SS.mmm").
+     *
+     * - Menerima koma maupun titik, dengan atau tanpa jam ("MM:SS,mmm").
+     * - Milidetik 1-3 digit dinormalisasi ke 3 digit.
+     * - Baris dialog tidak disentuh: pola global lama ikut mengubah angka
+     *   seperti "12:30,500" di dalam teks sehingga isi subtitle rusak.
+     * - Locale.US wajib agar digit tetap ASCII di perangkat ber-locale
+     *   Arab/Persia.
+     */
+    private fun normalizeTimingLines(text: String): String {
+        val ts = Regex("(?:(\\d{1,4}):)?(\\d{1,2}):(\\d{2})[,.](\\d{1,3})")
+        return text.lineSequence().joinToString("\n") { line ->
+            if (!line.contains("-->")) {
+                line
+            } else {
+                ts.replace(line) { m ->
+                    val h = m.groupValues[1].toIntOrNull() ?: 0
+                    val min = m.groupValues[2].toIntOrNull() ?: 0
+                    val sec = m.groupValues[3].toIntOrNull() ?: 0
+                    val millis = m.groupValues[4].padEnd(3, '0').take(3)
+                    String.format(Locale.US, "%02d:%02d:%02d.%s", h, min, sec, millis)
+                }
+            }
+        }
+    }
+
     /** Konversi konten SRT ke WebVTT: header WEBVTT + koma -> titik pada timestamp. */
     private fun srtToVtt(srt: String): String {
         val clean = srt.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
-        val sb = StringBuilder("WEBVTT\n\n")
-        val ts = Regex("(\\d{1,2}):(\\d{2}):(\\d{2}),(\\d{3})")
-        sb.append(ts.replace(clean) { m ->
-            // WebVTT mewajibkan jam 2 digit; SRT sering memakai "0:00:01,000".
-            "%02d:%s:%s.%s".format(
-                m.groupValues[1].toInt(),
-                m.groupValues[2], m.groupValues[3], m.groupValues[4],
-            )
-        })
-        return sb.toString()
+        return "WEBVTT\n\n" + normalizeTimingLines(clean)
     }
 
-    /** Rapikan jam pada timestamp WebVTT menjadi 2 digit. */
+    /** Rapikan timestamp WebVTT pada baris timing (jam 2 digit, titik). */
     private fun normalizeVttHours(vtt: String): String {
-        val ts = Regex("(\\d{1,2}):(\\d{2}):(\\d{2})\\.(\\d{3})")
-        return ts.replace(vtt) { m ->
-            "%02d:%s:%s.%s".format(
-                m.groupValues[1].toInt(),
-                m.groupValues[2], m.groupValues[3], m.groupValues[4],
-            )
-        }
+        val clean = vtt.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
+        // Header ("WEBVTT", "X-TIMESTAMP-MAP=...") tidak mengandung "-->" jadi
+        // otomatis dilewati; hanya baris cue yang dirapikan.
+        return normalizeTimingLines(clean)
     }
 
     fun firstBySubject(subjectId: String): JSONObject? {

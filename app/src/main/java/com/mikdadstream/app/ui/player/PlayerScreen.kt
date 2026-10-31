@@ -351,13 +351,21 @@ private fun md5Key(text: String): String =
  * selalu 2 digit. Format tanpa jam (`MM:SS,mmm`) juga diterima. Milidetik 1-3
  * digit dinormalisasi ke 3 digit agar parser Media3 tidak menolak cue.
  */
-private fun srtTextToVtt(srt: String): String {
+private fun srtTextToVtt(srt: String): String =
+    "WEBVTT\n\n" + convertSrtTimings(srt)
+
+/**
+ * Ubah timestamp gaya SRT ("HH:MM:SS,mmm" / "MM:SS,mmm") menjadi gaya WebVTT
+ * ("HH:MM:SS.mmm") TANPA menambah header.
+ *
+ * Hanya baris timing cue (mengandung "-->") yang disentuh. Baris dialog tidak
+ * boleh diubah: angka seperti "12:30,500" di dalam teks dulu ikut dikonversi
+ * dan merusak isi subtitle.
+ */
+private fun convertSrtTimings(srt: String): String {
     val clean = srt.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
     val ts = Regex("(?:(\\d{1,4}):)?(\\d{1,2}):(\\d{2})[,.](\\d{1,3})")
-    // Konversi HANYA baris timing cue (mengandung "-->"). Baris dialog tidak
-    // boleh disentuh: angka seperti "12:30,500" di dalam teks dulu ikut
-    // diubah menjadi jam dan merusak isi subtitle.
-    val converted = clean.lineSequence().joinToString("\n") { line ->
+    return clean.lineSequence().joinToString("\n") { line ->
         if (!line.contains("-->")) {
             line
         } else {
@@ -372,7 +380,6 @@ private fun srtTextToVtt(srt: String): String {
             }
         }
     }
-    return "WEBVTT\n\n$converted"
 }
 
 /**
@@ -388,7 +395,8 @@ private fun normalizeSubtitleText(text: String): String? {
     // Koma pada baris timing = gaya SRT (WebVTT hanya menerima titik).
     val srtStyleTiming = Regex("(?:\\d{1,4}:)?\\d{1,2}:\\d{2},\\d{1,3}\\s*-->").containsMatchIn(clean)
     if (trimmed.startsWith("WEBVTT", true)) {
-        return if (srtStyleTiming) srtTextToVtt(clean.substringAfter('\n', "")) else clean
+        // Header sudah ada: perbaiki hanya baris timing, header tetap utuh.
+        return if (srtStyleTiming) convertSrtTimings(clean) else clean
     }
     if (clean.contains("-->")) {
         // Ada koma pada timestamp = gaya SRT (WebVTT hanya menerima titik),
