@@ -1954,7 +1954,10 @@ object LocalMovieBoxClient {
             val lastIdx = (rdArr?.length() ?: 1).coerceAtLeast(1) - 1
             val resourceId = rdArr?.optJSONObject((ep - 1).coerceIn(0, lastIdx))
                 ?.optString("resourceId")?.takeIf { it.isNotBlank() }
-                ?: rdArr?.optJSONObject(0)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+                // Fallback ke detektor pertama HANYA untuk episode 1 (film).
+                // Untuk episode > 1 itu berarti memutar video episode lain.
+                ?: rdArr?.optJSONObject(0)?.optString("resourceId")
+                    ?.takeIf { it.isNotBlank() && ep <= 1 }
 
             // Short TV: sumber asli ada di post UGC H5, bukan play-info (trailer).
             if (detailData?.optInt("subjectType", 0) == 7) {
