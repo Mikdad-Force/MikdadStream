@@ -474,6 +474,8 @@ object LocalMovieBoxClient {
     fun isMalay(text: String?): Boolean {
         if (text.isNullOrBlank()) return false
         val s = text.trim().lowercase(Locale.ROOT)
+        // "Malayalam" (bahasa Dravida, kode "ml") BUKAN Melayu meski berawalan "malay".
+        if (s.contains("malayalam") || s.contains("malayali")) return false
         val clean = s.replace('-', '_').replace('.', '_')
         val base = clean.substringBefore('_')
         if (base in setOf("ms", "may", "msa", "zlm")) return true
@@ -1211,14 +1213,35 @@ object LocalMovieBoxClient {
             val ctx = try { com.mikdadstream.app.AppGraph.appContext } catch (e: Throwable) { null }
             if (ctx == null) return@withContext tracks
             val dir = java.io.File(ctx.cacheDir, "subs").apply { mkdirs() }
-            // Bersihkan cache subtitle versi lama yang bisa berisi HTML error
-            // atau tertukar antar bahasa (penyebab "pilih Indo keluar Melayu").
+            // Bersihkan HANYA cache subtitle yang rusak (HTML halaman error,
+            // file kosong, atau sisa versi lama tanpa header WEBVTT). Cache
+            // valid TIDAK dihapus: menghapus semuanya memaksa unduh ulang
+            // seluruh bahasa di setiap episode dan membuat subtitle lambat
+            // muncul. Ini juga membersihkan sisa file "pilih Indo keluar
+            // Melayu" dari versi lama.
             runCatching {
+                val now = System.currentTimeMillis()
                 dir.listFiles()?.forEach { f ->
                     val n = f.name
-                    if (n.startsWith("sb") || n.startsWith("sbshift_")) {
-                        f.delete()
+                    if (!n.startsWith("sb")) return@forEach
+                    // File hasil geser manual (sbshift_) dibuat per offset;
+                    // buang yang sudah lama supaya cache tidak menumpuk.
+                    if (n.startsWith("sbshift_")) {
+                        if (now - f.lastModified() > 6 * 60 * 60 * 1000L) f.delete()
+                        return@forEach
                     }
+                    val valid = runCatching {
+                        if (f.length() <= 0L) false
+                        else {
+                            val head = f.inputStream().use { ins ->
+                                val buf = ByteArray(256)
+                                val len = ins.read(buf)
+                                if (len <= 0) "" else String(buf, 0, len, Charsets.UTF_8)
+                            }
+                            head.removePrefix("\uFEFF").trimStart().startsWith("WEBVTT", true)
+                        }
+                    }.getOrDefault(false)
+                    if (!valid) f.delete()
                 }
             }
             // Unduh/konversi semua subtitle PARALEL: sebelumnya berurutan
@@ -1459,8 +1482,10 @@ object LocalMovieBoxClient {
             if (!seen.add(norm)) continue
             out.add(
                 SubtitleTrack(
+                    // Label Indonesia diseragamkan "Indonesia" agar menu subtitle
+                    // dan pemilihan otomatis mengenali bahasa yang sama.
                     label = lanName.takeIf { !it.isNullOrBlank() }
-                        ?: if (norm == "id") "Indonesian" else lan,
+                        ?: if (norm == "id") "Indonesia" else lan,
                     lang = norm,
                     url = url,
                 )
@@ -1556,8 +1581,14 @@ object LocalMovieBoxClient {
                 } else null
                 val rid = episodeResourceId(subjectId, token, se, ep)
                     ?: epDetectorRid
-                    ?: packRid
+                    // packRid = paket EPISODE 1. Untuk episode > 1 memakainya
+                    // berarti memasang subtitle episode lain (tidak sinkron),
+                    // jadi lebih baik tidak ada subtitle sama sekali.
+                    ?: packRid?.takeIf { ep <= 1 }
 
+                // Episode > 1 tanpa resourceId sendiri tetap boleh bertanya
+                // dengan parameter se/ep (server memfilter per episode); yang
+                // dilarang hanyalah memakai packRid milik EPISODE 1 di atas.
                 // HANYA sumber langsung (subjek + resourceId milik video ini).
                 val caps = extCaptionsFor(subjectId, rid, token, se, ep)
                 val out = captionsToTracks(caps).filterNot { isMalay(it.lang) || isMalay(it.label) }

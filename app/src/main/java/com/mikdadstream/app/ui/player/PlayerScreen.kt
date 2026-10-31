@@ -12,6 +12,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -247,6 +250,8 @@ private fun alternateStreamKind(current: String?): String =
 fun isMalay(text: String?): Boolean {
     if (text.isNullOrBlank()) return false
     val s = text.trim().lowercase(java.util.Locale.ROOT)
+    // "Malayalam" (bahasa Dravida, kode "ml") BUKAN Melayu meski berawalan "malay".
+    if (s.contains("malayalam") || s.contains("malayali")) return false
     val clean = s.replace('-', '_').replace('.', '_')
     val base = clean.substringBefore('_')
     if (base in setOf("ms", "may", "msa", "zlm")) return true
@@ -323,7 +328,13 @@ private fun detectSubtitleMime(url: String): String {
 
 private fun formatOffset(ms: Long): String {
     val seconds = ms / 1000.0
-    val text = String.format(java.util.Locale.US, "%.1f", seconds)
+    // Tampilkan 2 desimal bila offset bukan kelipatan 0,5 detik agar nilai
+    // seperti 0,25 / 0,75 detik tidak tampil membulat menyesatkan.
+    val text = if (ms % 500L == 0L) {
+        String.format(java.util.Locale.US, "%.1f", seconds)
+    } else {
+        String.format(java.util.Locale.US, "%.2f", seconds)
+    }
     return if (ms > 0) "+${text}s" else "${text}s"
 }
 
@@ -333,34 +344,58 @@ private fun md5Key(text: String): String =
         .joinToString("") { "%02x".format(it) }
         .take(24)
 
-/** Konversi teks SRT mentah menjadi WebVTT. */
+/**
+ * Konversi teks SRT mentah menjadi WebVTT.
+ *
+ * Timestamp SRT (`HH:MM:SS,mmm`) diubah ke WebVTT (`HH:MM:SS.mmm`) dengan jam
+ * selalu 2 digit. Format tanpa jam (`MM:SS,mmm`) juga diterima. Milidetik 1-3
+ * digit dinormalisasi ke 3 digit agar parser Media3 tidak menolak cue.
+ */
 private fun srtTextToVtt(srt: String): String {
     val clean = srt.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
-    val sb = StringBuilder("WEBVTT\n\n")
-    val ts = Regex("(?:(\\d{1,4}):)?(\\d{1,2}):(\\d{2})[,.](\\d{3})")
-    sb.append(ts.replace(clean) { m ->
-        val h = m.groupValues[1].toIntOrNull() ?: 0
-        val min = m.groupValues[2].toIntOrNull() ?: 0
-        val sec = m.groupValues[3].toIntOrNull() ?: 0
-        val millis = m.groupValues[4].padEnd(3, '0').take(3)
-        "%02d:%02d:%02d.%s".format(h, min, sec, millis)
-    })
-    return sb.toString()
+    val ts = Regex("(?:(\\d{1,4}):)?(\\d{1,2}):(\\d{2})[,.](\\d{1,3})")
+    // Konversi HANYA baris timing cue (mengandung "-->"). Baris dialog tidak
+    // boleh disentuh: angka seperti "12:30,500" di dalam teks dulu ikut
+    // diubah menjadi jam dan merusak isi subtitle.
+    val converted = clean.lineSequence().joinToString("\n") { line ->
+        if (!line.contains("-->")) {
+            line
+        } else {
+            ts.replace(line) { m ->
+                val h = m.groupValues[1].toIntOrNull() ?: 0
+                val min = m.groupValues[2].toIntOrNull() ?: 0
+                val sec = m.groupValues[3].toIntOrNull() ?: 0
+                val millis = m.groupValues[4].padEnd(3, '0').take(3)
+                // Locale.US WAJIB: pada perangkat berbahasa Arab/Persia,
+                // "%02d" menghasilkan angka non-ASCII dan cue jadi tak terbaca.
+                String.format(java.util.Locale.US, "%02d:%02d:%02d.%s", h, min, sec, millis)
+            }
+        }
+    }
+    return "WEBVTT\n\n$converted"
 }
 
-/** Pastikan teks berupa WebVTT; null jika isi bukan SRT/VTT. */
+/**
+ * Pastikan teks berupa WebVTT yang valid; null jika isi bukan SRT/VTT.
+ *
+ * Berkas ber-header "WEBVTT" tetapi bertimestamp gaya SRT (koma) tetap
+ * diperbaiki: parser WebVTT Media3 menolak cue berkoma, dan itulah salah satu
+ * penyebab subtitle hilang tanpa pesan.
+ */
 private fun normalizeSubtitleText(text: String): String? {
     val clean = text.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
     val trimmed = clean.trimStart()
-    if (trimmed.startsWith("WEBVTT", true)) return clean
-    if (clean.contains("-->")) {
-        return if (Regex("\\d{1,2}:\\d{2}:\\d{2},\\d{3}").containsMatchIn(clean)) {
-            srtTextToVtt(clean)
-        } else {
-            "WEBVTT\n\n" + trimmed
-        }
+    // Koma pada baris timing = gaya SRT (WebVTT hanya menerima titik).
+    val srtStyleTiming = Regex("(?:\\d{1,4}:)?\\d{1,2}:\\d{2},\\d{1,3}\\s*-->").containsMatchIn(clean)
+    if (trimmed.startsWith("WEBVTT", true)) {
+        return if (srtStyleTiming) srtTextToVtt(clean.substringAfter('\n', "")) else clean
     }
-    if (Regex("\\d{1,2}:\\d{2}:\\d{2}[,.]\\d{3}").containsMatchIn(clean)) return srtTextToVtt(clean)
+    if (clean.contains("-->")) {
+        // Ada koma pada timestamp = gaya SRT (WebVTT hanya menerima titik),
+        // termasuk format tanpa jam "MM:SS,mmm" -> konversi penuh.
+        return if (srtStyleTiming) srtTextToVtt(clean) else "WEBVTT\n\n" + trimmed
+    }
+    if (Regex("\\d{1,2}:\\d{2}:\\d{2}[,.]\\d{1,3}").containsMatchIn(clean)) return srtTextToVtt(clean)
     return null
 }
 
@@ -393,7 +428,8 @@ private fun formatMsToVttTimestamp(ms: Long): String {
     val mm = (total % 3_600_000) / 60_000
     val ss = (total % 60_000) / 1000
     val millis = total % 1000
-    return "%02d:%02d:%02d.%03d".format(hh, mm, ss, millis)
+    // Locale.US: cegah digit non-ASCII pada perangkat ber-locale Arab/Persia.
+    return String.format(java.util.Locale.US, "%02d:%02d:%02d.%03d", hh, mm, ss, millis)
 }
 
 private suspend fun fetchSubtitleText(url: String): String? = withContext(Dispatchers.IO) {
@@ -445,29 +481,65 @@ private suspend fun localVttContent(url: String): String? = withContext(Dispatch
     vtt
 }
 
-/** Geser semua timestamp WebVTT sebesar offset (ms). Timestamp negatif -> 0. */
+/**
+ * Geser waktu subtitle WebVTT sebesar offset (ms). Timestamp negatif -> 0.
+ *
+ * Hanya baris timing cue ("start --> end") yang digeser — teks dialog TIDAK
+ * disentuh. Pola global sebelumnya ikut mengubah angka di dalam dialog
+ * (mis. "12:30,500" pada subtitle telepon) sehingga isi teks ikut rusak.
+ * Bila berkas punya header `X-TIMESTAMP-MAP` (subtitle HLS), MPEGTS yang
+ * digeser karena itulah acuan waktu yang dipakai pemutar. Blok yang format
+ * timing-nya tidak dikenali dibiarkan apa adanya agar tidak pernah rusak.
+ */
 private fun shiftVttTimestamps(content: String, offsetMs: Long): String {
     if (offsetMs == 0L) return content
-    val cueTimingRegex = Regex("(?m)^((?:\\d{1,4}:)?\\d{1,2}:\\d{2}[,.]\\d{3})\\s*-->\\s*((?:\\d{1,4}:)?\\d{1,2}:\\d{2}[,.]\\d{3})(.*)$")
-    val shifted = cueTimingRegex.replace(content) { m ->
+    val normalized = content.replace("\r\n", "\n").replace('\r', '\n')
+    // Subtitle HLS membawa header "X-TIMESTAMP-MAP=LOCAL:..,MPEGTS:<90kHz>".
+    // Untuk berkas seperti ini, menggeser MPEGTS (90 kHz) adalah cara yang
+    // benar: waktu cue tetap utuh dan tidak ada cue yang perlu dijepit ke 0.
+    val tsMap = Regex("(X-TIMESTAMP-MAP=[^\\n]*?MPEGTS:)(-?\\d+)", RegexOption.IGNORE_CASE)
+    if (tsMap.containsMatchIn(normalized)) {
+        return tsMap.replace(normalized) { m ->
+            val mpegts = m.groupValues[2].toLongOrNull() ?: 0L
+            "${m.groupValues[1]}${(mpegts + offsetMs * 90L).coerceAtLeast(0L)}"
+        }
+    }
+    val timing = Regex(
+        "^[ \\t]*((?:\\d{1,4}:)?\\d{1,2}:\\d{2}[,.]\\d{1,3})[ \\t]*-->[ \\t]*" +
+            "((?:\\d{1,4}:)?\\d{1,2}:\\d{2}[,.]\\d{1,3})(.*)$",
+    )
+    // Proses per BLOK cue (dipisah baris kosong) supaya header "WEBVTT",
+    // "X-TIMESTAMP-MAP", blok STYLE/NOTE, dan teks dialog tidak tersentuh.
+    val out = ArrayList<String>()
+    for (block in normalized.split(Regex("\n[ \\t]*\n"))) {
+        val lines = block.split('\n').toMutableList()
+        val timingIdx = lines.indexOfFirst { it.contains("-->") }
+        if (timingIdx < 0) {
+            out.add(block)
+            continue
+        }
+        val m = timing.find(lines[timingIdx])
+        if (m == null) {
+            // Format timing tidak dikenali -> biarkan apa adanya, jangan rusak.
+            out.add(block)
+            continue
+        }
         val startMs = parseTimestampToMs(m.groupValues[1])
         val endMs = parseTimestampToMs(m.groupValues[2])
         val dur = (endMs - startMs).coerceAtLeast(400L)
-        val newStartMs = (startMs + offsetMs).coerceAtLeast(0L)
-        val newEndMs = (newStartMs + dur).coerceAtLeast(newStartMs + 100L)
-        val extra = m.groupValues[3]
-        "${formatMsToVttTimestamp(newStartMs)} --> ${formatMsToVttTimestamp(newEndMs)}$extra"
+        val newStartMs = startMs + offsetMs
+        val newEndMs = newStartMs + dur
+        // Cue yang seluruh waktunya jatuh sebelum 0 dibuang. Kalau dipaksa ke
+        // 00:00, semua cue awal menumpuk dan berkedip beruntun di detik pertama.
+        if (newEndMs <= 0L) continue
+        val clampedStart = newStartMs.coerceAtLeast(0L)
+        val clampedEnd = newEndMs.coerceAtLeast(clampedStart + 100L)
+        lines[timingIdx] =
+            "${formatMsToVttTimestamp(clampedStart)} --> " +
+                "${formatMsToVttTimestamp(clampedEnd)}${m.groupValues[3]}"
+        out.add(lines.joinToString("\n"))
     }
-    if (shifted != content) return shifted
-    val anyTsRegex = Regex("(?:(\\d{1,4}):)?(\\d{1,2}):(\\d{2})[,.](\\d{3})")
-    return anyTsRegex.replace(content) { m ->
-        val h = m.groupValues[1].toLongOrNull() ?: 0L
-        val min = m.groupValues[2].toLongOrNull() ?: 0L
-        val sec = m.groupValues[3].toLongOrNull() ?: 0L
-        val millis = m.groupValues[4].padEnd(3, '0').take(3).toLongOrNull() ?: 0L
-        val total = ((h * 3600 + min * 60 + sec) * 1000 + millis + offsetMs).coerceAtLeast(0L)
-        formatMsToVttTimestamp(total)
-    }
+    return out.joinToString("\n\n")
 }
 
 /**
@@ -617,7 +689,7 @@ fun PlayerScreen(
     var forcedSubLang by remember { mutableStateOf<String?>(null) }
     // Sinkronisasi subtitle manual: offset waktu subtitle terhadap video.
     var hasStartedOnce by remember { mutableStateOf(false) }
-    var subOffsetMs by remember { mutableLongStateOf(0L) }
+    var subOffsetMs by rememberSaveable { mutableLongStateOf(0L) }
     var subOffsetTrigger by remember { mutableIntStateOf(0) }
     var showSyncMenu by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
@@ -1237,8 +1309,8 @@ fun PlayerScreen(
                 .setSelectionFlags(if (indo) C.SELECTION_FLAG_DEFAULT else 0)
                 .build()
         }
-        // Indonesia dan Melayu TETAP TERPISAH (label berbeda, keduanya tersedia).
-        // Indonesia diletakkan paling depan agar menjadi kandidat default pertama.
+        // Track Melayu sudah dibuang di atas; Indonesia diletakkan paling depan
+        // agar menjadi kandidat default pertama saat prepare().
         val subs = played.sortedByDescending { it.first == "id" }.map { it.second }
         installedHasIndo = played.any { it.first == "id" }
         Log.d("PlayerScreen", "subtitle configs: ${subs.joinToString { (it.language ?: "") + "/" + (it.label ?: "") }}")
@@ -2865,12 +2937,17 @@ private fun <T> OptionMenu(
         Column(
             modifier = Modifier
                 .widthIn(max = 320.dp)
+                // Menu bisa berisi banyak pilihan (mis. 25 langkah sinkronisasi
+                // subtitle): batasi tinggi dan beri gulir agar tidak melebihi
+                // layar dan tidak memotong pilihan di luar jangkauan.
+                .heightIn(max = 420.dp)
                 .clip(RoundedCornerShape(18.dp))
                 .background(Color(0xF01C1C22))
                 .pointerInput(Unit) { detectTapGestures { } }
                 .focusRequester(firstFocus)
                 .focusGroup()
-                .padding(horizontal = 18.dp, vertical = 16.dp),
+                .padding(horizontal = 18.dp, vertical = 16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
