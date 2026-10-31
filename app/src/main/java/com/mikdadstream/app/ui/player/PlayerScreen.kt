@@ -10,12 +10,20 @@ import android.util.Log
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,8 +76,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -346,6 +352,107 @@ private fun formatOffset(ms: Long): String {
         String.format(java.util.Locale.US, "%.2f", seconds)
     }
     return if (ms > 0) "+${text}s" else "${text}s"
+}
+
+/**
+ * Seek bar yang bisa digeser dengan sentuhan MAUPUN D-pad remote TV.
+ *
+ * `Slider` Material3 tidak menerima fokus keyboard, jadi di Android TV tombol
+ * kiri/kanan remote tidak menggerakkannya. Komponen ini menggambar track dan
+ * thumb sendiri, lalu:
+ *  - sentuhan: tap untuk melompat, seret untuk menggeser;
+ *  - D-pad: kiri/kanan menggeser 5 detik, dan seek diterapkan otomatis setelah
+ *    pengguna berhenti menekan (lihat efek debounce di pemanggil).
+ *
+ * @param onScrub dipanggil dengan (posisi, committing). `committing = true`
+ *   berarti pengguna selesai (lepas jari) sehingga posisi boleh di-seek.
+ */
+@Composable
+private fun ScrubBar(
+    positionMs: Long,
+    durationMs: Long,
+    isTv: Boolean,
+    onScrub: (Long, Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val total = durationMs.coerceAtLeast(1L)
+    var focused by remember { mutableStateOf(false) }
+    var widthPx by remember { mutableStateOf(1) }
+    val thumbColor = if (focused) MaterialTheme.colorScheme.primary else Color.White
+    val trackH = 4.dp
+    val thumbR = if (focused) 9.dp else 6.dp
+    val stepMs = 5_000L
+
+    fun posAt(x: Float): Long =
+        ((x / widthPx.coerceAtLeast(1)).coerceIn(0f, 1f) * total).toLong()
+
+    Box(modifier = modifier) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(28.dp)
+                .onSizeChanged { widthPx = it.width }
+                .onFocusChanged { focused = it.isFocused }
+                .focusable(isTv)
+                .onKeyEvent { e ->
+                    if (!isTv) return@onKeyEvent false
+                    if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    val delta = when (e.key) {
+                        Key.DirectionLeft -> -stepMs
+                        Key.DirectionRight -> stepMs
+                        else -> return@onKeyEvent false
+                    }
+                    val next = (positionMs + delta).coerceIn(0L, total)
+                    onScrub(next, false)
+                    true
+                }
+                .pointerInput(total, widthPx) {
+                    detectTapGestures { offset -> onScrub(posAt(offset.x), true) }
+                }
+                .pointerInput(total, widthPx) {
+                    // Simpan posisi terakhir dari seret: onDragEnd tidak membawa
+                    // offset, jadi memakai positionMs (nilai saat mulai) akan
+                    // membuat posisi melompat balik ketika jari dilepas.
+                    var lastDrag = positionMs
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            lastDrag = posAt(offset.x)
+                            onScrub(lastDrag, false)
+                        },
+                        onDragEnd = { onScrub(lastDrag, true) },
+                    ) { change, _ ->
+                        lastDrag = posAt(change.position.x)
+                        onScrub(lastDrag, false)
+                    }
+                },
+        ) {
+            val cy = size.height / 2f
+            val frac = (positionMs.toFloat() / total).coerceIn(0f, 1f)
+            val trackHpx = trackH.toPx()
+            // Track dasar
+            drawLine(
+                color = Color.White.copy(alpha = 0.22f),
+                start = androidx.compose.ui.geometry.Offset(0f, cy),
+                end = androidx.compose.ui.geometry.Offset(size.width, cy),
+                strokeWidth = trackHpx,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+            )
+            // Track aktif
+            drawLine(
+                color = thumbColor,
+                start = androidx.compose.ui.geometry.Offset(0f, cy),
+                end = androidx.compose.ui.geometry.Offset(size.width * frac, cy),
+                strokeWidth = trackHpx,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+            )
+            // Thumb
+            drawCircle(
+                color = thumbColor,
+                radius = thumbR.toPx(),
+                center = androidx.compose.ui.geometry.Offset(size.width * frac, cy),
+            )
+        }
+    }
 }
 
 private fun md5Key(text: String): String =
@@ -688,6 +795,11 @@ fun PlayerScreen(
     var sliderRootX by remember { mutableFloatStateOf(0f) }
     var sliderRootY by remember { mutableFloatStateOf(0f) }
     var sliderW by remember { mutableIntStateOf(0) }
+    // Android TV: seek bar digeser dengan D-pad. Karena tidak ada aksi "lepas"
+    // seperti sentuhan, seek diterapkan otomatis setelah pengguna berhenti
+    // menekan (debounce) agar video ikut melompat ke posisi itu.
+    var tvSeekPending by remember { mutableStateOf(false) }
+    var tvSeekTarget by remember { mutableLongStateOf(0L) }
     var rootHeight by remember { mutableIntStateOf(0) }
     var rootTopY by remember { mutableFloatStateOf(0f) }
     var rootLeftX by remember { mutableFloatStateOf(0f) }
@@ -1747,6 +1859,16 @@ fun PlayerScreen(
     // remote/firmware). Tekan pertama menampilkan kontrol; tekan kedua dalam
     // 2,5 detik keluar. Ponsel tetap satu tekan seperti sebelumnya.
     val isTv = remember { context.isTelevision() }
+    // Terapkan hasil geser D-pad setelah pengguna berhenti menekan. Tanpa ini,
+    // remote TV tidak punya aksi "lepas" sehingga seek tidak pernah dijalankan.
+    LaunchedEffect(tvSeekPending, tvSeekTarget) {
+        if (!tvSeekPending) return@LaunchedEffect
+        delay(650)
+        seekTo(tvSeekTarget, show = false)
+        userSeek = null
+        scrubbing = false
+        tvSeekPending = false
+    }
     var lastGuardBack by remember { mutableLongStateOf(0L) }
     BackHandler {
         when {
@@ -2160,26 +2282,29 @@ fun PlayerScreen(
                             fontWeight = FontWeight.Medium,
                             color = Color.White,
                         )
-                        Slider(
-                            value = (userSeek ?: uiPosition)
-                                .toFloat()
-                                .coerceIn(0f, (uiDuration.coerceAtLeast(1L)).toFloat()),
-                            onValueChange = { v ->
-                                userSeek = v.toLong()
-                                // Slider di material3 versi ini tidak punya
-                                // onValueChangeStarted -> mulai scrub saat nilai
-                                // pertama berubah (seret/tap).
-                                if (!scrubbing) {
-                                    scrubbing = true
-                                    showControls = true
+                        // Seek bar kustom (bukan Slider Material3): Slider tidak
+                        // menerima fokus keyboard, sehingga D-pad remote TV tidak
+                        // bisa menggesernya. Di sini sentuhan (tap/seret) dan
+                        // D-pad sama-sama didukung.
+                        ScrubBar(
+                            positionMs = userSeek ?: uiPosition,
+                            durationMs = uiDuration.coerceAtLeast(1L),
+                            isTv = isTv,
+                            onScrub = { pos, committing ->
+                                userSeek = pos
+                                if (committing) {
+                                    seekTo(pos, show = false)
+                                    userSeek = null
+                                    scrubbing = false
+                                } else {
+                                    if (!scrubbing) {
+                                        scrubbing = true
+                                        showControls = true
+                                    }
+                                    tvSeekTarget = pos
+                                    tvSeekPending = true
                                 }
                             },
-                            onValueChangeFinished = {
-                                userSeek?.let { t -> seekTo(t, show = false) }
-                                userSeek = null
-                                scrubbing = false
-                            },
-                            valueRange = 0f..(uiDuration.coerceAtLeast(1L)).toFloat(),
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(horizontal = 8.dp)
@@ -2189,11 +2314,6 @@ fun PlayerScreen(
                                     sliderRootX = p.x
                                     sliderRootY = p.y
                                 },
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color.White,
-                                activeTrackColor = Color.White,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.22f),
-                            ),
                         )
                         Text(
                             text = "-" + formatTime((uiDuration - (userSeek ?: uiPosition)).coerceAtLeast(0L)),
