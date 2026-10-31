@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -243,23 +244,33 @@ private fun Sidebar(currentRoute: String? = null, onNavigate: (String) -> Unit) 
 @Composable
 private fun NavItem(icon: ImageVector, active: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    // Penanda fokus navbar: hanya ZOOM (tanpa ring putih, tanpa border/background
-    // khusus) sesuai permintaan. Indikasi global TV dimatikan di sini supaya
-    // zoom tidak dobel dengan zoom lokal ini.
+    // Penanda fokus navbar: perbesaran + ring putih jelas agar perpindahan D-pad terlihat tegas.
     val scale by animateFloatAsState(if (focused) 1.15f else 1f, tween(140), label = "navScale")
     CompositionLocalProvider(LocalIndication provides NoNavIndication) {
         Box(
             Modifier
+                .zIndex(if (focused) 1f else 0f)
                 .size(56.dp)
                 .scale(scale)
                 .clip(CircleShape)
-                .background(if (active) Pink else Color.Transparent)
+                .background(
+                    when {
+                        active -> Pink
+                        focused -> Color(0xFF2E2E3C)
+                        else -> Color.Transparent
+                    }
+                )
+                .border(
+                    width = if (focused) 2.5.dp else 0.dp,
+                    color = if (focused) Color.White else Color.Transparent,
+                    shape = CircleShape,
+                )
                 .onFocusChanged { focused = it.isFocused }
                 .focusable()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = if (active) Color.White else Color.White.copy(alpha = 0.8f), modifier = Modifier.size(24.dp))
+            Icon(icon, null, tint = if (active || focused) Color.White else Color.White.copy(alpha = 0.8f), modifier = Modifier.size(24.dp))
         }
     }
 }
@@ -294,17 +305,21 @@ private fun Header(activeSourceName: String? = null, onSourceClick: () -> Unit =
         }
         Spacer(Modifier.weight(1f))
         var focused by remember { mutableStateOf(false) }
-        // Fokus D-pad: hanya ZOOM, tanpa ring putih (border tetap tipis netral).
         val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "pillZoom")
         CompositionLocalProvider(LocalIndication provides NoNavIndication) {
         Row(
             Modifier
+                .zIndex(if (focused) 1f else 0f)
                 .width(389.dp)
                 .height(57.dp)
                 .scale(zoom)
                 .clip(RoundedCornerShape(28.dp))
-                .background(PillBg)
-                .border(1.dp, Color(0xFF2A2A35), RoundedCornerShape(28.dp))
+                .background(if (focused) Color(0xFF282836) else PillBg)
+                .border(
+                    width = if (focused) 2.5.dp else 1.dp,
+                    color = if (focused) Color.White else Color(0xFF2A2A35),
+                    shape = RoundedCornerShape(28.dp)
+                )
                 .onFocusChanged { focused = it.isFocused }
                 .focusable()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onSourceClick)
@@ -313,11 +328,11 @@ private fun Header(activeSourceName: String? = null, onSourceClick: () -> Unit =
         ) {
             Icon(Icons.Outlined.PlayCircleOutline, null, tint = Pink, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(16.dp))
-            Text("Sumber Video", color = Muted, fontSize = 20.sp)
+            Text("Sumber Video", color = if (focused) Color.White.copy(alpha = 0.9f) else Muted, fontSize = 20.sp)
             Spacer(Modifier.width(13.dp))
             Text(activeSourceName?.takeIf { it.isNotBlank() } ?: "Server 1 HD", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
-            Icon(Icons.Filled.KeyboardArrowDown, null, tint = Muted, modifier = Modifier.size(24.dp))
+            Icon(Icons.Filled.KeyboardArrowDown, null, tint = if (focused) Color.White else Muted, modifier = Modifier.size(24.dp))
         }
         }
     }
@@ -397,19 +412,28 @@ private fun Hero(
 @Composable
 private fun HeroButton(text: String, filled: Boolean, width: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     var focused by remember { mutableStateOf(false) }
-    // Fokus D-pad: hanya ZOOM, tanpa ring putih.
-    val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "btnZoom")
+    val zoom by animateFloatAsState(if (focused) 1.08f else 1f, tween(140), label = "btnZoom")
     val shape = RoundedCornerShape(29.dp)
     CompositionLocalProvider(LocalIndication provides NoNavIndication) {
     Box(
         modifier
+            .zIndex(if (focused) 1f else 0f)
             .width(width)
             .height(58.dp)
             .scale(zoom)
             .clip(shape)
-            .background(if (filled) Pink else Color.Transparent)
+            .background(
+                when {
+                    filled -> Pink
+                    focused -> Color.White.copy(alpha = 0.15f)
+                    else -> Color.Transparent
+                }
+            )
             .border(
-                BorderStroke(2.dp, if (filled) Pink else OutlineBtn),
+                BorderStroke(
+                    width = if (focused) 3.dp else 2.dp,
+                    color = if (focused) Color.White else if (filled) Pink else OutlineBtn
+                ),
                 shape
             )
             .onFocusChanged { focused = it.isFocused }
@@ -452,18 +476,24 @@ private fun CategoryChipsRow(
             item {
                 val isActive = activeCategory == null
                 var focused by remember { mutableStateOf(false) }
-                // Fokus D-pad: hanya ZOOM, tanpa ring putih.
-                val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "chipZoom")
+                val zoom by animateFloatAsState(if (focused) 1.08f else 1f, tween(140), label = "chipZoom")
                 val chipModifier = Modifier
+                    .zIndex(if (focused) 1f else 0f)
                     .width(160.dp)
                     .height(52.dp)
                     .scale(zoom)
                     .clip(RoundedCornerShape(26.dp))
-                    .background(if (isActive) Pink else Color.Transparent)
+                    .background(
+                        when {
+                            isActive -> Pink
+                            focused -> Color.White.copy(alpha = 0.18f)
+                            else -> Color.Transparent
+                        }
+                    )
                     .border(
                         BorderStroke(
-                            if (isActive) 2.dp else 1.dp,
-                            if (isActive) Pink else Color.White.copy(alpha = 0.4f)
+                            width = if (focused) 3.dp else if (isActive) 2.dp else 1.dp,
+                            color = if (focused) Color.White else if (isActive) Pink else Color.White.copy(alpha = 0.4f)
                         ),
                         RoundedCornerShape(26.dp)
                     )
@@ -478,7 +508,7 @@ private fun CategoryChipsRow(
                 Box(modifier = chipModifier, contentAlignment = Alignment.Center) {
                     Text(
                         text = "Semua Film",
-                        color = if (isActive) Color.White else Color.White.copy(alpha = 0.85f),
+                        color = if (isActive || focused) Color.White else Color.White.copy(alpha = 0.85f),
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                     )
@@ -490,18 +520,24 @@ private fun CategoryChipsRow(
         items(categories, key = { it.id }) { category ->
             val isActive = category.id == activeCategory?.id
             var focused by remember { mutableStateOf(false) }
-            // Fokus D-pad: hanya ZOOM, tanpa ring putih.
-            val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "chipZoom")
+            val zoom by animateFloatAsState(if (focused) 1.08f else 1f, tween(140), label = "chipZoom")
             val chipModifier = Modifier
+                .zIndex(if (focused) 1f else 0f)
                 .width(160.dp)
                 .height(52.dp)
                 .scale(zoom)
                 .clip(RoundedCornerShape(26.dp))
-                .background(if (isActive) Pink else Color.Transparent)
+                .background(
+                    when {
+                        isActive -> Pink
+                        focused -> Color.White.copy(alpha = 0.18f)
+                        else -> Color.Transparent
+                    }
+                )
                 .border(
                     BorderStroke(
-                        if (isActive) 2.dp else 1.dp,
-                        if (isActive) Pink else Color.White.copy(alpha = 0.4f)
+                        width = if (focused) 3.dp else if (isActive) 2.dp else 1.dp,
+                        color = if (focused) Color.White else if (isActive) Pink else Color.White.copy(alpha = 0.4f)
                     ),
                     RoundedCornerShape(26.dp)
                 )
@@ -516,7 +552,7 @@ private fun CategoryChipsRow(
             Box(modifier = chipModifier, contentAlignment = Alignment.Center) {
                 Text(
                     text = category.name,
-                    color = if (isActive) Color.White else Color.White.copy(alpha = 0.85f),
+                    color = if (isActive || focused) Color.White else Color.White.copy(alpha = 0.85f),
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -619,12 +655,13 @@ private fun PosterRow(items: List<Poster>, showTitle: Boolean, onItemClick: (Pos
 @Composable
 private fun PosterCard(p: Poster, showTitle: Boolean, onClick: () -> Unit = {}) {
     var focused by remember { mutableStateOf(false) }
-    // Penanda fokus poster: hanya ZOOM, tanpa ring putih D-pad.
-    val zoom by animateFloatAsState(if (focused) 1.06f else 1f, tween(140), label = "posterZoom")
-    val shape = RoundedCornerShape(8.dp)
+    // Penanda fokus poster: perbesaran + ring putih D-pad agar perpindahan fokus jelas.
+    val zoom by animateFloatAsState(if (focused) 1.08f else 1f, tween(140), label = "posterZoom")
+    val shape = RoundedCornerShape(10.dp)
     CompositionLocalProvider(LocalIndication provides NoNavIndication) {
     Box(
         Modifier
+            .zIndex(if (focused) 1f else 0f)
             .aspectRatio(2f / 3f)
             .scale(zoom)
             .clip(shape)
@@ -654,6 +691,9 @@ private fun PosterCard(p: Poster, showTitle: Boolean, onClick: () -> Unit = {}) 
             ) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(it).background(Pink))
             }
+        }
+        if (focused) {
+            Box(Modifier.fillMaxSize().border(3.dp, Color.White, shape))
         }
     }
     }
