@@ -1463,10 +1463,15 @@ object LocalMovieBoxClient {
 
     private fun normalizedCaptionLang(lan: String): String {
         val raw = lan.trim().lowercase(Locale.ROOT)
+        // "indonesi" menang atas isMalay: kode seperti "ms-ind" tidak boleh
+        // diperlakukan sebagai Melayu padahal menandakan Indonesia.
+        if (raw.contains("indonesi")) return "id"
+        // "ms-ind"/"ms-in" = penanda Indonesia, bukan Melayu murni.
+        if (Regex("(^|[-_])ms[-_]in(d)?($|[-_])").containsMatchIn(raw)) return "id"
         if (isMalay(raw)) return "ms"
         return when {
             raw.startsWith("in_") || raw.startsWith("id_") || raw == "in" || raw == "id" ||
-                raw.contains("indonesi") || (raw.contains("bahasa") && !raw.contains("melayu") && !raw.contains("malay")) -> "id"
+                (raw.contains("bahasa") && !raw.contains("melayu") && !raw.contains("malay")) -> "id"
             raw.isBlank() -> raw
             else -> raw.substringBefore('_').substringBefore('-')
         }

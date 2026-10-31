@@ -253,6 +253,10 @@ fun isMalay(text: String?): Boolean {
     val s = text.trim().lowercase(java.util.Locale.ROOT)
     // "Malayalam" (bahasa Dravida, kode "ml") BUKAN Melayu meski berawalan "malay".
     if (s.contains("malayalam") || s.contains("malayali")) return false
+    // Kombinasi "ms-ind"/"ms-indonesia" berarti Melayu(?) untuk Indonesia —
+    // ExoPlayer pernah melaporkan ini untuk track yang LABEL-nya "Indonesia".
+    // Anggap Indonesia, bukan Melayu, agar subtitle Indonesia tidak dibuang.
+    if (s.contains("indonesi") || Regex("(^|[-_])in(d)?($|[-_])").containsMatchIn(s)) return false
     val clean = s.replace('-', '_').replace('.', '_')
     val base = clean.substringBefore('_')
     if (base in setOf("ms", "may", "msa", "zlm")) return true
@@ -262,14 +266,19 @@ fun isMalay(text: String?): Boolean {
 fun normalizeLangCode(code: String?): String {
     val raw = (code ?: "").trim().lowercase(java.util.Locale.ROOT)
     if (raw.isEmpty()) return ""
-    // Melayu BUKAN Indonesia, jangan pernah disamakan walau mengandung kata "bahasa".
+    // "Indonesia" selalu menang: dicek SEBELUM isMalay, karena ExoPlayer bisa
+    // melaporkan language "ms-ind" (basis "ms") untuk track berlabel Indonesia.
+    // Tanpa urutan ini, subtitle Indonesia dinormalisasi jadi "ms" dan dibuang.
+    if (raw.contains("indonesi")) return "id"
     if (isMalay(raw)) return "ms"
-    if (raw.contains("indonesi") || (raw.contains("bahasa") && !raw.contains("melayu") && !raw.contains("malay"))) return "id"
+    if (raw.contains("bahasa") && !raw.contains("melayu") && !raw.contains("malay")) return "id"
     val base = raw.replace('.', '_').replace('-', '_')
         .substringBefore('_').substringBefore('-')
     return when (base) {
         "id", "in", "ind" -> "id"
-        "ms", "may", "msa", "zlm" -> "ms"
+        // "ms-ind"/"ms-in" = Melayu bertanda Indonesia: perlakukan sebagai "id".
+        "ms" -> if (raw.contains("-ind") || raw.contains("_ind") || raw.endsWith("-in")) "id" else "ms"
+        "may", "msa", "zlm" -> "ms"
         else -> base
     }
 }
@@ -879,8 +888,15 @@ fun PlayerScreen(
             add(subtitleLangName(f.label)?.let { normalizeLangCode(it) }.orEmpty())
         }
 
+        // Label lebih dipercaya daripada language: ExoPlayer bisa melaporkan
+        // language "ms-ind" untuk track yang labelnya "Indonesia".
+        fun labelCode(f: androidx.media3.common.Format): String =
+            normalizeLangCode(f.label).ifEmpty {
+                subtitleLangName(f.label)?.let { normalizeLangCode(it) }.orEmpty()
+            }
+
         val hit = cands.firstOrNull { (_, _, f) ->
-            code in codeOf(f) && normalizeLangCode(f.language) != "ms"
+            labelCode(f) == code || code in codeOf(f)
         } ?: return false
 
         val (gi, ti, tf) = hit
