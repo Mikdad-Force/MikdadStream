@@ -862,41 +862,44 @@ fun PlayerScreen(
      */
     /** Pilih track teks dengan kode bahasa tertentu dari currentTracks. */
     fun applyLanguage(code: String): Boolean {
-        player.currentTracks.groups.forEach { g ->
-            if (g.type != C.TRACK_TYPE_TEXT) return@forEach
-            for (i in 0 until g.length) {
-                val f = g.getTrackFormat(i)
-                val trackCode = normalizeLangCode(f.language)
-                // Buang Melayu dari KODE bahasa saja (label tidak akurat).
-                if (trackCode == "ms") continue
-                // Cocokkan lewat kode ternormalisasi ATAU nama bahasa. Sumber kode
-                // tidak seragam ("id"/"in"/"ind"/"Indonesian"), jadi perbandingan
-                // harus melalui normalisasi dua sisi agar tidak gagal palsu.
-                val labelCode = subtitleLangName(f.label)
-                    ?.let { normalizeLangCode(it) }.orEmpty()
-                // labelCode kosong tidak boleh cocok dengan code kosong.
-                val match = trackCode == code ||
-                    (labelCode.isNotEmpty() && labelCode == code) ||
-                    (code == "id" && subtitleLangName(f.label) == "Indonesia")
-                if (match) {
-                    val bp = player.trackSelectionParameters.buildUpon()
-                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                        .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, i))
-                    player.trackSelectionParameters = bp.build()
-                    selectedSubKey = "${g.mediaTrackGroup.id}#$i"
-                    Log.i(
-                        "PlayerScreen",
-                        "Pilih subtitle $code: lang=${f.language} label=${f.label} idx=$i",
-                    )
-                    com.mikdadstream.app.data.local.SubtitleLog.add(
-                        "BERHASIL pilih '$code' -> track lang=${f.language} label=${f.label}",
-                    )
-                    return true
-                }
-            }
+        // Kumpulkan dulu SEMUA track teks, lalu cocokkan dari banyak sumber kode.
+        // Pencocokan tunggal pernah gagal walau track "id/Indonesia" terpasang,
+        // karena ExoPlayer bisa mengosongkan language (mis. "" atau "und") dan
+        // hanya menyisakan label. Di sini label ikut dipertimbangkan.
+        val cands = ArrayList<Triple<Int, Int, androidx.media3.common.Format>>()
+        player.currentTracks.groups.forEachIndexed { gi, g ->
+            if (g.type != C.TRACK_TYPE_TEXT) return@forEachIndexed
+            for (i in 0 until g.length) cands.add(Triple(gi, i, g.getTrackFormat(i)))
         }
-        return false
+
+        fun codeOf(f: androidx.media3.common.Format): Set<String> = buildSet {
+            add(normalizeLangCode(f.language))
+            add(normalizeLangCode(f.label))
+            add(subtitleLangName(f.language)?.let { normalizeLangCode(it) }.orEmpty())
+            add(subtitleLangName(f.label)?.let { normalizeLangCode(it) }.orEmpty())
+        }
+
+        val hit = cands.firstOrNull { (_, _, f) ->
+            code in codeOf(f) && normalizeLangCode(f.language) != "ms"
+        } ?: return false
+
+        val (gi, ti, tf) = hit
+        val g = player.currentTracks.groups[gi]
+        // Aktifkan TEXT + override track yang cocok.
+        val bp = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, ti))
+        player.trackSelectionParameters = bp.build()
+        selectedSubKey = "${g.mediaTrackGroup.id}#$ti"
+        Log.i(
+            "PlayerScreen",
+            "Pilih subtitle $code: lang=${tf.language} label=${tf.label} idx=$ti",
+        )
+        com.mikdadstream.app.data.local.SubtitleLog.add(
+            "BERHASIL pilih '$code' -> lang=${tf.language} label=${tf.label}",
+        )
+        return true
     }
 
     fun refreshSubOptions() {
@@ -1425,6 +1428,16 @@ fun PlayerScreen(
             com.mikdadstream.app.data.local.SubtitleLog.add(
                 "GAGAL pasang '$wanted': tidak ada track cocok dari ${subs.size} track terpasang",
             )
+            // Diagnosa: laporkan apa yang SEBENARNYA ada di currentTracks.
+            val live = player.currentTracks.groups
+                .filter { it.type == C.TRACK_TYPE_TEXT }
+                .flatMap { g -> (0 until g.length).map { g.getTrackFormat(it) } }
+            com.mikdadstream.app.data.local.SubtitleLog.add(
+                "currentTracks teks=${live.size}: " +
+                    (live.joinToString(", ") { "${it.language}/${it.label}" }.ifEmpty { "-" }) +
+                    " | TEXT dinonaktifkan=" +
+                    player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT),
+            )
             // Untuk auto-subtitle (dari Lokasi Negara) tidak perlu mengganggu
             // pengguna dengan HUD: subtitle otomatis bersifat best-effort.
             if (subtitleUserChosen) {
@@ -1512,6 +1525,10 @@ fun PlayerScreen(
                 }
             }
             Log.i("PlayerScreen", "onTracksChanged: totalTextTracks=$textCount")
+            com.mikdadstream.app.data.local.SubtitleLog.add(
+                "ExoPlayer kenali $textCount track teks" +
+                    (if (textCount == 0) " (track subtitle BELUM terdaftar)" else ""),
+            )
             refreshSubOptions()
             refreshVideoQualities()
             // Pulihkan kualitas video pilihan setelah reload (ganti subtitle/offset).
