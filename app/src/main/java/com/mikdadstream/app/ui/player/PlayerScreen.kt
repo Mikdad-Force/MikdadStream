@@ -243,14 +243,27 @@ private fun alternateStreamKind(current: String?): String =
  *  - Kode lain dinormalisasi ke bentuk dasar huruf kecil tanpa pemisah "_" / "-" / ".".
  *  - String kosong -> "".
  */
+/** Deteksi apakah teks/kode merujuk ke bahasa Melayu/Malaysia. */
+fun isMalay(text: String?): Boolean {
+    if (text.isNullOrBlank()) return false
+    val s = text.trim().lowercase(java.util.Locale.ROOT)
+    val clean = s.replace('-', '_').replace('.', '_')
+    val base = clean.substringBefore('_')
+    if (base in setOf("ms", "may", "msa", "zlm")) return true
+    return s.contains("melayu") || s.contains("malay") || s.contains("malaysia")
+}
+
 fun normalizeLangCode(code: String?): String {
-    val raw = (code ?: "").trim().lowercase()
+    val raw = (code ?: "").trim().lowercase(java.util.Locale.ROOT)
     if (raw.isEmpty()) return ""
-    if (raw.contains("indonesi") || raw.contains("bahasa")) return "id"
+    // Melayu BUKAN Indonesia, jangan pernah disamakan walau mengandung kata "bahasa".
+    if (isMalay(raw)) return "ms"
+    if (raw.contains("indonesi") || (raw.contains("bahasa") && !raw.contains("melayu") && !raw.contains("malay"))) return "id"
     val base = raw.replace('.', '_').replace('-', '_')
         .substringBefore('_').substringBefore('-')
     return when (base) {
         "id", "in", "ind" -> "id"
+        "ms", "may", "msa", "zlm" -> "ms"
         else -> base
     }
 }
@@ -324,9 +337,13 @@ private fun md5Key(text: String): String =
 private fun srtTextToVtt(srt: String): String {
     val clean = srt.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
     val sb = StringBuilder("WEBVTT\n\n")
-    val ts = Regex("(\\d{1,2}):(\\d{2}):(\\d{2}),(\\d{3})")
+    val ts = Regex("(?:(\\d{1,4}):)?(\\d{1,2}):(\\d{2})[,.](\\d{3})")
     sb.append(ts.replace(clean) { m ->
-        "${m.groupValues[1]}:${m.groupValues[2]}:${m.groupValues[3]}.${m.groupValues[4]}"
+        val h = m.groupValues[1].toIntOrNull() ?: 0
+        val min = m.groupValues[2].toIntOrNull() ?: 0
+        val sec = m.groupValues[3].toIntOrNull() ?: 0
+        val millis = m.groupValues[4].padEnd(3, '0').take(3)
+        "%02d:%02d:%02d.%s".format(h, min, sec, millis)
     })
     return sb.toString()
 }
@@ -336,8 +353,47 @@ private fun normalizeSubtitleText(text: String): String? {
     val clean = text.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
     val trimmed = clean.trimStart()
     if (trimmed.startsWith("WEBVTT", true)) return clean
-    if (Regex("\\d{1,2}:\\d{2}:\\d{2},\\d{3}").containsMatchIn(clean)) return srtTextToVtt(clean)
+    if (clean.contains("-->")) {
+        return if (Regex("\\d{1,2}:\\d{2}:\\d{2},\\d{3}").containsMatchIn(clean)) {
+            srtTextToVtt(clean)
+        } else {
+            "WEBVTT\n\n" + trimmed
+        }
+    }
+    if (Regex("\\d{1,2}:\\d{2}:\\d{2}[,.]\\d{3}").containsMatchIn(clean)) return srtTextToVtt(clean)
     return null
+}
+
+private fun parseTimestampToMs(raw: String): Long {
+    val clean = raw.trim().replace(',', '.')
+    val parts = clean.split(':')
+    return when (parts.size) {
+        3 -> {
+            val h = parts[0].toLongOrNull() ?: 0L
+            val m = parts[1].toLongOrNull() ?: 0L
+            val secParts = parts[2].split('.')
+            val s = secParts.getOrNull(0)?.toLongOrNull() ?: 0L
+            val ms = (secParts.getOrNull(1)?.padEnd(3, '0')?.take(3)?.toLongOrNull() ?: 0L)
+            (h * 3600 + m * 60 + s) * 1000 + ms
+        }
+        2 -> {
+            val m = parts[0].toLongOrNull() ?: 0L
+            val secParts = parts[1].split('.')
+            val s = secParts.getOrNull(0)?.toLongOrNull() ?: 0L
+            val ms = (secParts.getOrNull(1)?.padEnd(3, '0')?.take(3)?.toLongOrNull() ?: 0L)
+            (m * 60 + s) * 1000 + ms
+        }
+        else -> 0L
+    }
+}
+
+private fun formatMsToVttTimestamp(ms: Long): String {
+    val total = ms.coerceAtLeast(0L)
+    val hh = total / 3_600_000
+    val mm = (total % 3_600_000) / 60_000
+    val ss = (total % 60_000) / 1000
+    val millis = total % 1000
+    return "%02d:%02d:%02d.%03d".format(hh, mm, ss, millis)
 }
 
 private suspend fun fetchSubtitleText(url: String): String? = withContext(Dispatchers.IO) {
@@ -391,17 +447,26 @@ private suspend fun localVttContent(url: String): String? = withContext(Dispatch
 
 /** Geser semua timestamp WebVTT sebesar offset (ms). Timestamp negatif -> 0. */
 private fun shiftVttTimestamps(content: String, offsetMs: Long): String {
-    val ts = Regex("(\\d{2}):(\\d{2}):(\\d{2})\\.(\\d{3})")
-    return ts.replace(content) { m ->
-        val total = ((m.groupValues[1].toLong() * 3600 +
-            m.groupValues[2].toLong() * 60 +
-            m.groupValues[3].toLong()) * 1000 +
-            m.groupValues[4].toLong() + offsetMs).coerceAtLeast(0L)
-        val hh = total / 3_600_000
-        val mm = (total % 3_600_000) / 60_000
-        val ss = (total % 60_000) / 1000
-        val millis = total % 1000
-        "%02d:%02d:%02d.%03d".format(hh, mm, ss, millis)
+    if (offsetMs == 0L) return content
+    val cueTimingRegex = Regex("(?m)^((?:\\d{1,4}:)?\\d{1,2}:\\d{2}[,.]\\d{3})\\s*-->\\s*((?:\\d{1,4}:)?\\d{1,2}:\\d{2}[,.]\\d{3})(.*)$")
+    val shifted = cueTimingRegex.replace(content) { m ->
+        val startMs = parseTimestampToMs(m.groupValues[1])
+        val endMs = parseTimestampToMs(m.groupValues[2])
+        val dur = (endMs - startMs).coerceAtLeast(400L)
+        val newStartMs = (startMs + offsetMs).coerceAtLeast(0L)
+        val newEndMs = (newStartMs + dur).coerceAtLeast(newStartMs + 100L)
+        val extra = m.groupValues[3]
+        "${formatMsToVttTimestamp(newStartMs)} --> ${formatMsToVttTimestamp(newEndMs)}$extra"
+    }
+    if (shifted != content) return shifted
+    val anyTsRegex = Regex("(?:(\\d{1,4}):)?(\\d{1,2}):(\\d{2})[,.](\\d{3})")
+    return anyTsRegex.replace(content) { m ->
+        val h = m.groupValues[1].toLongOrNull() ?: 0L
+        val min = m.groupValues[2].toLongOrNull() ?: 0L
+        val sec = m.groupValues[3].toLongOrNull() ?: 0L
+        val millis = m.groupValues[4].padEnd(3, '0').take(3).toLongOrNull() ?: 0L
+        val total = ((h * 3600 + min * 60 + sec) * 1000 + millis + offsetMs).coerceAtLeast(0L)
+        formatMsToVttTimestamp(total)
     }
 }
 
@@ -429,8 +494,9 @@ private suspend fun shiftedSubtitleUrl(url: String, offsetMs: Long): String =
     }
 
 private fun subtitleLangName(code: String?): String? {
-    val raw = (code ?: "").trim().lowercase()
+    val raw = (code ?: "").trim().lowercase(java.util.Locale.ROOT)
     if (raw.isEmpty()) return null
+    if (isMalay(raw)) return "Melayu"
     if (raw.contains("\u4e2d")) return if (raw.contains("\u7e41")) "\u7e41\u9ad4\u4e2d\u6587" else "\u7b80\u9ad4\u4e2d\u6587"
     return when (normalizeLangCode(code)) {
         "id" -> "Indonesia"
@@ -673,6 +739,7 @@ fun PlayerScreen(
         resumePositionMs = 0L
         userSeek = null
         scrubbing = false
+        subOffsetMs = 0L
         episodeId = target.safeId
         episodeNumber = target.safeNumber
         streams = emptyList()
@@ -705,8 +772,9 @@ fun PlayerScreen(
             if (g.type != C.TRACK_TYPE_TEXT) return@forEach
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
-                val match = normalizeLangCode(f.language) == code ||
-                    (code == "id" && subtitleLangName(f.label) == "Indonesia")
+                if (isMalay(f.language) || isMalay(f.label)) continue
+                val match = (normalizeLangCode(f.language) == code && !isMalay(f.language)) ||
+                    (code == "id" && subtitleLangName(f.label) == "Indonesia" && !isMalay(f.label))
                 if (match) {
                     val bp = player.trackSelectionParameters.buildUpon()
                         .clearOverridesOfType(C.TRACK_TYPE_TEXT)
@@ -739,9 +807,10 @@ fun PlayerScreen(
             val tg = g.mediaTrackGroup
             for (i in 0 until g.length) {
                 val f = g.getTrackFormat(i)
-                // Dedup per kode hasil normalisasi (bukan label): track Indonesia
-                // tidak pernah dibuang hanya karena label/name beda.
+                // Filter out Melayu completely
+                if (isMalay(f.language) || isMalay(f.label)) continue
                 val code = normalizeLangCode(f.language)
+                if (isMalay(code) || code == "ms") continue
                 if (!seenCodes.add(code)) continue
                 val langName = subtitleLangName(f.language) ?: subtitleLangName(f.label)
                 val label = langName
@@ -757,8 +826,9 @@ fun PlayerScreen(
         // di pemutar (mis. track gagal diparse). Menu jadi selalu sinkron dengan
         // daftar bahasa video; memilihnya memicu muat ulang track.
         apiSubtitles.forEach { s ->
+            if (isMalay(s.lang) || isMalay(s.label)) return@forEach
             val code = normalizeLangCode(s.lang ?: s.label)
-            if (code.isBlank() || code in seenCodes) return@forEach
+            if (code.isBlank() || isMalay(code) || code == "ms" || code in seenCodes) return@forEach
             seenCodes.add(code)
             val label = subtitleLangName(code) ?: s.label?.takeIf { it.isNotBlank() } ?: code
             opts.add(SubOption(null, -1, "api:$code", label))
@@ -773,8 +843,8 @@ fun PlayerScreen(
             val indoSelected = player.currentTracks.groups.any { g ->
                 g.type == C.TRACK_TYPE_TEXT && (0 until g.length).any { i ->
                     g.isTrackSelected(i) && (
-                        normalizeLangCode(g.getTrackFormat(i).language) == "id" ||
-                            subtitleLangName(g.getTrackFormat(i).label) == "Indonesia"
+                        (normalizeLangCode(g.getTrackFormat(i).language) == "id" && !isMalay(g.getTrackFormat(i).language)) ||
+                            (subtitleLangName(g.getTrackFormat(i).label) == "Indonesia" && !isMalay(g.getTrackFormat(i).label))
                         )
                 }
             }
@@ -808,6 +878,7 @@ fun PlayerScreen(
             )
             else -> normalizeLangCode(opt.key.removePrefix("api:").ifBlank { opt.label })
         }
+        if (isMalay(code) || code == "ms") return
         if (code == forcedSubLang) return
         forcedSubLang = code
         pendingSeek.longValue = player.currentPosition
@@ -933,13 +1004,20 @@ fun PlayerScreen(
         // Hanya pakai jalur cepat bila subtitle ikut ter-prefetch DAN benar-benar
         // memuat Indonesia. Bila prefetch ada tapi tanpa Indonesia (mis. metadata
         // beda/versi dub), jangan pakai jalur cepat -> lanjut fetch langsung.
-        val prefetchedHasIndo = request.subtitles.any { s ->
-            normalizeLangCode(s.lang) == "id" || subtitleLangName(s.label) == "Indonesia"
-        }
+        // Jangan pernah pakai subtitle Melayu: filter ketat agar tidak ada track Melayu
+        fun cleanSubs(list: List<SubtitleTrack>): List<SubtitleTrack> =
+            list.filterNot { isMalay(it.lang) || isMalay(it.label) || normalizeLangCode(it.lang ?: it.label) == "ms" }
+
+        fun indoOf(s: SubtitleTrack): Boolean =
+            !isMalay(s.lang) && !isMalay(s.label) &&
+                (normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia")
+
+        val prefetchedClean = cleanSubs(request.subtitles)
+        val prefetchedHasIndo = prefetchedClean.any(::indoOf)
         Log.i(
             "PlayerScreen",
             "masuk player: episode=$episodeId prefetchStreams=${request.streams.size} " +
-                "prefetchSubs=${request.subtitles.size} prefetchIndo=$prefetchedHasIndo",
+                "prefetchSubs=${prefetchedClean.size} prefetchIndo=$prefetchedHasIndo",
         )
         if (reload == 0 && episodeId == request.episodeId && request.streams.isNotEmpty()) {
             val list = request.streams
@@ -952,14 +1030,14 @@ fun PlayerScreen(
             // pakai langsung, JANGAN fetch ulang. Fetch ulang dulu membuat
             // video mulai lalu di-reload lagi saat daftar baru tiba.
             if (prefetchedHasIndo) {
-                apiSubtitles = request.subtitles
-                Log.i("PlayerScreen", "subtitle prefetch dipakai (${request.subtitles.size})")
+                apiSubtitles = prefetchedClean
+                Log.i("PlayerScreen", "subtitle prefetch dipakai (${prefetchedClean.size})")
                 return@LaunchedEffect
             }
             // Hanya Moviebox Local yang contentId-nya id Moviebox; sumber lain
             // memanggilnya hanya membuang waktu pemutaran.
             if (!request.modelId.equals("moviebox-local", true)) {
-                apiSubtitles = request.subtitles
+                apiSubtitles = prefetchedClean
                 return@LaunchedEffect
             }
             // Kosongkan dulu: subtitle episode SEBELUMNYA jangan sempat terpasang
@@ -968,16 +1046,16 @@ fun PlayerScreen(
             val parts = episodeId.split("_")
             val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
             val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
-            val fresh = runCatching {
-                com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
-                    .fetchSubtitles(request.contentId, se, ep)
-            }.getOrDefault(emptyList())
-            fun indoOf(s: SubtitleTrack) =
-                normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia"
+            val fresh = cleanSubs(
+                runCatching {
+                    com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
+                        .fetchSubtitles(request.contentId, se, ep)
+                }.getOrDefault(emptyList()),
+            )
             apiSubtitles = when {
                 fresh.any(::indoOf) -> fresh
                 fresh.isNotEmpty() -> fresh
-                else -> request.subtitles
+                else -> prefetchedClean
             }
             Log.i(
                 "PlayerScreen",
@@ -999,7 +1077,7 @@ fun PlayerScreen(
             streams = list
             selectedIndex = pickStreamIndex(list)
             loadingStreams = false
-            apiSubtitles = data.subtitles.orEmpty()
+            apiSubtitles = cleanSubs(data.subtitles.orEmpty())
             Log.i("PlayerScreen", "subtitle source: ${apiSubtitles.map { (it.lang ?: "") + "/" + (it.label ?: "") }}")
             if (list.isEmpty()) {
                 streamError = "Tidak ada sumber pemutaran untuk episode ini."
@@ -1007,19 +1085,17 @@ fun PlayerScreen(
             }
             // Bila daftar tidak memuat Indonesia, coba sekali lagi langsung ke API
             // (hanya Moviebox Local; sumber lain tidak punya id Moviebox).
-            fun isIndo(s: SubtitleTrack): Boolean =
-                normalizeLangCode(s.lang ?: s.label) == "id" || subtitleLangName(s.label) == "Indonesia"
-            if (request.modelId.equals("moviebox-local", true) && apiSubtitles.none(::isIndo)) {
+            if (request.modelId.equals("moviebox-local", true) && apiSubtitles.none(::indoOf)) {
                 val parts = episodeId.split("_")
                 val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
                 val ep = parts.getOrNull(1)?.toIntOrNull() ?: 1
-                val retry = runCatching {
-                    com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
-                        .fetchSubtitles(request.contentId, se, ep)
-                }.getOrDefault(emptyList())
-                Log.i("PlayerScreen", "subtitle retry: ${retry.size} track, indo=${retry.any(::isIndo)}")
-                // Pakai juga track non-Indonesia bila tidak ada Indonesia sama
-                // sekali: menu subtitle tetap sinkron dengan yang tersedia.
+                val retry = cleanSubs(
+                    runCatching {
+                        com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
+                            .fetchSubtitles(request.contentId, se, ep)
+                    }.getOrDefault(emptyList()),
+                )
+                Log.i("PlayerScreen", "subtitle retry: ${retry.size} track, indo=${retry.any(::indoOf)}")
                 if (retry.isNotEmpty()) apiSubtitles = retry
             }
         } catch (e: ApiError) {
@@ -1096,11 +1172,13 @@ fun PlayerScreen(
 
         // Terapkan offset sinkronisasi: bila pengguna menggeser waktu subtitle,
         // setiap file subtitle digeser lalu dipakai versi lokalnya.
+        // Hapus semua subtitle Melayu (sesuai instruksi: "Jangan Memakai Melayu").
+        val cleanApiSubs = apiSubtitles.filterNot { isMalay(it.lang) || isMalay(it.label) || normalizeLangCode(it.lang ?: it.label) == "ms" }
         val sourceSubs = if (subOffsetMs == 0L) {
-            apiSubtitles
+            cleanApiSubs
         } else {
-            val out = ArrayList<SubtitleTrack>(apiSubtitles.size)
-            for (s in apiSubtitles) {
+            val out = ArrayList<SubtitleTrack>(cleanApiSubs.size)
+            for (s in cleanApiSubs) {
                 val u = s.url
                 out.add(
                     if (u.isNullOrBlank()) s
@@ -1131,10 +1209,12 @@ fun PlayerScreen(
         val seenLang = LinkedHashSet<String>()
         val played = activeSubs.mapNotNull { s ->
             val u = s.url?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            if (isMalay(s.lang) || isMalay(s.label)) return@mapNotNull null
             // MIME dipilih dari ISI file lokal (sniff WEBVTT/SRT) bila tersedia,
             // bukan hanya dari ekstensi URL.
             val mime = detectSubtitleMime(u)
             val lang = normalizeLangCode(s.lang ?: s.label)
+            if (isMalay(lang) || lang == "ms") return@mapNotNull null
             // Dedup: satu track per kode hasil normalisasi (setId jadi unik per track).
             if (!seenLang.add(lang)) return@mapNotNull null
             val indo = lang == "id"
@@ -2305,15 +2385,29 @@ fun PlayerScreen(
     if (showSyncMenu) {
         val offsets = listOf(
             -10000L to "-10.0 detik",
+            -7500L to "-7.5 detik",
             -5000L to "-5.0 detik",
+            -4000L to "-4.0 detik",
+            -3000L to "-3.0 detik",
+            -2500L to "-2.5 detik",
             -2000L to "-2.0 detik",
+            -1500L to "-1.5 detik",
             -1000L to "-1.0 detik",
+            -750L to "-0.75 detik",
             -500L to "-0.5 detik",
-            0L to "Normal (0.0)",
+            -250L to "-0.25 detik",
+            0L to "Normal (0.0 detik)",
+            250L to "+0.25 detik",
             500L to "+0.5 detik",
+            750L to "+0.75 detik",
             1000L to "+1.0 detik",
+            1500L to "+1.5 detik",
             2000L to "+2.0 detik",
+            2500L to "+2.5 detik",
+            3000L to "+3.0 detik",
+            4000L to "+4.0 detik",
             5000L to "+5.0 detik",
+            7500L to "+7.5 detik",
             10000L to "+10.0 detik",
         )
         OptionMenu(

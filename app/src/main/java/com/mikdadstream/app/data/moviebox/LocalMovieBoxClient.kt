@@ -470,12 +470,21 @@ object LocalMovieBoxClient {
         )
     }
 
+    /** Deteksi apakah teks/kode merujuk ke bahasa Melayu/Malaysia. */
+    fun isMalay(text: String?): Boolean {
+        if (text.isNullOrBlank()) return false
+        val s = text.trim().lowercase(Locale.ROOT)
+        val clean = s.replace('-', '_').replace('.', '_')
+        val base = clean.substringBefore('_')
+        if (base in setOf("ms", "may", "msa", "zlm")) return true
+        return s.contains("melayu") || s.contains("malay") || s.contains("malaysia")
+    }
+
     private fun isIndoText(s: String?): Boolean {
         if (s.isNullOrBlank()) return false
+        if (isMalay(s)) return false
         val t = s.lowercase(Locale.ROOT)
-        // "Bahasa Melayu"/"Malaysia" bukan Indonesia meski sama-sama "bahasa".
-        if (t.contains("melayu") || t.contains("malaysia")) return false
-        return t.contains("indonesia") || t.contains("bahasa") || t.trim() == "indo"
+        return t.contains("indonesia") || (t.contains("bahasa") && !t.contains("melayu") && !t.contains("malay")) || t.trim() == "indo"
     }
 
     private val indoCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
@@ -1207,17 +1216,16 @@ object LocalMovieBoxClient {
             runCatching {
                 dir.listFiles()?.forEach { f ->
                     val n = f.name
-                    if (n.startsWith("sb2_") || n.startsWith("sb_") ||
-                        n.startsWith("sb4_") || n.startsWith("sbshift_")
-                    ) {
+                    if (n.startsWith("sb") || n.startsWith("sbshift_")) {
                         f.delete()
                     }
                 }
             }
             // Unduh/konversi semua subtitle PARALEL: sebelumnya berurutan
             // (9 bahasa = 9 request beruntun) sehingga klik episode terasa lama.
+            val validTracks = tracks.filterNot { isMalay(it.lang) || isMalay(it.label) }
             coroutineScope {
-                tracks.map { t ->
+                validTracks.map { t ->
                     async { prepareSubtitleOne(t, dir) }
                 }.awaitAll()
             }
@@ -1406,9 +1414,11 @@ object LocalMovieBoxClient {
     }
 
     private fun normalizedCaptionLang(lan: String): String {
-        val raw = lan.trim().lowercase()
+        val raw = lan.trim().lowercase(Locale.ROOT)
+        if (isMalay(raw)) return "ms"
         return when {
-            raw.startsWith("in_") || raw.startsWith("id_") || raw == "in" || raw == "id" || raw.contains("indonesi") || raw.contains("bahasa") -> "id"
+            raw.startsWith("in_") || raw.startsWith("id_") || raw == "in" || raw == "id" ||
+                raw.contains("indonesi") || (raw.contains("bahasa") && !raw.contains("melayu") && !raw.contains("malay")) -> "id"
             raw.isBlank() -> raw
             else -> raw.substringBefore('_').substringBefore('-')
         }
@@ -1436,21 +1446,21 @@ object LocalMovieBoxClient {
         val out = ArrayList<SubtitleTrack>()
         if (caps == null) return out
         val seen = HashSet<String>()
-        // Indonesia & Melayu TERPISAH: tidak ada priorisasi/penggabungan,
-        // setiap kode bahasa jadi track masing-masing.
+        // Jangan gunakan subtitle Melayu: filter ketat agar tidak ada track Melayu
         for (i in 0 until caps.length()) {
             val c = caps.optJSONObject(i) ?: continue
             val url = c.optString("url").takeIf { it.isNotBlank() } ?: continue
             val lan = c.optString("lan").takeIf { it.isNotBlank() } ?: continue
+            val lanName = c.optString("lanName")
+            if (isMalay(lan) || isMalay(lanName)) continue
             val norm = normalizedCaptionLang(lan)
+            if (norm == "ms" || isMalay(norm)) continue
             // Dedup per kode bahasa hasil normalisasi (hindari track dobel).
             if (!seen.add(norm)) continue
             out.add(
                 SubtitleTrack(
-                    label = c.optString("lanName").takeIf { it.isNotBlank() }
+                    label = lanName.takeIf { !it.isNullOrBlank() }
                         ?: if (norm == "id") "Indonesian" else lan,
-                    // Simpan kode yang sudah dinormalisasi ("in_id" -> "id") agar
-                    // pemutar tidak salah mengenali sebagai Melayu.
                     lang = norm,
                     url = url,
                 )
@@ -1540,12 +1550,17 @@ object LocalMovieBoxClient {
                 val rdArr = detailData?.optJSONArray("resourceDetectors")
                 val packRid = rdArr?.optJSONObject(0)?.optString("resourceId")
                     ?.takeIf { it.isNotBlank() }
+                val epIdx = (ep - 1).coerceAtLeast(0)
+                val epDetectorRid = if (rdArr != null && epIdx < rdArr.length()) {
+                    rdArr.optJSONObject(epIdx)?.optString("resourceId")?.takeIf { it.isNotBlank() }
+                } else null
                 val rid = episodeResourceId(subjectId, token, se, ep)
+                    ?: epDetectorRid
                     ?: packRid
 
                 // HANYA sumber langsung (subjek + resourceId milik video ini).
                 val caps = extCaptionsFor(subjectId, rid, token, se, ep)
-                val out = captionsToTracks(caps)
+                val out = captionsToTracks(caps).filterNot { isMalay(it.lang) || isMalay(it.label) }
                 Log.i(
                     TAG,
                     "fetchSubtitles caps=${caps?.length() ?: 0} out=${out.size} subj=$subjectId " +
@@ -1554,7 +1569,9 @@ object LocalMovieBoxClient {
                 // Bila versi yang diputar TIDAK punya caption Indonesia (mis. versi
                 // dub US/UK/India), ambil caption dari versi ASLI film yang sama
                 // (dubs.original) — video film sama, jadi tetap sinkron.
-                val hasIndo = out.any { it.lang == "id" || it.label?.contains("ndonesi", true) == true }
+                val hasIndo = out.any {
+                    !isMalay(it.lang) && !isMalay(it.label) && (it.lang == "id" || it.label?.contains("ndonesi", true) == true)
+                }
                 if (!hasIndo) {
                     val dubs = detailData?.optJSONArray("dubs")
                     val origId = dubs?.let { arr ->
@@ -1566,9 +1583,9 @@ object LocalMovieBoxClient {
                         val origRid = episodeResourceId(origId, token, se, ep)
                             ?: subjectDetailDataForRid(origId, ep) ?: rid
                         val origCaps = extCaptionsFor(origId, origRid, token, se, ep)
-                        val origOut = captionsToTracks(origCaps)
+                        val origOut = captionsToTracks(origCaps).filterNot { isMalay(it.lang) || isMalay(it.label) }
                         val origIndo = origOut.any {
-                            it.lang == "id" || it.label?.contains("ndonesi", true) == true
+                            !isMalay(it.lang) && !isMalay(it.label) && (it.lang == "id" || it.label?.contains("ndonesi", true) == true)
                         }
                         Log.i(
                             TAG,
