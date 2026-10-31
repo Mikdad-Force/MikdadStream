@@ -10,8 +10,8 @@ plugins {
 
 val apiBaseUrl: String = (findProperty("STREAM_API_URL") as String?) ?: "https://mikdad-api.mikdadtv.workers.dev"
 
-val appVersionCode: Int = (findProperty("VERSION_CODE") as String?)?.toIntOrNull() ?: 101
-val appVersionName: String = (findProperty("VERSION_NAME") as String?) ?: "2.1.71"
+val appVersionCode: Int = (findProperty("VERSION_CODE") as String?)?.toIntOrNull() ?: 102
+val appVersionName: String = (findProperty("VERSION_NAME") as String?) ?: "2.1.72"
 
 val googleClientId: String = (findProperty("GOOGLE_CLIENT_ID") as String?)
     ?: "350158650454-h82139noud47hki2tmcdqhfuo9n8n35g.apps.googleusercontent.com"
@@ -153,6 +153,9 @@ dependencies {
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+
+    // WorkManager: cek film/episode baru di latar belakang (notifikasi).
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")

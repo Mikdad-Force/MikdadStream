@@ -95,6 +95,11 @@ class MikdadStreamApp : Application(), coil.ImageLoaderFactory {
         installCrashBreadcrumb()
         AppGraph.init(this)
         com.mikdadstream.app.data.moviebox.MovieboxSyncJob.maybeRun(this)
+        // Jadwalkan pengecekan film/episode baru (notifikasi) di latar belakang.
+        runCatching {
+            com.mikdadstream.app.data.notify.NewContentScheduler.schedule(this)
+            com.mikdadstream.app.data.notify.NewContentNotifier.ensureChannels(this)
+        }
         // Panaskan token Moviebox di latar belakang: klik "Putar" pertama
         // tidak menanggung biaya bootstrap jaringan (tanpa ini, pemutar
         // menunggu boot() selesai sebelum URL video bisa dicari).

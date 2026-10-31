@@ -357,21 +357,37 @@ private fun NotificationToggle(
 
 @Composable
 fun NotificationsScreen(onBack: () -> Unit) {
-    var film by remember { mutableStateOf(true) }
-    var rekomendasi by remember { mutableStateOf(true) }
-    var pengingat by remember { mutableStateOf(false) }
-    var promo by remember { mutableStateOf(false) }
+    val prefs = AppGraph.prefs
+    val newContent by prefs.notifyNewContent.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Izin POST_NOTIFICATIONS wajib di Android 13+, kalau tidak notifikasi
+    // tidak akan pernah tampil meski toggle aktif.
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) prefs.setNotifyNewContent(false)
+    }
 
     AccountScaffold(title = "Notifikasi", onBack = onBack) {
         StreamCard {
             Column {
-                NotificationToggle("Film Baru", Icons.Outlined.Movie, film) { film = it }
-                StreamDivider()
-                NotificationToggle("Rekomendasi", Icons.Outlined.Recommend, rekomendasi) { rekomendasi = it }
-                StreamDivider()
-                NotificationToggle("Pengingat Tonton", Icons.Outlined.Schedule, pengingat) { pengingat = it }
-                StreamDivider()
-                NotificationToggle("Promo", Icons.Outlined.LocalOffer, promo) { promo = it }
+                NotificationToggle("Film & Episode Baru", Icons.Outlined.Movie, newContent) { on ->
+                    if (on) {
+                        // Minta izin dulu; bila sudah ada, langsung aktif.
+                        if (com.mikdadstream.app.data.notify.NewContentNotifier.canNotify(context)) {
+                            prefs.setNotifyNewContent(true)
+                        } else if (android.os.Build.VERSION.SDK_INT >= 33) {
+                            permissionLauncher.launch(
+                                android.Manifest.permission.POST_NOTIFICATIONS,
+                            )
+                        } else {
+                            prefs.setNotifyNewContent(true)
+                        }
+                    } else {
+                        prefs.setNotifyNewContent(false)
+                    }
+                }
             }
         }
     }

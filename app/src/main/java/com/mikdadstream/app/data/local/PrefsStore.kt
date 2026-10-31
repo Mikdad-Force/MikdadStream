@@ -56,6 +56,8 @@ class PrefsStore(context: Context) {
     private val _serverStatus = MutableStateFlow<String?>(null)
     private val _hiddenSources = MutableStateFlow(sp.getStringSet(KEY_HIDDEN, null)?.toSet() ?: emptySet())
     private val _loggedIn = MutableStateFlow(sp.getBoolean(KEY_LOGGED_IN, false))
+    /** Notifikasi film/episode baru aktif? Dipakai NewContentWorker. */
+    private val _notifyNewContent = MutableStateFlow(sp.getBoolean(KEY_NOTIFY_NEW, true))
 
     init {
         CountrySelection.code = _region.value
@@ -78,6 +80,7 @@ class PrefsStore(context: Context) {
     val serverStatus: StateFlow<String?> = _serverStatus
     val hiddenSources: StateFlow<Set<String>> = _hiddenSources
     val loggedIn: StateFlow<Boolean> = _loggedIn
+    val notifyNewContent: StateFlow<Boolean> = _notifyNewContent
 
     val refreshToken: String? get() = sp.getString(KEY_REFRESH, null)
 
@@ -197,6 +200,11 @@ class PrefsStore(context: Context) {
         _loggedIn.value = value
     }
 
+    fun setNotifyNewContent(value: Boolean) {
+        sp.edit { putBoolean(KEY_NOTIFY_NEW, value) }
+        _notifyNewContent.value = value
+    }
+
     fun setHiddenSources(ids: Set<String>) {
         val normalized = ids.map { it.lowercase().trim() }.filter { it.isNotBlank() }.toSet()
         sp.edit { putStringSet(KEY_HIDDEN, normalized) }
@@ -256,5 +264,6 @@ class PrefsStore(context: Context) {
         private const val KEY_PREMIUM_UNLOCK = "premium_unlocked"
         private const val KEY_HIDDEN = "hidden_sources"
         private const val KEY_LOGGED_IN = "logged_in"
+        private const val KEY_NOTIFY_NEW = "notify_new_content"
     }
 }
