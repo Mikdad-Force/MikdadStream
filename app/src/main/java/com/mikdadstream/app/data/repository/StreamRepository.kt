@@ -38,6 +38,9 @@ class StreamRepository(
 ) {
 
     private var modelsCache: ModelsResult? = null
+    // Cache hasil video per kategori (30 menit) agar perpindahan kategori langsung tampil
+    private val videosCache =
+        java.util.concurrent.ConcurrentHashMap<String, Pair<Long, VideosData>>()
     // Cache hasil source per episode (5 menit) supaya kembali ke episode yang
     // sama / prefetch episode berikutnya langsung tampil tanpa request ulang.
     private val episodeSourceCache =
@@ -158,7 +161,13 @@ class StreamRepository(
     }
 
     suspend fun videos(modelId: String, categoryId: String, page: Int = 1): VideosData {
-        if (modelId.equals("moviebox-local", true)) {
+        val cacheKey = "${modelId}_${categoryId}_$page"
+        videosCache[cacheKey]?.let { (ts, data) ->
+            if (System.currentTimeMillis() - ts < 1_800_000L && data.items?.isNotEmpty() == true) {
+                return data
+            }
+        }
+        val result = if (modelId.equals("moviebox-local", true)) {
             val (loaded, more) = runCatching { LocalMovieBoxClient.categoryPage(categoryId, page) }
                 .getOrElse { emptyList<MediaItem>() to false }
             val items = loaded.ifEmpty {
@@ -166,15 +175,20 @@ class StreamRepository(
                 else runCatching { LocalMovieBoxClient.trendingItems() }.getOrDefault(emptyList())
             }
             android.util.Log.i("MovieboxLocal", "videos cat=$categoryId page=$page items=${items.size} hasMore=$more")
-            return VideosData(
+            VideosData(
                 type = "movie_tv",
                 moduleName = "Utama",
                 items = items,
                 page = page,
                 hasMore = more,
             )
+        } else {
+            unwrap(call { api.videos(apiModelId(modelId), categoryId, page) }, "Gagal memuat daftar video.")
         }
-        return unwrap(call { api.videos(apiModelId(modelId), categoryId, page) }, "Gagal memuat daftar video.")
+        if (result.items?.isNotEmpty() == true) {
+            videosCache[cacheKey] = System.currentTimeMillis() to result
+        }
+        return result
     }
 
     suspend fun search(query: String, page: Int = 1): List<MediaItem> {

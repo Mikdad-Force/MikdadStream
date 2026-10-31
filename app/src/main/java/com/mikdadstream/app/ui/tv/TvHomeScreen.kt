@@ -182,6 +182,7 @@ fun TvHomeScreen(
                         CategoryContentSection(
                             items = state.items,
                             categoryName = activeCategoryName,
+                            loading = state.loading,
                             onItemClick = { onOpenItem(it, viewModel.activeSourceId()) }
                         )
                         Spacer(Modifier.height(19.dp))
@@ -605,6 +606,7 @@ private fun <T> PosterGrid(
 private fun CategoryContentSection(
     items: List<MediaItem>,
     categoryName: String,
+    loading: Boolean = false,
     onItemClick: (MediaItem) -> Unit,
 ) {
     Column {
@@ -618,7 +620,7 @@ private fun CategoryContentSection(
         val displayItems = items.take(70)
         if (displayItems.isEmpty()) {
             Text(
-                text = "Belum ada konten",
+                text = if (loading) "Memuat film..." else "Belum ada konten",
                 color = Muted,
                 fontSize = 18.sp,
                 modifier = Modifier.padding(start = 48.dp, top = 8.dp)

@@ -627,7 +627,7 @@ object LocalMovieBoxClient {
     /** Katalog gabungan: trending/v2 + rows tab-operating (tab 1 & 2), dedup per subjectId. */
     suspend fun catalogSubjects(): List<JSONObject> = withContext(Dispatchers.IO) {
         val cached = catalogCache
-        if (cached != null && System.currentTimeMillis() - cached.first < 120_000) {
+        if (cached != null && System.currentTimeMillis() - cached.first < 600_000L) {
             return@withContext cached.second
         }
         val token = boot() ?: return@withContext emptyList()
@@ -730,49 +730,53 @@ object LocalMovieBoxClient {
         return rd.toLongOrNull() ?: 0L
     }
 
-    /** Kategori Indonesia: film asli produksi Indonesia. Katalog metadata + pencarian keyword khas Indonesia, urut terbaru/terupdate. */
+    /** Kategori Indonesia: film asli produksi Indonesia. Katalog metadata + pencarian keyword khas Indonesia secara cepat. */
     private suspend fun indonesiaSubjects(subjects: List<JSONObject>, token: String): List<JSONObject> {
         val cached = indonesiaCache
-        if (cached != null && System.currentTimeMillis() - cached.first < 600_000) {
+        if (cached != null && System.currentTimeMillis() - cached.first < 1_800_000L) {
             return cached.second
         }
-        val base = activeHostOrFirst()
         val out = LinkedHashMap<String, JSONObject>()
-        // 1. Dari katalog: produksi Indonesia berdasar negara/bahasa.
+        // 1. Dari katalog lokal/in-memory langsung tampil (0 ms)
         for (s in subjects) {
             if (isIndoText(s.optString("countryName")) || isIndoText(s.optString("language"))) {
-                out[s.optString("subjectId")] = s
+                val id = s.optString("subjectId")
+                if (id.isNotBlank()) out[id] = s
             }
         }
-        // 2. Dari pencarian: keyword generik + sort terbaru (filter negara tetap ketat di bawah).
-        for (q in listOf("indonesia", "horor", "komedi indonesia", "drama indonesia", "sinetron", "series indonesia")) {
-            for (page in 1..3) {
-                val body = org.json.JSONObject()
-                    .put("keyword", q)
-                    .put("page", page)
-                    .put("pageSize", 20)
-                    .put("sort", "Latest")
-                val root = runCatching {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        val base0 = activeHostOrFirst()
-                        callJson(base0, "/wefeed-mobile-bff/subject-api/search", body.toString(), token, false)
+        // 2. Jika item masih kurang, ambil pencarian tambahan secara paralel (bukan sekuensial)
+        if (out.size < 30) {
+            coroutineScope {
+                listOf("indonesia", "film indonesia").map { q ->
+                    async {
+                        val body = org.json.JSONObject()
+                            .put("keyword", q)
+                            .put("page", 1)
+                            .put("pageSize", 20)
+                            .put("sort", "Latest")
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                val base0 = activeHostOrFirst()
+                                callJson(base0, "/wefeed-mobile-bff/subject-api/search", body.toString(), token, false)
+                            }
+                        }.getOrNull()
                     }
-                }.getOrNull()
-                val arr = extractList(root)
-                for (s in arr) {
-                    if (isIndoText(s.optString("countryName")) || isIndoText(s.optString("language"))) {
-                        val id = s.optString("subjectId")
-                        if (id.isNotBlank()) out[id] = s
+                }.awaitAll().forEach { root ->
+                    val arr = extractList(root)
+                    for (s in arr) {
+                        if (isIndoText(s.optString("countryName")) || isIndoText(s.optString("language"))) {
+                            val id = s.optString("subjectId")
+                            if (id.isNotBlank()) out[id] = s
+                        }
                     }
                 }
             }
         }
         val list = out.values.toList()
-            // Terbaru/terupdate di atas: skor uploadTime resource (fallback releaseDate).
-            val sorted = list.sortedByDescending { subjectUpdateScore(it) }
-            android.util.Log.i(TAG, "indonesiaSubjects count=${sorted.size}")
-            indonesiaCache = System.currentTimeMillis() to sorted
-            return sorted
+        val sorted = list.sortedByDescending { subjectUpdateScore(it) }
+        android.util.Log.i(TAG, "indonesiaSubjects count=${sorted.size}")
+        indonesiaCache = System.currentTimeMillis() to sorted
+        return sorted
     }
 
     private val categoryQueries = mapOf(
@@ -1022,20 +1026,14 @@ object LocalMovieBoxClient {
             return@withContext shortTvPage(1).first
         }
         categoryCache[cat]?.let { (t, list) ->
-            if (System.currentTimeMillis() - t < 300_000 && list.isNotEmpty()) return@withContext list
+            if (System.currentTimeMillis() - t < 1_800_000L && list.isNotEmpty()) return@withContext list
         }
         val token = boot() ?: return@withContext emptyList()
-        // TRENDING: cukup daftar trending (8 item), jangan seluruh katalog —
-        // filter subtitle ke ratusan judul membuat kategori lama kosong/timeout.
+        // TRENDING: ambil langsung dari trendingAll (cepat, tanpa probe subtitle ke tiap judul)
         if (cat == "trending") {
             val raw = trendingAll()
-            val filtered = runCatching { filterIndoOnly(raw, token) }.getOrDefault(emptyList())
-            // Jangan pernah kosong: bila tak ada yang lolos filter subtitle,
-            // tetap tampilkan trending (tanpa judul Hindi).
-            val use = filtered.ifEmpty {
-                raw.filterNot {
-                    isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
-                }
+            val use = raw.filterNot {
+                isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
             }
             val out = ArrayList<MediaItem>()
             val seen = HashSet<String>()
@@ -1043,7 +1041,7 @@ object LocalMovieBoxClient {
                 val m = mapSubjectToMediaItem(s) ?: continue
                 if (seen.add(m.id ?: "")) out.add(m)
             }
-            Log.i(TAG, "categoryItems trending raw=${raw.size} filtered=${filtered.size} out=${out.size}")
+            Log.i(TAG, "categoryItems trending count=${out.size}")
             categoryCache[cat] = System.currentTimeMillis() to out
             return@withContext out
         }
@@ -1056,49 +1054,32 @@ object LocalMovieBoxClient {
             picked = ArrayList(if (cat == "indodrama") indo.filter { subjectTypeOf(it) == 2 } else indo)
         } else {
             picked = ArrayList(subjects.filter { categoryMatches(cat, it) })
-            // enrichment: kategori wajib ada isinya -> tambah hasil pencarian yang lolos predikat
-            if (cat != "trending" && picked.size < 24) {
-                val queries = categoryQueries[cat] ?: emptyList()
-                for (q in queries) {
-                    for (page in 1..2) {
-                        for (s in searchSubjects(q, token, page)) {
-                            if (categoryMatches(cat, s)) {
-                                val id = s.optString("subjectId")
-                                if (id.isNotBlank() && picked.none { it.optString("subjectId") == id }) picked.add(s)
-                            }
+            // enrichment cepat: jika hasil in-memory kurang dari 12, cari query pertama saja
+            if (cat != "trending" && picked.size < 12) {
+                val q = categoryQueries[cat]?.firstOrNull()
+                if (q != null) {
+                    val searchResults = runCatching { searchSubjects(q, token, 1) }.getOrDefault(emptyList())
+                    for (s in searchResults) {
+                        if (categoryMatches(cat, s)) {
+                            val id = s.optString("subjectId")
+                            if (id.isNotBlank() && picked.none { it.optString("subjectId") == id }) picked.add(s)
                         }
-                    }
-                }
-                // fallback terakhir: jika strict tetap kosong, ambil hasil pencarian mentah agar kategori tidak kosong
-                if (picked.isEmpty()) {
-                    for (q in queries.take(2)) {
-                        for (s in searchSubjects(q, token)) picked.add(s)
                     }
                 }
             }
         }
-        // Indonesian production selalu tampil; kategori lain wajib ber-subtitle
-        // Indonesia & digabung per film (versi dub/Hindi hilang).
-        val needsFilter = cat != "indonesia" && cat != "indodrama"
-        val qualified = if (needsFilter) filterIndoOnly(picked, token) else picked
-        // Terbaru/terupdate di atas: kategori mengikuti episode terakhir yang
-        // rilis — judul yang baru update episode atau film yang baru dirilis
-        // masuk paling atas (skor uploadTime resource, fallback releaseDate).
-        val usable = if (needsFilter && qualified.isEmpty() && picked.isNotEmpty()) {
-            Log.w(TAG, "categoryItems $cat filter kosong -> fallback tanpa filter")
-            picked.filterNot {
-                isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
-            }
-        } else {
-            qualified
+        // Filter judul Hindi dan urutkan rilis/update terbaru di atas
+        val usable = picked.filterNot {
+            isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
         }.sortedByDescending { subjectUpdateScore(it) }
+
         val out = ArrayList<MediaItem>()
         val seen = HashSet<String>()
         for (s in usable) {
             val m = mapSubjectToMediaItem(s) ?: continue
             if (seen.add(m.id ?: "")) out.add(m)
         }
-        android.util.Log.i(TAG, "categoryItems $cat picked=${picked.size} qualified=${qualified.size} out=${out.size}/pool=${subjects.size}")
+        android.util.Log.i(TAG, "categoryItems $cat out=${out.size}/pool=${subjects.size}")
         categoryCache[cat] = System.currentTimeMillis() to out
         out
     }

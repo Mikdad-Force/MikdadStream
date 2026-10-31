@@ -42,6 +42,7 @@ class HomeViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var requestToken = 0
+    private val categoryItemsCache = java.util.concurrent.ConcurrentHashMap<String, List<MediaItem>>()
 
     init {
         viewModelScope.launch {
@@ -70,21 +71,51 @@ class HomeViewModel(
                 return
             }
             loadCategory(sourceId, first, token)
+            prewarmCategories(sourceId, categories.filter { it.id != first.id })
         } catch (e: ApiError) {
             if (token != requestToken) return
             _state.value = _state.value.copy(loading = false, error = e.message)
         }
     }
 
+    private fun prewarmCategories(sourceId: String, categories: List<CategoryBundle>) {
+        viewModelScope.launch {
+            for (cat in categories.take(10)) {
+                val key = "${sourceId}_${cat.id}"
+                if (categoryItemsCache.containsKey(key)) continue
+                runCatching {
+                    val data = repo.videos(sourceId, cat.id, page = 1)
+                    val items = data.items.orEmpty()
+                    if (items.isNotEmpty()) {
+                        categoryItemsCache[key] = items
+                    }
+                }
+            }
+        }
+    }
+
     fun selectCategory(category: CategoryBundle) {
         if (category.id == _state.value.activeCategory?.id) return
         val token = ++requestToken
-        // Optimistis: chip langsung aktif & daftar lama tetap tampil (dengan
-        // indikator loading tipis) supaya perpindahan kategori tidak "patah"
-        // menjadi layar skeleton/kosong.
+        val cacheKey = "${prefs.activeSource.value}_${category.id}"
+        val cached = categoryItemsCache[cacheKey]
+        if (cached != null && cached.isNotEmpty()) {
+            // LANGSUNG TAMPIL seketika jika sudah di-cache (0 ms delay)
+            _state.value = _state.value.copy(
+                loading = false,
+                activeCategory = category,
+                items = cached,
+                page = 1,
+                hasMore = true,
+                error = null,
+            )
+            return
+        }
+        // Bersihkan daftar lama agar tidak menampilkan film lama saat berpindah kategori
         _state.value = _state.value.copy(
             loading = true,
             activeCategory = category,
+            items = emptyList(),
             error = null,
         )
         viewModelScope.launch { loadCategory(prefs.activeSource.value, category, token) }
@@ -94,21 +125,51 @@ class HomeViewModel(
     fun showAllFilms() {
         if (_state.value.categories.isEmpty()) return
         val first = _state.value.categories.first()
-        // Hindari load ulang kalau sudah ada items dari kategori ini
-        if (_state.value.activeCategory == first) return
+        if (_state.value.activeCategory == first && _state.value.items.isNotEmpty()) return
         val token = ++requestToken
-        _state.value = _state.value.copy(loading = true, items = emptyList(), error = null)
+        val cacheKey = "${prefs.activeSource.value}_${first.id}"
+        val cached = categoryItemsCache[cacheKey]
+        if (cached != null && cached.isNotEmpty()) {
+            _state.value = _state.value.copy(
+                loading = false,
+                activeCategory = first,
+                items = cached,
+                page = 1,
+                hasMore = true,
+                error = null,
+            )
+            return
+        }
+        _state.value = _state.value.copy(loading = true, activeCategory = first, items = emptyList(), error = null)
         viewModelScope.launch { loadCategory(prefs.activeSource.value, first, token) }
     }
 
     private suspend fun loadCategory(sourceId: String, category: CategoryBundle, token: Int) {
-        try {
-            val data = repo.videos(sourceId, category.id, page = 1)
+        val cacheKey = "${sourceId}_${category.id}"
+        val cached = categoryItemsCache[cacheKey]
+        if (cached != null && cached.isNotEmpty()) {
             if (token != requestToken) return
             _state.value = HomeUiState(
                 categories = _state.value.categories,
                 activeCategory = category,
-                items = data.items.orEmpty(),
+                items = cached,
+                page = 1,
+                hasMore = true,
+                loading = false,
+            )
+            return
+        }
+        try {
+            val data = repo.videos(sourceId, category.id, page = 1)
+            if (token != requestToken) return
+            val items = data.items.orEmpty()
+            if (items.isNotEmpty()) {
+                categoryItemsCache[cacheKey] = items
+            }
+            _state.value = HomeUiState(
+                categories = _state.value.categories,
+                activeCategory = category,
+                items = items,
                 page = 1,
                 hasMore = data.hasMore == true,
                 loading = false,
@@ -127,16 +188,22 @@ class HomeViewModel(
     fun refresh() {
         if (_state.value.refreshing) return
         val category = _state.value.activeCategory ?: return
+        val cacheKey = "${prefs.activeSource.value}_${category.id}"
+        categoryItemsCache.remove(cacheKey)
         _state.value = _state.value.copy(refreshing = true, error = null)
         val token = ++requestToken
         viewModelScope.launch {
             try {
                 val data = repo.videos(prefs.activeSource.value, category.id, page = 1)
                 if (token != requestToken) return@launch
+                val items = data.items.orEmpty()
+                if (items.isNotEmpty()) {
+                    categoryItemsCache[cacheKey] = items
+                }
                 _state.value = HomeUiState(
                     categories = _state.value.categories,
                     activeCategory = category,
-                    items = data.items.orEmpty(),
+                    items = items,
                     page = 1,
                     hasMore = data.hasMore == true,
                     loading = false,
