@@ -324,21 +324,33 @@ class UserRepository {
     /**
      * Ambil daftar pengguna (maks [limit]) untuk dikelola.
      *
-     * Membaca SELURUH koleksi `users`. Firestore Rules default hanya
-     * mengizinkan pengguna membaca dokumennya sendiri, sehingga query ini akan
-     * ditolak dengan `PERMISSION_DENIED` kecuali Rules mengizinkan admin
-     * membaca semua dokumen. Karena itu kegagalan di sini TIDAK dianggap fatal:
-     * Admin Panel tetap bisa memakai [findUserByEmail].
+     * Membaca SELURUH koleksi `users`, sehingga Rules pada koleksi itu harus
+     * mengizinkan baca (lihat firestore.rules: `allow read: if isSignedIn()`).
+     * Bila masih ditolak, [lastError] diisi pesan yang menjelaskan penyebabnya
+     * agar Admin Panel bisa menampilkan panduan, bukan gagal diam-diam.
      */
     suspend fun listUsers(limit: Long = 50): List<AdminUser> {
-        val db = firestore ?: return emptyList()
-        val snap = runCatching {
-            db.collection(COLLECTION).limit(limit).get().await()
-        }.getOrElse {
-            // Jangan set lastError: pemanggil akan lanjut ke pencarian email.
-            Log.w(TAG, "listUsers ditolak: ${it.message}")
+        val db = firestore ?: run {
+            fail("Firestore tidak tersedia")
             return emptyList()
         }
+        val snap = runCatching {
+            db.collection(COLLECTION).limit(limit).get().await()
+        }.getOrElse { e ->
+            val msg = e.message.orEmpty()
+            fail(
+                if (msg.contains("PERMISSION_DENIED", true) || msg.contains("permission", true))
+                    "Daftar pengguna ditolak Firestore. Pastikan Rules koleksi `users` " +
+                        "berisi: allow read: if isSignedIn(); lalu Publish."
+                else "Gagal memuat pengguna: $msg",
+            )
+            return emptyList()
+        }
+        if (snap.isEmpty) {
+            Log.i(TAG, "listUsers kosong")
+            return emptyList()
+        }
+        _lastError.value = null
         return snap.documents.map { d ->
             AdminUser(
                 uid = d.id,
@@ -397,10 +409,11 @@ class UserRepository {
     /**
      * Ubah role + masa aktif pengguna lain. [activeUntil] null = tanpa batas.
      *
-     * Catatan: menulis dokumen pengguna lain hanya berhasil bila aturan
-     * keamanan Firestore mengizinkan admin (mis. berdasarkan custom claim
-     * `admin: true`). Tanpa itu Firestore akan menolak dan [lastError] berisi
-     * pesan penolakan — bukan bug aplikasi.
+     * Memakai `update()` (bukan `set(merge)`) agar sesuai aturan Firestore:
+     * perubahan dokumen pengguna lain diizinkan lewat cabang UPDATE untuk
+     * developer, sementara `set` pada dokumen baru akan dinilai sebagai CREATE
+     * dan ditolak. Karena itu bila dokumen belum ada, pesan kesalahan dibuat
+     * jelas alih-alih gagal tanpa penjelasan.
      */
     suspend fun updateUserAccess(
         uid: String,
@@ -411,17 +424,29 @@ class UserRepository {
             fail("Firestore tidak tersedia")
             return false
         }
-        val payload = mapOf(
+        // update() menerima Map<String, Any> (bukan Any?): nilai null diwakili
+        // FieldValue.delete()/nilai konkret, jadi activeUntil dipisah.
+        val payload = mutableMapOf<String, Any>(
             "accountType" to type.key,
             "premium" to (type != AccountType.NORMAL),
-            "activeUntil" to activeUntil,
             "updatedAt" to FieldValue.serverTimestamp(),
         )
+        if (activeUntil != null) {
+            payload["activeUntil"] = activeUntil
+        } else {
+            // "Tanpa batas" = hapus field agar tidak ada masa aktif.
+            payload["activeUntil"] = FieldValue.delete()
+        }
         val error = runCatching {
-            db.collection(COLLECTION).document(uid).set(payload, SetOptions.merge()).await()
+            db.collection(COLLECTION).document(uid).update(payload).await()
         }.exceptionOrNull()
         if (error != null) {
-            fail("Gagal menyimpan akses: ${error.message}")
+            val msg = error.message.orEmpty()
+            fail(
+                if (msg.contains("NOT_FOUND", true) || msg.contains("No document", true))
+                    "Dokumen pengguna belum ada. Pengguna harus login sekali dulu."
+                else "Gagal menyimpan akses: $msg",
+            )
             return false
         }
         Log.i(TAG, "Admin mengubah users/$uid -> ${type.key} until=$activeUntil")

@@ -65,9 +65,8 @@ fun AdminPanelScreen(onBack: () -> Unit) {
         openUid = u.uid
     }
 
-    // Memuat seluruh koleksi hanya berhasil bila Rules mengizinkan admin
-    // membaca semua dokumen. Kegagalan di sini tidak dikunci: pengguna tetap
-    // bisa mencari lewat email di bawah.
+    // Memuat seluruh koleksi `users`. Bila Firestore menolak, tampilkan pesan
+    // asli dari UserRepository (berisi petunjuk Rules) alih-alih pesan generik.
     fun load() {
         loading = true
         message = null
@@ -75,8 +74,8 @@ fun AdminPanelScreen(onBack: () -> Unit) {
             users = AppGraph.users.listUsers()
             loading = false
             if (users.isEmpty()) {
-                message = "Daftar pengguna tidak dapat dimuat (perlu izin baca di " +
-                    "Firestore Rules). Gunakan pencarian email di bawah."
+                message = AppGraph.users.lastError.value
+                    ?: "Belum ada pengguna terdaftar. Pengguna muncul setelah login sekali."
             }
         }
     }

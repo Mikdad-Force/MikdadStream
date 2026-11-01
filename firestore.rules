@@ -3,18 +3,15 @@ rules_version = '2';
 // Aturan Firestore untuk AkashaStream.
 //
 // CARA PASANG: Firebase Console → Firestore Database → Rules → salin-tempel →
-// Publish. (Tidak perlu Firebase CLI.)
+// Publish.
 //
-// Kenapa sebelumnya muncul "PERMISSION_DENIED: Missing or insufficient
-// permissions": Rules bawaan hanya mengizinkan pengguna membaca dokumennya
-// SENDIRI, sedangkan Admin Panel perlu membaca/menulis dokumen pengguna lain.
+// KENAPA daftar pengguna sempat gagal walau aturan sudah diisi:
+// Firestore mengevaluasi Rules PER DOKUMEN pada hasil query koleksi. Bila
+// fungsi admin memakai exists()/get() di dalam aturan READ, query koleksi
+// DITOLAK ("Missing or insufficient permissions").
 //
-// Model keamanan di sini:
-//  - Pengguna biasa: hanya dokumennya sendiri, dan hanya boleh mengubah field
-//    profil (bukan role/masa aktif).
-//  - Admin: dokumen di `admins/{uid}` ada. Koleksi terpisah ini sengaja dipakai
-//    karena pengguna tidak boleh bisa menaikkan dirinya jadi admin hanya dengan
-//    mengubah `accountType` di dokumennya sendiri.
+// Karena itu aturan READ tidak memakai get()/exists() sama sekali, sementara
+// aturan UPDATE (yang hanya menyentuh 1 dokumen) boleh memakainya.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -22,34 +19,41 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Admin = punya dokumen di koleksi `admins`. Buat manual di Firebase
-    // Console: koleksi `admins`, dokumen dengan ID = UID Anda, isi {}.
-    function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
     }
 
-    // Pemilik hanya boleh mengubah field profil; role & masa aktif milik admin.
+    // Pemilik hanya boleh mengubah field profil; role & masa aktif TIDAK.
     function profileOnlyWrite() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['email', 'displayName', 'avatarUrl', 'lastLoginAt', 'updatedAt']);
     }
 
     match /users/{uid} {
-      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
 
-      // Dokumen baru dibuat oleh pemilik saat login pertama.
-      allow create: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+      // ---- READ ----
+      // Dibuka untuk semua pengguna yang login agar Admin Panel bisa memuat
+      // DAFTAR pengguna. (Tanpa get()/exists(): query koleksi tetap diizinkan.)
+      // Konsekuensi yang diterima: pengguna login bisa membaca dokumen
+      // pengguna lain (email, displayName, accountType, activeUntil).
+      allow read: if isSignedIn();
 
-      allow update: if isAdmin()
-        || (isSignedIn() && request.auth.uid == uid && profileOnlyWrite());
+      // ---- CREATE ----
+      // Dokumen dibuat sendiri saat login pertama. Admin menambah pengguna
+      // lewat jalur update/set pada dokumen yang sudah ada.
+      allow create: if isSelf(uid);
 
-      allow delete: if isAdmin();
-    }
+      // ---- UPDATE ----
+      // Di sini get() aman karena update hanya menyentuh satu dokumen.
+      //  - Developer (accountType == 'developers' pada dokumennya sendiri)
+      //    boleh mengubah role & masa aktif pengguna lain.
+      //  - Pemilik hanya boleh mengubah field profil.
+      allow update: if isSelf(uid) && profileOnlyWrite()
+        || (isSignedIn()
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountType == 'developers');
 
-    // Koleksi penanda admin: hanya bisa dibaca admin, dan hanya bisa diubah
-    // dari Console / Admin SDK (tidak ada allow write dari klien).
-    match /admins/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
+      // Hapus hanya dari Console/Admin SDK.
+      allow delete: if false;
     }
   }
 }
