@@ -177,18 +177,32 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
+                                // Email ditampilkan sebagai identitas utama:
+                                // admin perlu memastikan akun yang diatur benar.
                                 Text(
-                                    text = u.displayName ?: u.email ?: u.uid,
+                                    text = u.email ?: "(email tidak tersedia)",
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.onBackground,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
+                                if (!u.displayName.isNullOrBlank()) {
+                                    Text(
+                                        text = u.displayName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                                 Text(
                                     text = "${u.accountType ?: "normal"} • " +
-                                        (formatUntil(u.activeUntil) ?: "tanpa batas"),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        (formatUntil(u.activeUntil) ?: "permanen"),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (u.activeUntil != null &&
+                                        u.activeUntil <= System.currentTimeMillis()
+                                    ) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             Text(
@@ -230,11 +244,14 @@ private fun UserAccessEditor(
             },
         )
     }
-    // Tipe eksplisit Long? karena opsi "Tanpa batas" mengisi null. Tanpa ini
-    // Kotlin menyimpulkan Long (non-null) dan `untilMs = null` gagal kompilasi.
+    // Tipe eksplisit Long? karena "Permanen" memakai null.
+    // Nilai awal mengikuti data tersimpan apa adanya (null = permanen).
     var untilMs by remember(user.uid) {
-        mutableStateOf<Long?>(user.activeUntil ?: inDays(30))
+        mutableStateOf<Long?>(user.activeUntil)
     }
+    // Mode masa aktif terpilih. "Custom" membuka pemilih tanggal.
+    var duration by remember(user.uid) { mutableStateOf(durationFor(user.activeUntil)) }
+    var showCustomPicker by remember(user.uid) { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -242,6 +259,34 @@ private fun UserAccessEditor(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        // ---- Identitas pengguna: email ditampilkan jelas ----
+        // Sebelumnya email tidak terlihat saat mengatur, sehingga admin bisa
+        // salah orang ketika mengubah role/masa aktif.
+        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(
+                text = "Akun",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = user.email ?: "(email tidak tersedia)",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "UID: ${user.uid}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        StreamDivider()
+
         Text(
             text = "Role",
             style = MaterialTheme.typography.labelMedium,
@@ -255,18 +300,65 @@ private fun UserAccessEditor(
             )
         }
 
+        StreamDivider()
+
         Text(
-            text = "Masa aktif: ${formatUntil(untilMs) ?: "tanpa batas"}",
+            text = "Masa aktif",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // Dua baris chip: pilihan cepat yang umum dipakai admin.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DurationChip("7 hari", untilMs == inDays(7)) { untilMs = inDays(7) }
-            DurationChip("30 hari", untilMs == inDays(30)) { untilMs = inDays(30) }
-            DurationChip("1 tahun", untilMs == inDays(365)) { untilMs = inDays(365) }
+            DurationChip("Expired", duration == Duration.EXPIRED) {
+                duration = Duration.EXPIRED
+                untilMs = System.currentTimeMillis() - 60_000L
+            }
+            DurationChip("1 Hari", duration == Duration.DAY) {
+                duration = Duration.DAY
+                untilMs = inDays(1)
+            }
+            DurationChip("1 Minggu", duration == Duration.WEEK) {
+                duration = Duration.WEEK
+                untilMs = inDays(7)
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DurationChip("Tanpa batas", untilMs == null) { untilMs = null }
+            DurationChip("1 Bulan", duration == Duration.MONTH) {
+                duration = Duration.MONTH
+                untilMs = inDays(30)
+            }
+            DurationChip("Permanen", duration == Duration.FOREVER) {
+                duration = Duration.FOREVER
+                untilMs = null
+            }
+            DurationChip("Custom", duration == Duration.CUSTOM) {
+                duration = Duration.CUSTOM
+                showCustomPicker = true
+            }
+        }
+
+        Text(
+            text = when (duration) {
+                Duration.EXPIRED -> "Status: kedaluwarsa sekarang (akses Normal)"
+                Duration.FOREVER -> "Status: permanen, tanpa batas waktu"
+                Duration.CUSTOM -> "Status: sampai ${formatUntil(untilMs) ?: "?"}"
+                else -> "Status: aktif sampai ${formatUntil(untilMs) ?: "?"}"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (duration == Duration.EXPIRED) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        if (showCustomPicker) {
+            CustomDatePicker(
+                initialMs = untilMs ?: System.currentTimeMillis(),
+                onCancel = { showCustomPicker = false },
+                onPick = { picked ->
+                    untilMs = picked
+                    duration = Duration.CUSTOM
+                    showCustomPicker = false
+                },
+            )
         }
 
         Spacer(modifier = Modifier.height(2.dp))
@@ -281,7 +373,8 @@ private fun UserAccessEditor(
                         val ok = AppGraph.users.updateUserAccess(user.uid, selected, untilMs)
                         saving = false
                         onSaved(
-                            if (ok) "Tersimpan: ${user.email ?: user.uid} -> ${selected.label}"
+                            if (ok) "Tersimpan: ${user.email ?: user.uid} • ${selected.label} • " +
+                                (formatUntil(untilMs)?.let { "s.d. $it" } ?: "permanen/expired")
                             else AppGraph.users.lastError.value ?: "Gagal menyimpan",
                         )
                     }
@@ -297,6 +390,102 @@ private fun UserAccessEditor(
                 color = MaterialTheme.colorScheme.onPrimary,
             )
         }
+    }
+}
+
+/** Pilihan cepat masa aktif. */
+private enum class Duration { EXPIRED, DAY, WEEK, MONTH, FOREVER, CUSTOM }
+
+/** Tebak mode dari nilai tersimpan agar chip yang aktif mencerminkan data. */
+private fun durationFor(activeUntil: Long?): Duration {
+    if (activeUntil == null) return Duration.FOREVER
+    val now = System.currentTimeMillis()
+    if (activeUntil <= now) return Duration.EXPIRED
+    val days = ((activeUntil - now) / 86_400_000L).toInt()
+    return when (days) {
+        in 0..1 -> Duration.DAY
+        in 2..8 -> Duration.WEEK
+        in 9..31 -> Duration.MONTH
+        else -> Duration.CUSTOM
+    }
+}
+
+/**
+ * Pemilih tanggal sederhana untuk mode Custom: geser hari/bulan/tahun.
+ * Sengaja tanpa DatePicker Material3 agar tetap ringan dan cocok untuk TV
+ * (navigasi D-pad cukup tombol +/-).
+ */
+@Composable
+private fun CustomDatePicker(
+    initialMs: Long,
+    onCancel: () -> Unit,
+    onPick: (Long) -> Unit,
+) {
+    val cal = remember(initialMs) {
+        Calendar.getInstance().apply { timeInMillis = initialMs }
+    }
+    var day by remember(initialMs) { mutableStateOf(cal.get(Calendar.DAY_OF_MONTH)) }
+    var month by remember(initialMs) { mutableStateOf(cal.get(Calendar.MONTH) + 1) }
+    var year by remember(initialMs) { mutableStateOf(cal.get(Calendar.YEAR)) }
+
+    fun buildMs(): Long = Calendar.getInstance().apply {
+        set(Calendar.YEAR, year)
+        set(Calendar.MONTH, month - 1)
+        set(Calendar.DAY_OF_MONTH, day)
+        set(Calendar.HOUR_OF_DAY, 23)
+        set(Calendar.MINUTE, 59)
+    }.timeInMillis
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = "Pilih tanggal berakhir",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        StepperRow("Hari", day, 1, 31) { day = it }
+        StepperRow("Bulan", month, 1, 12) { month = it }
+        StepperRow("Tahun", year, 2024, 2100) { year = it }
+        Text(
+            text = "Berakhir: ${formatUntil(buildMs())}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DurationChip("Pakai", true) { onPick(buildMs()) }
+            DurationChip("Batal", false, onClick = onCancel)
+        }
+    }
+}
+
+/** Baris +/- untuk satu komponen tanggal. */
+@Composable
+private fun StepperRow(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        DurationChip("−", false) { onChange((value - 1).coerceIn(min, max)) }
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        DurationChip("+", false) { onChange((value + 1).coerceIn(min, max)) }
     }
 }
 
