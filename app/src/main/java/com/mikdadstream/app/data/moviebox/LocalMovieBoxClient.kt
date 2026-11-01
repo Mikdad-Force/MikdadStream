@@ -1018,31 +1018,67 @@ object LocalMovieBoxClient {
             .put("subjectType", 7)
             .toString()
         val root = callJson(base, "/wefeed-mobile-bff/subject-api/search", body, token, false)
+        // LOG: laporkan hasil mentah API agar penyebab "Gagal Memuat" terlihat.
+        if (root == null) {
+            com.mikdadstream.app.data.local.SubtitleLog.add(
+                "SHORTTV search page=$apiPage: API null/tidak merespon (host=$base)",
+            )
+            Log.w(TAG, "shortTv search page=$apiPage null (host=$base)")
+        }
         val subjects = extractList(root)
         val hasMore = root?.optJSONObject("data")?.optJSONObject("pager")
             ?.optBoolean("hasMore", subjects.isNotEmpty()) ?: subjects.isNotEmpty()
+        if (subjects.isEmpty() && root != null) {
+            com.mikdadstream.app.data.local.SubtitleLog.add(
+                "SHORTTV search page=$apiPage: 0 hasil (status=${root.optJSONObject("data")?.optString("status") ?: "?"})",
+            )
+        }
+        Log.i(TAG, "shortTv search page=$apiPage subjects=${subjects.size} hasMore=$hasMore")
         return subjects to hasMore
     }
 
     /** Short TV Indonesia tanpa batas: tiap halaman UI menarik 3 halaman API (30 judul). */
     private suspend fun shortTvPage(page: Int, apiPagesPerUiPage: Int = 3): Pair<List<MediaItem>, Boolean> =
         withContext(Dispatchers.IO) {
-            val token = boot() ?: return@withContext emptyList<MediaItem>() to false
+            val token = boot()
+            if (token == null) {
+                com.mikdadstream.app.data.local.SubtitleLog.add(
+                    "SHORTTV page=$page: token belum siap (boot null)",
+                )
+                Log.w(TAG, "shortTvPage page=$page token null")
+                return@withContext emptyList<MediaItem>() to false
+            }
             val out = ArrayList<MediaItem>()
             val seen = HashSet<String>()
             var hasMore = false
+            var totalRaw = 0
+            var totalFilteredCountry = 0
+            var totalFilteredType = 0
             val firstApiPage = (page.coerceAtLeast(1) - 1) * apiPagesPerUiPage + 1
             for (apiPage in firstApiPage until firstApiPage + apiPagesPerUiPage) {
                 val (subjects, more) = searchShortTvPage(apiPage, token)
                 hasMore = more
                 for (s in subjects) {
-                    if (!isIndonesiaCountry(s) || subjectTypeOf(s) != 7) continue
+                    totalRaw++
+                    if (!isIndonesiaCountry(s)) {
+                        totalFilteredCountry++
+                        continue
+                    }
+                    if (subjectTypeOf(s) != 7) {
+                        totalFilteredType++
+                        continue
+                    }
                     val m = mapSubjectToMediaItem(s) ?: continue
                     if (seen.add(m.id ?: "")) out.add(m)
                 }
                 if (!more) break
             }
             Log.i(TAG, "shortTvPage uiPage=$page apiFrom=$firstApiPage items=${out.size} hasMore=$hasMore")
+            com.mikdadstream.app.data.local.SubtitleLog.add(
+                "SHORTTV page=$page: mentah=$totalRaw " +
+                    "dibuang negara=$totalFilteredCountry tipe=$totalFilteredType " +
+                    "tampil=${out.size} hasMore=$hasMore",
+            )
             out to hasMore
         }
 
@@ -1197,8 +1233,23 @@ object LocalMovieBoxClient {
         }
 
     suspend fun subjectDetailData(subjectId: String): DetailData? {
-        val root = subjectDetail(subjectId) ?: return null
-        val data = root.optJSONObject("data") ?: return null
+        val root = subjectDetail(subjectId)
+        if (root == null) {
+            com.mikdadstream.app.data.local.SubtitleLog.add(
+                "DETAIL subjectId=$subjectId: API null/tidak merespon",
+            )
+            Log.w(TAG, "subjectDetail null id=$subjectId")
+            return null
+        }
+        val data = root.optJSONObject("data")
+        if (data == null) {
+            com.mikdadstream.app.data.local.SubtitleLog.add(
+                "DETAIL subjectId=$subjectId: root tanpa 'data' " +
+                    "(status=${root.optString("status")})",
+            )
+            Log.w(TAG, "subjectDetail data null id=$subjectId root=${root.keys().asSequence().toList()}")
+            return null
+        }
         val title = data.optString("title").ifBlank { data.optString("name") }.ifBlank { "Tanpa Judul" }
         val desc = data.optString("description").takeIf { it.isNotBlank() }
         val cover = (data.optJSONObject("cover")?.optString("url"))

@@ -169,10 +169,20 @@ class StreamRepository(
         }
         val result = if (modelId.equals("moviebox-local", true)) {
             val (loaded, more) = runCatching { LocalMovieBoxClient.categoryPage(categoryId, page) }
-                .getOrElse { emptyList<MediaItem>() to false }
-            val items = loaded.ifEmpty {
+                .getOrElse {
+                    com.mikdadstream.app.data.local.SubtitleLog.add(
+                        "KATEGORI $categoryId page=$page: exception ${it.javaClass.simpleName}: ${it.message}",
+                    )
+                    emptyList<MediaItem>() to false
+                }
+            // Short TV jangan fallback ke trending bila kosong: pengguna akan
+            // melihat daftar yang tidak relevan dan mengira Short TV rusak.
+            // Kategori lain tetap fallback (perilaku lama).
+            val items = if (loaded.isEmpty() && categoryId != "shorttv") {
                 if (page > 1) emptyList()
                 else runCatching { LocalMovieBoxClient.trendingItems() }.getOrDefault(emptyList())
+            } else {
+                loaded
             }
             android.util.Log.i("MovieboxLocal", "videos cat=$categoryId page=$page items=${items.size} hasMore=$more")
             VideosData(
@@ -214,7 +224,13 @@ class StreamRepository(
         if (modelId.equals("moviebox-local", true)) {
             val d = LocalMovieBoxClient.subjectDetailData(id)
             android.util.Log.i("MovieboxLocal", "detail id=$id episodes=${d?.episodeList?.size}")
-            return d ?: throw ApiError("Detail Utama tidak ditemukan.")
+            if (d == null) {
+                com.mikdadstream.app.data.local.SubtitleLog.add(
+                    "DETAIL GAGAL moviebox-local id=$id: subjectDetailData null (lihat log sebelumnya)",
+                )
+                throw ApiError("Detail Utama tidak ditemukan. Coba buka Log Diagnosa.")
+            }
+            return d
         }
         return unwrap(call { api.detail(apiModelId(modelId), id) }, "Detail tidak ditemukan.")
     }
