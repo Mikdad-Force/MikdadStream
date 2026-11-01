@@ -25,7 +25,21 @@ data class AccountState(
     val avatarUrl: String?,
     val accountType: AccountType,
     val premium: Boolean,
-)
+    /** Masa aktif berakhir (epoch ms); null = tanpa batas. Diisi Admin Panel. */
+    val activeUntil: Long? = null,
+) {
+    /** True bila masa aktif sudah lewat — role turun ke Normal. */
+    val expired: Boolean
+        get() = activeUntil != null && System.currentTimeMillis() > activeUntil
+
+    /** Role efektif setelah memperhitungkan masa aktif. */
+    val effectiveType: AccountType
+        get() = if (expired) AccountType.NORMAL else accountType
+
+    /** Premium hanya berlaku bila belum kedaluwarsa. */
+    val effectivePremium: Boolean
+        get() = !expired && (premium || accountType != AccountType.NORMAL)
+}
 
 /**
  * Akun berbasis Firebase (Authentication + Firestore).
@@ -148,9 +162,20 @@ class UserRepository {
 
         val storedType = profile?.getString("accountType")
         val premium = profile?.getBoolean("premium") ?: false
-        val state = stateFrom(u, storedType, premium)
+        val state = stateFrom(u, storedType, premium, activeUntil = readActiveUntil(profile))
         _account.value = state
         return state
+    }
+
+    /** Baca masa aktif dari Firestore (angka epoch ms; bisa juga Timestamp). */
+    private fun readActiveUntil(doc: com.google.firebase.firestore.DocumentSnapshot?): Long? {
+        if (doc == null || !doc.exists()) return null
+        val raw = doc.get("activeUntil")
+        return when (raw) {
+            is Number -> raw.toLong().takeIf { it > 0 }
+            is com.google.firebase.Timestamp -> raw.toDate().time
+            else -> null
+        }
     }
 
     /** Aktifkan premium (pembelian Rp 10.000). Developer tetap berlabel Developers. */
@@ -233,6 +258,7 @@ class UserRepository {
                     email = snapshot.getString("email"),
                     displayName = snapshot.getString("displayName"),
                     avatarUrl = snapshot.getString("avatarUrl"),
+                    activeUntil = readActiveUntil(snapshot),
                 )
             }
     }
@@ -249,6 +275,7 @@ class UserRepository {
         email: String? = user.email,
         displayName: String? = user.displayName,
         avatarUrl: String? = user.photoUrl?.toString(),
+        activeUntil: Long? = null,
     ): AccountState {
         val type = when {
             storedType == AccountType.DEVELOPERS.key || isDeveloper(email) -> AccountType.DEVELOPERS
@@ -262,6 +289,7 @@ class UserRepository {
             avatarUrl = avatarUrl,
             accountType = type,
             premium = type == AccountType.PREMIUM || type == AccountType.DEVELOPERS,
+            activeUntil = activeUntil,
         )
     }
 
@@ -274,6 +302,78 @@ class UserRepository {
     private fun fail(message: String) {
         Log.e(TAG, message)
         _lastError.value = message
+    }
+
+    // ---------------- Admin Panel ----------------
+
+    /** Ringkasan satu pengguna untuk daftar di Admin Panel. */
+    data class AdminUser(
+        val uid: String,
+        val email: String?,
+        val displayName: String?,
+        val accountType: String?,
+        val activeUntil: Long?,
+    )
+
+    /**
+     * Apakah akun saat ini boleh membuka Admin Panel. Dibatasi ke role
+     * Developers agar pengguna biasa tidak bisa mengubah masa aktif siapa pun.
+     */
+    fun isAdmin(): Boolean = _account.value?.accountType == AccountType.DEVELOPERS
+
+    /** Ambil daftar pengguna (maks [limit]) untuk dikelola. */
+    suspend fun listUsers(limit: Long = 50): List<AdminUser> {
+        val db = firestore ?: return emptyList()
+        val snap = runCatching {
+            db.collection(COLLECTION).limit(limit).get().await()
+        }.getOrElse {
+            fail("Gagal memuat pengguna: ${it.message}")
+            return emptyList()
+        }
+        return snap.documents.map { d ->
+            AdminUser(
+                uid = d.id,
+                email = d.getString("email"),
+                displayName = d.getString("displayName"),
+                accountType = d.getString("accountType"),
+                activeUntil = readActiveUntil(d),
+            )
+        }
+    }
+
+    /**
+     * Ubah role + masa aktif pengguna lain. [activeUntil] null = tanpa batas.
+     *
+     * Catatan: menulis dokumen pengguna lain hanya berhasil bila aturan
+     * keamanan Firestore mengizinkan admin (mis. berdasarkan custom claim
+     * `admin: true`). Tanpa itu Firestore akan menolak dan [lastError] berisi
+     * pesan penolakan — bukan bug aplikasi.
+     */
+    suspend fun updateUserAccess(
+        uid: String,
+        type: AccountType,
+        activeUntil: Long?,
+    ): Boolean {
+        val db = firestore ?: run {
+            fail("Firestore tidak tersedia")
+            return false
+        }
+        val payload = mapOf(
+            "accountType" to type.key,
+            "premium" to (type != AccountType.NORMAL),
+            "activeUntil" to activeUntil,
+            "updatedAt" to FieldValue.serverTimestamp(),
+        )
+        val error = runCatching {
+            db.collection(COLLECTION).document(uid).set(payload, SetOptions.merge()).await()
+        }.exceptionOrNull()
+        if (error != null) {
+            fail("Gagal menyimpan akses: ${error.message}")
+            return false
+        }
+        Log.i(TAG, "Admin mengubah users/$uid -> ${type.key} until=$activeUntil")
+        _lastError.value = null
+        return true
     }
 
     companion object {

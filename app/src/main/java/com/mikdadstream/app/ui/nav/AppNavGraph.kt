@@ -154,6 +154,7 @@ private object Routes {
     const val LANGUAGE = "language"
     const val LOCATION = "location"
     const val SUBTITLE_LOG = "subtitle_log"
+    const val ADMIN_PANEL = "admin_panel"
     const val NOTIFICATIONS = "notifications"
     const val SECURITY = "security"
     const val HELP = "help"
@@ -213,10 +214,16 @@ fun AppNavGraph(isTv: Boolean = false) {
     val hiddenSources by AppGraph.prefs.hiddenSources.collectAsState()
     val firebaseAccount by AppGraph.users.account.collectAsState()
     val premiumUnlocked by AppGraph.prefs.premiumUnlocked.collectAsState()
-    val isPremium = firebaseAccount?.premium == true ||
-        premiumUnlocked ||
-        firebaseAccount?.accountType == AccountType.DEVELOPERS
+    // Masa aktif dari Admin Panel: bila sudah lewat, role turun ke Normal dan
+    // akses premium (termasuk override lokal premiumUnlocked) ikut dicabut.
+    val accessExpired = firebaseAccount?.expired == true
+    val isPremium = !accessExpired && (
+        firebaseAccount?.premium == true ||
+            premiumUnlocked ||
+            firebaseAccount?.accountType == AccountType.DEVELOPERS
+        )
     val accountBadge = when {
+        accessExpired -> "Normal (masa aktif habis)"
         firebaseAccount?.accountType == AccountType.DEVELOPERS -> "Developers"
         isPremium -> "Premium"
         else -> "Normal"
@@ -471,6 +478,10 @@ fun AppNavGraph(isTv: Boolean = false) {
                     onOpenLanguage = { navController.navigate(Routes.LANGUAGE) },
                     onOpenLocation = { navController.navigate(Routes.LOCATION) },
                     onOpenSubtitleLog = { navController.navigate(Routes.SUBTITLE_LOG) },
+                    // Diturunkan dari state akun (bukan panggilan langsung) agar
+                    // menu Admin Panel ikut muncul/hilang saat role berubah.
+                    isAdmin = firebaseAccount?.accountType == AccountType.DEVELOPERS,
+                    onOpenAdminPanel = { navController.navigate(Routes.ADMIN_PANEL) },
                     onOpenPremium = { navController.navigate(Routes.SUBSCRIPTION) },
                     onPairDevice = { navController.navigate(Routes.PAIR_DEVICE) },
                     onOpenDesignKit = { navController.navigate(Routes.KIT) },
@@ -499,6 +510,9 @@ fun AppNavGraph(isTv: Boolean = false) {
             composable(Routes.LANGUAGE) { LanguageScreen(back) }
             composable(Routes.LOCATION) { LocationScreen(back) }
             composable(Routes.SUBTITLE_LOG) { SubtitleLogScreen(back) }
+            composable(Routes.ADMIN_PANEL) {
+                com.mikdadstream.app.ui.admin.AdminPanelScreen(back)
+            }
             composable(Routes.NOTIFICATIONS) { NotificationsScreen(back) }
             composable(Routes.SECURITY) { SecurityScreen(back) }
             composable(Routes.HELP) { HelpSupportScreen(back) }
