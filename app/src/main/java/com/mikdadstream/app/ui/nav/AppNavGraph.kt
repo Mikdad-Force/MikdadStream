@@ -222,8 +222,10 @@ fun AppNavGraph(isTv: Boolean = false) {
             premiumUnlocked ||
             firebaseAccount?.accountType == AccountType.DEVELOPERS
         )
+    // Badge hanya berisi NAMA ROLE. Masa aktif ditampilkan terpisah oleh
+    // AccountBadgeRow di Beranda (agar tidak muncul teks ganda).
     val accountBadge = when {
-        accessExpired -> "Normal (masa aktif habis)"
+        accessExpired -> "Normal"
         firebaseAccount?.accountType == AccountType.DEVELOPERS -> "Developers"
         isPremium -> "Premium"
         else -> "Normal"
@@ -356,6 +358,7 @@ fun AppNavGraph(isTv: Boolean = false) {
                         contentPadding = padding,
                         profile = profile,
                         accountBadge = accountBadge,
+                        accountUntil = firebaseAccount?.activeUntil,
                         isPremium = isPremium,
                         activeSourceName = activeSource?.safeName,
                         onSourceClick = { mainViewModel.openSheet() },
@@ -384,6 +387,7 @@ fun AppNavGraph(isTv: Boolean = false) {
                     contentPadding = padding,
                     profile = profile,
                     accountBadge = accountBadge,
+                    accountUntil = firebaseAccount?.activeUntil,
                     isPremium = isPremium,
                     activeSourceName = activeSource?.safeName,
                     onSourceClick = { mainViewModel.openSheet() },

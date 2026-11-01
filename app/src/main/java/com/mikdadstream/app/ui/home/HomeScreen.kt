@@ -89,6 +89,8 @@ fun HomeScreen(
     contentPadding: PaddingValues,
     profile: Profile?,
     accountBadge: String = "Normal",
+    /** Masa aktif berakhir (epoch ms); null = tanpa batas. */
+    accountUntil: Long? = null,
     isPremium: Boolean = false,
     activeSourceName: String? = null,
     onSourceClick: () -> Unit = {},
@@ -164,6 +166,7 @@ fun HomeScreen(
                 GreetingHeader(
                     profile = profile,
                     accountBadge = accountBadge,
+                    accountUntil = accountUntil,
                     isPremium = isPremium,
                     activeSourceName = activeSourceName,
                     onSourceClick = onSourceClick,
@@ -319,6 +322,7 @@ fun HomeScreen(
 private fun GreetingHeader(
     profile: Profile?,
     accountBadge: String,
+    accountUntil: Long? = null,
     isPremium: Boolean,
     activeSourceName: String? = null,
     onSourceClick: () -> Unit = {},
@@ -393,10 +397,18 @@ private fun GreetingHeader(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(text = "Akasha", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                     Text(text = "Stream", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = accent)
                 }
+                // ---- Badge tipe akun + masa aktif ----
+                // Dulu accountBadge diterima tapi tidak pernah dirender,
+                // sehingga pengguna tidak tahu role/masa aktifnya.
+                AccountBadgeRow(
+                    badge = accountBadge,
+                    activeUntil = accountUntil,
+                    accent = accent,
+                )
             }
             IconHeaderButton(Icons.Outlined.Search, onClick = onSearchClick)
             IconHeaderButton(Icons.Outlined.Notifications, showDot = true, onClick = onNotificationClick)
@@ -739,3 +751,74 @@ private fun ContinueCard(
         )
     }
 }
+
+/**
+ * Badge tipe akun (Normal/Premium/Developers) beserta masa aktifnya.
+ *
+ * Ditampilkan di header Beranda agar pengguna langsung tahu status akunnya.
+ * Warna dibedakan per role; masa aktif jatuh tempo/kedaluwarsa diberi warna
+ * peringatan agar mudah terlihat.
+ */
+@Composable
+private fun AccountBadgeRow(
+    badge: String,
+    activeUntil: Long?,
+    accent: androidx.compose.ui.graphics.Color,
+) {
+    // Hitung hari tersisa: null = tanpa batas, <=0 = sudah habis.
+    val daysLeft = activeUntil?.let {
+        ((it - System.currentTimeMillis()) / 86_400_000L).toInt()
+    }
+    val expired = daysLeft != null && daysLeft <= 0
+    val soon = daysLeft != null && daysLeft in 1..7
+
+    val roleColor = when {
+        expired -> MaterialTheme.colorScheme.error
+        badge.startsWith("Developers", true) -> accent
+        badge.startsWith("Premium", true) -> accent
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val detail = when {
+        activeUntil == null -> "tanpa batas"
+        expired -> "masa aktif habis"
+        else -> "aktif s.d. ${formatBadgeDate(activeUntil)}"
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(top = 3.dp),
+    ) {
+        // Chip role
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(roleColor.copy(alpha = 0.16f))
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = if (expired) "Normal" else badge,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = roleColor,
+                maxLines = 1,
+            )
+        }
+        Text(
+            text = detail,
+            fontSize = 9.sp,
+            color = when {
+                expired -> MaterialTheme.colorScheme.error
+                soon -> accent
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Tanggal singkat untuk badge, mis. "12 Nov 2026". */
+private fun formatBadgeDate(ms: Long): String =
+    java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale("id", "ID"))
+        .format(java.util.Date(ms))
