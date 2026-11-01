@@ -45,8 +45,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import kotlinx.coroutines.delay
@@ -231,6 +233,19 @@ fun AppNavGraph(isTv: Boolean = false) {
         else -> "Normal"
     }
 
+    // Pop-up kontak pengembang saat masa aktif habis. Ditampilkan sekali per
+    // sesi (bukan tiap rekomposisi) agar tidak mengganggu; pengguna tetap bisa
+    // menutupnya dan memakai aplikasi dengan akses Normal.
+    var expiredDialogShown by remember { mutableStateOf(false) }
+    var showExpiredDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(accessExpired, firebaseAccount?.uid) {
+        if (accessExpired && !expiredDialogShown) {
+            expiredDialogShown = true
+            showExpiredDialog = true
+        }
+        if (!accessExpired) expiredDialogShown = false
+    }
+
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val showHeader = false
@@ -343,6 +358,8 @@ fun AppNavGraph(isTv: Boolean = false) {
                         viewModel = vm,
                         contentPadding = padding,
                         profile = profile,
+                        accountBadge = accountBadge,
+                        accountUntil = firebaseAccount?.activeUntil,
                         initialFocus = homeContentFocus,
                         headerFocus = headerFocus,
                         currentRoute = currentRoute,
@@ -583,6 +600,17 @@ fun AppNavGraph(isTv: Boolean = false) {
                 )
             }
         }
+    }
+
+    // Pop-up masa aktif habis: tampil sekali saat status kedaluwarsa terdeteksi.
+    if (showExpiredDialog) {
+        com.mikdadstream.app.ui.components.ExpiredAccessDialog(
+            onDismiss = { showExpiredDialog = false },
+            expiredSince = firebaseAccount?.activeUntil?.let {
+                java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale("id", "ID"))
+                    .format(java.util.Date(it))
+            },
+        )
     }
 
     if (sheetVisible) {

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Logo Telegram: lingkaran biru + pesawat kertas putih.
+  Digambar dengan bentuk sederhana agar pasti tampil rapi di semua ukuran.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Lingkaran latar -->
+    <path
+        android:fillColor="#29A9EB"
+        android:pathData="M24,0C10.745,0 0,10.745 0,24s10.745,24 24,24 24,-10.745 24,-24S37.255,0 24,0z" />
+
+    <!-- Pesawat kertas -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35.5,13.5L10.8,23.1c-1.2,0.5 -1.2,1.2 -0.2,1.5l6.2,1.9 2.4,7.2c0.3,0.8 0.5,0.8 1,0.4l3.2,-3 6,4.4c1.1,0.6 1.9,0.3 2.1,-1l3.8,-18c0.3,-1.4 -0.5,-2 -1.8,-1.4z" />
+
+    <!-- Lipatan pesawat -->
+    <path
+        android:fillColor="#B8E1F7"
+        android:pathData="M17.2,26.5l13.3,-8.3c0.6,-0.4 1.2,-0.2 0.7,0.3L19.8,28.4l-0.3,4.3 -2.3,-6.2z" />
+</vector>

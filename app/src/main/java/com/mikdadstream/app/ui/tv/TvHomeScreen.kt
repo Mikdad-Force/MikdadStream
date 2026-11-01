@@ -91,6 +91,8 @@ fun TvHomeScreen(
     viewModel: HomeViewModel,
     contentPadding: PaddingValues,
     profile: Profile?,
+    accountBadge: String = "Normal",
+    accountUntil: Long? = null,
     initialFocus: FocusRequester,
     headerFocus: FocusRequester,
     currentRoute: String? = null,
@@ -154,6 +156,8 @@ fun TvHomeScreen(
                         Hero(
                             item = hero,
                             profile = profile,
+                            accountBadge = accountBadge,
+                            accountUntil = accountUntil,
                             playFocus = initialFocus,
                             onPlay = { hero?.let { onOpenItem(it, viewModel.activeSourceId()) } },
                             onInfo = { hero?.let { onOpenItem(it, viewModel.activeSourceId()) } },
@@ -337,6 +341,8 @@ private fun Header(activeSourceName: String? = null, onSourceClick: () -> Unit =
 private fun Hero(
     item: MediaItem?,
     profile: Profile?,
+    accountBadge: String,
+    accountUntil: Long?,
     playFocus: FocusRequester,
     onPlay: () -> Unit,
     onInfo: () -> Unit,
@@ -400,6 +406,17 @@ private fun Hero(
                 HeroButton("+ Daftar", filled = false, width = 146.dp, onClick = onInfo)
             }
         }
+
+        // ---- Badge tipe akun + masa aktif (Android TV) ----
+        // Sama seperti di Beranda ponsel: pengguna TV juga perlu tahu role dan
+        // sisa masa aktifnya.
+        TvAccountBadge(
+            badge = accountBadge,
+            activeUntil = accountUntil,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 36.dp, top = 24.dp),
+        )
     }
 }
 
@@ -684,5 +701,63 @@ private fun PosterCard(p: Poster, showTitle: Boolean, onClick: () -> Unit = {}) 
             )
         }
     }
+    }
+}
+/**
+ * Badge role + masa aktif untuk Android TV.
+ *
+ * Dibuat terpisah dari versi ponsel karena ukuran teks di TV lebih besar dan
+ * memakai palet warna TV (Pink/Muted) alih-alih MaterialTheme.
+ */
+@Composable
+private fun TvAccountBadge(
+    badge: String,
+    activeUntil: Long?,
+    modifier: Modifier = Modifier,
+) {
+    val daysLeft = activeUntil?.let {
+        ((it - System.currentTimeMillis()) / 86_400_000L).toInt()
+    }
+    val expired = daysLeft != null && daysLeft <= 0
+    val soon = daysLeft != null && daysLeft in 1..7
+    val roleColor = if (expired) Color(0xFFFF6B81) else Pink
+    val detail = when {
+        activeUntil == null -> "tanpa batas"
+        expired -> "masa aktif habis"
+        else -> "aktif s.d. " + java.text.SimpleDateFormat(
+            "d MMM yyyy",
+            java.util.Locale("id", "ID"),
+        ).format(java.util.Date(activeUntil))
+    }
+
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xCC1A1626))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(roleColor.copy(alpha = 0.22f))
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = if (expired) "Normal" else badge,
+                color = roleColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+            )
+        }
+        Text(
+            text = detail,
+            color = if (expired) Color(0xFFFF6B81) else if (soon) Pink else Muted,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
