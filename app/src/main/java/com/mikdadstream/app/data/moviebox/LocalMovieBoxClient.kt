@@ -513,6 +513,27 @@ object LocalMovieBoxClient {
             t.split(',', '/', '|').map { it.trim() }.any { it == "hi" || it == "hin" }
     }
 
+    /**
+     * Negara yang jelas bukan target penonton Indonesia. Endpoint trending/v2
+     * terbukti mengirim judul global meski region=ID (mis. Nigeria/Yoruba),
+     * jadi disaring agar daftar lebih relevan.
+     */
+    private val nonTargetCountries = setOf(
+        "nigeria", "yoruba", "ghana", "kenya", "tanzania", "south africa",
+        "philippines", "filipina", "thailand", "vietnam", "turkey", "turki",
+        "egypt", "arab", "pakistan", "bangladesh",
+    )
+
+    /** True bila judul berasal dari negara yang tidak relevan untuk Indonesia. */
+    private fun isNonTargetCountry(o: JSONObject): Boolean {
+        val blob = (o.optString("countryName") + " " + o.optString("country") + " " +
+            o.optString("language")).lowercase(Locale.ROOT)
+        if (blob.isBlank()) return false
+        // Indonesia selalu diloloskan, apa pun isi field lainnya.
+        if (isIndoText(o.optString("countryName")) || isIndoText(o.optString("language"))) return false
+        return nonTargetCountries.any { blob.contains(it) }
+    }
+
     private suspend fun subtitleInfo(subject: JSONObject, token: String): SubInfo? {
         val id = subjectIdOf(subject)
         if (id.isBlank()) return null
@@ -1077,9 +1098,32 @@ object LocalMovieBoxClient {
                         "lebih tua dari 3 tahun=$aged | ${preview.joinToString("; ")}",
                 )
             }
-            // Hanya buang judul Hindi: bukan audiens target aplikasi ini.
-            val use = raw.filterNot {
-                isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
+            // Buang judul Hindi (bukan audiens target) dan judul dari negara
+            // yang tidak relevan. Urutan server TETAP dipertahankan: ini tetap
+            // peringkat popularitas, hanya dibersihkan dari judul yang jelas
+            // bukan untuk penonton Indonesia.
+            val thisYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+            // filterNot: nilai true = judul dibuang dari daftar trending.
+            val fresh = raw.filterNot { s ->
+                val hindi = isHindiText(s.optString("title")) || isHindiText(s.optString("language"))
+                val foreign = isNonTargetCountry(s)
+                // Judul lama (>3 tahun) dibuang HANYA bila tahunnya diketahui;
+                // data tanpa tahun tetap dipertahankan agar tidak membuang yang
+                // sebenarnya baru.
+                val y = releaseYearOf(s).toIntOrNull()
+                val tooOld = y != null && y < thisYear - 3
+                hindi || foreign || tooOld
+            }
+            // Pengaman bertingkat: bila terlalu agresif hingga halaman hampir
+            // kosong, longgarkan filter tahun lalu filter negara.
+            val withoutYear = if (fresh.size >= 8) fresh else raw.filterNot {
+                isHindiText(it.optString("title")) || isHindiText(it.optString("language")) ||
+                    isNonTargetCountry(it)
+            }
+            val use = withoutYear.ifEmpty {
+                raw.filterNot {
+                    isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
+                }
             }
             val out = ArrayList<MediaItem>()
             val seen = HashSet<String>()
@@ -1087,9 +1131,10 @@ object LocalMovieBoxClient {
                 val m = mapSubjectToMediaItem(s) ?: continue
                 if (seen.add(m.id ?: "")) out.add(m)
             }
-            Log.i(TAG, "categoryItems trending raw=${raw.size} out=${out.size}")
+            Log.i(TAG, "categoryItems trending raw=${raw.size} fresh=${fresh.size} out=${out.size}")
             com.mikdadstream.app.data.local.SubtitleLog.add(
-                "TRENDING tampil ${out.size} judul",
+                "TRENDING tampil ${out.size} judul (segar=${fresh.size}, " +
+                    "negara non-target=${raw.size - withoutYear.size})",
             )
             categoryCache[cat] = System.currentTimeMillis() to out
             return@withContext out
