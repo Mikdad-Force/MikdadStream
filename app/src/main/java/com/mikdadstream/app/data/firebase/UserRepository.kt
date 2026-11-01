@@ -321,13 +321,22 @@ class UserRepository {
      */
     fun isAdmin(): Boolean = _account.value?.accountType == AccountType.DEVELOPERS
 
-    /** Ambil daftar pengguna (maks [limit]) untuk dikelola. */
+    /**
+     * Ambil daftar pengguna (maks [limit]) untuk dikelola.
+     *
+     * Membaca SELURUH koleksi `users`. Firestore Rules default hanya
+     * mengizinkan pengguna membaca dokumennya sendiri, sehingga query ini akan
+     * ditolak dengan `PERMISSION_DENIED` kecuali Rules mengizinkan admin
+     * membaca semua dokumen. Karena itu kegagalan di sini TIDAK dianggap fatal:
+     * Admin Panel tetap bisa memakai [findUserByEmail].
+     */
     suspend fun listUsers(limit: Long = 50): List<AdminUser> {
         val db = firestore ?: return emptyList()
         val snap = runCatching {
             db.collection(COLLECTION).limit(limit).get().await()
         }.getOrElse {
-            fail("Gagal memuat pengguna: ${it.message}")
+            // Jangan set lastError: pemanggil akan lanjut ke pencarian email.
+            Log.w(TAG, "listUsers ditolak: ${it.message}")
             return emptyList()
         }
         return snap.documents.map { d ->
@@ -339,6 +348,50 @@ class UserRepository {
                 activeUntil = readActiveUntil(d),
             )
         }
+    }
+
+    /**
+     * Cari satu pengguna berdasarkan email persis.
+     *
+     * Ini jalur utama Admin Panel karena hanya membutuhkan query pada field
+     * `email` (bukan membaca semua dokumen). Bila Rules belum mengizinkan,
+     * hasilnya null dan alasan penolakan masuk ke [lastError].
+     */
+    suspend fun findUserByEmail(email: String): AdminUser? {
+        val db = firestore ?: run {
+            fail("Firestore tidak tersedia")
+            return null
+        }
+        val target = email.trim().lowercase()
+        if (target.isBlank()) {
+            fail("Email tidak boleh kosong")
+            return null
+        }
+        // `email` disimpan apa adanya dari akun Google; coba bentuk asli lalu
+        // huruf kecil agar cocok dengan data lama.
+        val candidates = listOf(email.trim(), target).distinct()
+        for (candidate in candidates) {
+            val snap = runCatching {
+                db.collection(COLLECTION)
+                    .whereEqualTo("email", candidate)
+                    .limit(1)
+                    .get()
+                    .await()
+            }.getOrElse {
+                fail("Gagal mencari pengguna: ${it.message}")
+                return null
+            }
+            val doc = snap.documents.firstOrNull() ?: continue
+            return AdminUser(
+                uid = doc.id,
+                email = doc.getString("email"),
+                displayName = doc.getString("displayName"),
+                accountType = doc.getString("accountType"),
+                activeUntil = readActiveUntil(doc),
+            )
+        }
+        fail("Pengguna dengan email $target tidak ditemukan")
+        return null
     }
 
     /**

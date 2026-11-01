@@ -58,14 +58,26 @@ fun AdminPanelScreen(onBack: () -> Unit) {
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var openUid by remember { mutableStateOf<String?>(null) }
+    var emailQuery by remember { mutableStateOf("") }
 
+    fun addUser(u: UserRepository.AdminUser) {
+        users = (listOf(u) + users.filterNot { it.uid == u.uid })
+        openUid = u.uid
+    }
+
+    // Memuat seluruh koleksi hanya berhasil bila Rules mengizinkan admin
+    // membaca semua dokumen. Kegagalan di sini tidak dikunci: pengguna tetap
+    // bisa mencari lewat email di bawah.
     fun load() {
         loading = true
         message = null
         scope.launch {
             users = AppGraph.users.listUsers()
             loading = false
-            if (users.isEmpty()) message = AppGraph.users.lastError.value ?: "Belum ada pengguna."
+            if (users.isEmpty()) {
+                message = "Daftar pengguna tidak dapat dimuat (perlu izin baca di " +
+                    "Firestore Rules). Gunakan pencarian email di bawah."
+            }
         }
     }
 
@@ -94,6 +106,50 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            // ---- Cari pengguna berdasarkan email ----
+            // Jalur ini hanya butuh query pada field `email`, sehingga tetap
+            // bekerja walau Rules melarang membaca seluruh koleksi `users`.
+            com.mikdadstream.app.ui.components.StreamTextField(
+                value = emailQuery,
+                onValueChange = { emailQuery = it },
+                placeholder = "Cari pengguna lewat email",
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable(enabled = !loading) {
+                        val q = emailQuery.trim()
+                        if (q.isBlank()) {
+                            message = "Isi email pengguna lebih dulu."
+                            return@clickable
+                        }
+                        loading = true
+                        message = null
+                        scope.launch {
+                            val found = AppGraph.users.findUserByEmail(q)
+                            loading = false
+                            if (found != null) {
+                                message = "Ditemukan: ${found.email ?: found.uid}"
+                                addUser(found)
+                            } else {
+                                message = AppGraph.users.lastError.value
+                                    ?: "Pengguna tidak ditemukan."
+                            }
+                        }
+                    }
+                    .padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = if (loading) "Mencari…" else "Cari Pengguna",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+            }
+
             if (loading) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -105,7 +161,9 @@ fun AdminPanelScreen(onBack: () -> Unit) {
                 Text(
                     text = it,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                    color = if (it.contains("ditemukan", true) || it.contains("Ditemukan"))
+                        MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.error,
                 )
             }
 

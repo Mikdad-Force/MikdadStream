@@ -1,0 +1,55 @@
+rules_version = '2';
+
+// Aturan Firestore untuk AkashaStream.
+//
+// CARA PASANG: Firebase Console → Firestore Database → Rules → salin-tempel →
+// Publish. (Tidak perlu Firebase CLI.)
+//
+// Kenapa sebelumnya muncul "PERMISSION_DENIED: Missing or insufficient
+// permissions": Rules bawaan hanya mengizinkan pengguna membaca dokumennya
+// SENDIRI, sedangkan Admin Panel perlu membaca/menulis dokumen pengguna lain.
+//
+// Model keamanan di sini:
+//  - Pengguna biasa: hanya dokumennya sendiri, dan hanya boleh mengubah field
+//    profil (bukan role/masa aktif).
+//  - Admin: dokumen di `admins/{uid}` ada. Koleksi terpisah ini sengaja dipakai
+//    karena pengguna tidak boleh bisa menaikkan dirinya jadi admin hanya dengan
+//    mengubah `accountType` di dokumennya sendiri.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Admin = punya dokumen di koleksi `admins`. Buat manual di Firebase
+    // Console: koleksi `admins`, dokumen dengan ID = UID Anda, isi {}.
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Pemilik hanya boleh mengubah field profil; role & masa aktif milik admin.
+    function profileOnlyWrite() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['email', 'displayName', 'avatarUrl', 'lastLoginAt', 'updatedAt']);
+    }
+
+    match /users/{uid} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+
+      // Dokumen baru dibuat oleh pemilik saat login pertama.
+      allow create: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+
+      allow update: if isAdmin()
+        || (isSignedIn() && request.auth.uid == uid && profileOnlyWrite());
+
+      allow delete: if isAdmin();
+    }
+
+    // Koleksi penanda admin: hanya bisa dibaca admin, dan hanya bisa diubah
+    // dari Console / Admin SDK (tidak ada allow write dari klien).
+    match /admins/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+    }
+  }
+}
