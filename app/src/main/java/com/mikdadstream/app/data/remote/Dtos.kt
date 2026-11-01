@@ -136,6 +136,8 @@ data class DetailData(
     @SerializedName("poster_landscape") val posterLandscape: String? = null,
     @SerializedName("last_episode_id") val lastEpisodeId: String? = null,
     val episodes: List<EpisodeData>? = null,
+    /** Daftar genre terpisah (mis. ["Action", "Drama"]) untuk ditampilkan di UI. */
+    val genres: List<String> = emptyList(),
 ) {
     val safeId: String get() = id.orEmpty()
     val safeModelId: String get() = modelId.orEmpty()

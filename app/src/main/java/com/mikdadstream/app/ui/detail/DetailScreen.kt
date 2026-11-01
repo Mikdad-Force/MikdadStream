@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -240,6 +242,17 @@ private fun DetailContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = if (detail.genres.isEmpty()) 10.dp else 6.dp),
+                )
+            }
+            // Genre sebagai chip terpisah (bukan hanya teks di metaLine) agar
+            // mudah dibaca sekilas.
+            if (detail.genres.isNotEmpty()) {
+                GenreChips(
+                    genres = detail.genres,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp)
@@ -884,5 +897,39 @@ private fun DetailSkeleton(onBack: () -> Unit, contentPadding: PaddingValues) {
         }
         Spacer(Modifier.navigationBarsPadding().height(1.dp))
         Spacer(Modifier.height(contentPadding.calculateBottomPadding()))
+    }
+}
+
+/**
+ * Chip genre pada halaman detail. Hanya label (bukan filter), jadi sengaja
+ * tidak memakai FilterChipPill yang membutuhkan state terpilih + onClick.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun GenreChips(
+    genres: List<String>,
+    modifier: Modifier = Modifier,
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        genres.distinct().take(6).forEach { g ->
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    text = g,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }

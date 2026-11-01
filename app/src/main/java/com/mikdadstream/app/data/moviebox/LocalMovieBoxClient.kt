@@ -1143,9 +1143,10 @@ object LocalMovieBoxClient {
             ?: data.optString("year").takeIf { it.isNotBlank() }
         val country = data.optString("countryName").takeIf { it.isNotBlank() }
             ?: data.optString("language").takeIf { it.isNotBlank() }
-        val genre = data.optJSONArray("genreList")?.run {
+        val genreNames = data.optJSONArray("genreList")?.run {
             (0 until length()).mapNotNull { optJSONObject(it)?.optString("name")?.takeIf { n -> n.isNotBlank() } }
-        }?.joinToString(" • ")?.takeIf { it.isNotBlank() }
+        }.orEmpty()
+        val genre = genreNames.joinToString(" • ").takeIf { it.isNotBlank() }
             ?: data.optString("parent_type").takeIf { it.isNotBlank() }
         val metaLine = listOfNotNull(
             year,
@@ -1161,6 +1162,7 @@ object LocalMovieBoxClient {
             cover = cover,
             modelId = "moviebox-local",
             episodes = episodes,
+            genres = genreNames,
         )
     }
 
