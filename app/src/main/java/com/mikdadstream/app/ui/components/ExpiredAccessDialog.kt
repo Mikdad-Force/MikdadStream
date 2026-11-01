@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,7 +50,7 @@ object SupportContact {
  */
 @Composable
 fun ExpiredAccessDialog(
-    onDismiss: () -> Unit,
+    onDismiss: () -> Unit = {},
     expiredSince: String? = null,
 ) {
     val context = LocalContext.current
@@ -63,8 +62,15 @@ fun ExpiredAccessDialog(
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        // TIDAK bisa ditutup: onDismissRequest kosong agar tombol back/drag
+        // luar tidak menutup pop-up. Masa aktif habis = akses terblokir sampai
+        // diperpanjang oleh admin.
+        onDismissRequest = {},
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+        ),
     ) {
         Column(
             modifier = Modifier
@@ -127,22 +133,12 @@ fun ExpiredAccessDialog(
             )
 
             Spacer(Modifier.height(18.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(46.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.primary)
-                    .clickable(onClick = onDismiss),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "Tutup",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            }
+            Text(
+                text = "Aplikasi terkunci sampai masa aktif diperpanjang.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

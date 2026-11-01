@@ -233,9 +233,8 @@ fun AppNavGraph(isTv: Boolean = false) {
         else -> "Normal"
     }
 
-    // Pop-up kontak pengembang saat masa aktif habis. Ditampilkan sekali per
-    // sesi (bukan tiap rekomposisi) agar tidak mengganggu; pengguna tetap bisa
-    // menutupnya dan memakai aplikasi dengan akses Normal.
+    // Pop-up masa aktif habis: BLOKIR akses aplikasi sampai diperpanjang admin.
+    // Saat admin memperpanjang (accessExpired jadi false), dialog hilang sendiri.
     var expiredDialogShown by remember { mutableStateOf(false) }
     var showExpiredDialog by remember { mutableStateOf(false) }
     LaunchedEffect(accessExpired, firebaseAccount?.uid) {
@@ -243,7 +242,10 @@ fun AppNavGraph(isTv: Boolean = false) {
             expiredDialogShown = true
             showExpiredDialog = true
         }
-        if (!accessExpired) expiredDialogShown = false
+        if (!accessExpired) {
+            expiredDialogShown = false
+            showExpiredDialog = false
+        }
     }
 
     val backStack by navController.currentBackStackEntryAsState()
@@ -602,10 +604,12 @@ fun AppNavGraph(isTv: Boolean = false) {
         }
     }
 
-    // Pop-up masa aktif habis: tampil sekali saat status kedaluwarsa terdeteksi.
+    // Pop-up masa aktif habis: BLOKIR akses aplikasi sampai diperpanjang.
+    // Tidak ada tombol Tutup, tombol Back juga dicegah.
     if (showExpiredDialog) {
+        // Cegah tombol Back menutup pop-up / keluar aplikasi.
+        androidx.activity.compose.BackHandler { /* tidak melakukan apa-apa */ }
         com.mikdadstream.app.ui.components.ExpiredAccessDialog(
-            onDismiss = { showExpiredDialog = false },
             expiredSince = firebaseAccount?.activeUntil?.let {
                 java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale("id", "ID"))
                     .format(java.util.Date(it))
