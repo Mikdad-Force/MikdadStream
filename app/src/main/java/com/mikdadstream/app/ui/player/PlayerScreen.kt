@@ -816,6 +816,13 @@ fun PlayerScreen(
     var showSubMenu by remember { mutableStateOf(false) }
     var showSleepMenu by remember { mutableStateOf(false) }
     var resizeModeIx by remember { mutableIntStateOf(0) }
+    // Orientasi video terdeteksi (lebar/tinggi). >1 = landscape, <1 = potret.
+    // Dipakai untuk memutar Short TV (potret) tanpa dipaksa landscape.
+    var videoAspect by remember { mutableFloatStateOf(0f) }
+    // Penyesuaian otomatis sudah dijalankan untuk video ini.
+    var orientationAutoDone by remember { mutableStateOf(false) }
+    // Pengguna memilih orientasi manual -> jangan ditimpa deteksi otomatis.
+    var orientationUserLocked by remember { mutableStateOf(false) }
     var subOptions by remember { mutableStateOf<List<SubOption>>(emptyList()) }
     var selectedSubKey by remember { mutableStateOf<String?>(null) }
     var subtitleUserChosen by remember { mutableStateOf(false) }
@@ -1200,12 +1207,41 @@ fun PlayerScreen(
 
     fun toggleOrientation() {
         val act = activityRef.value ?: return
+        // Pilihan manual: hentikan penyesuaian otomatis agar tidak dilawan.
+        orientationUserLocked = true
         act.requestedOrientation =
             if (act.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
                 ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             } else {
                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             }
+    }
+
+    /**
+     * Sesuaikan orientasi layar dengan bentuk video.
+     *
+     * Activity pemutar dipaksa landscape di manifest, sehingga video potret
+     * (mis. Short TV) tampil kecil di tengah layar. Di sini rasio video
+     * diperiksa: potret -> layar potret, landscape -> tetap landscape.
+     * Dijalankan sekali per video dan tidak menimpa pilihan manual pengguna.
+     */
+    fun applyAutoOrientation(aspect: Float) {
+        if (orientationUserLocked || orientationAutoDone || inPip) return
+        if (aspect <= 0f) return
+        val act = activityRef.value ?: return
+        orientationAutoDone = true
+        val portrait = aspect < 0.95f
+        act.requestedOrientation = if (portrait) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+        Log.i(
+            "PlayerScreen",
+            "auto orientasi: aspect=%.3f -> %s".format(
+                java.util.Locale.US, aspect, if (portrait) "potret" else "landscape",
+            ),
+        )
     }
 
     fun setBrightness(value: Float) {
@@ -1408,6 +1444,10 @@ fun PlayerScreen(
         } else null
         appliedEpisodeId = episodeId
         playerError = null
+        // Video baru: deteksi ulang bentuknya (bisa berbeda dari episode
+        // sebelumnya), tetapi pertahankan pilihan orientasi manual pengguna.
+        videoAspect = 0f
+        orientationAutoDone = false
         activeStreamUrl = url
         activeStreamFormat = stream.format
         // Cegah playback ganda: hentikan media sebelumnya sebelum memuat yang baru.
@@ -1606,6 +1646,18 @@ fun PlayerScreen(
                     val next = episodes.getOrNull(index + 1)
                     if (next != null) playEpisode(next) else saveProgressNow()
                 }
+            }
+
+            // Deteksi bentuk video: potret (Short TV) vs landscape.
+            // Rasio hanya diketahui setelah stream siap — bukan dari URL.
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                if (videoSize.width <= 0 || videoSize.height <= 0) return
+                val ratio = if (videoSize.pixelWidthHeightRatio > 0f) {
+                    videoSize.pixelWidthHeightRatio
+                } else 1f
+                val aspect = (videoSize.width * ratio) / videoSize.height
+                videoAspect = aspect
+                applyAutoOrientation(aspect)
             }
 
         override fun onPlayerError(error: PlaybackException) {
