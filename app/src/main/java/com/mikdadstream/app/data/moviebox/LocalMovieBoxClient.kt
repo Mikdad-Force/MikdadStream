@@ -524,14 +524,20 @@ object LocalMovieBoxClient {
         "egypt", "arab", "pakistan", "bangladesh",
     )
 
-    /** True bila judul berasal dari negara yang tidak relevan untuk Indonesia. */
+    /**
+     * True bila judul berasal dari negara yang tidak relevan untuk Indonesia.
+     *
+     * Hanya memeriksa [countryName] dan [country] (BUKAN [language]): bahasa
+     * subtitle bisa berbeda dari negara produksi, dan memeriksa language pernah
+     * membuang judul Indonesia yang subtitle-nya bahasa lain.
+     */
     private fun isNonTargetCountry(o: JSONObject): Boolean {
-        val blob = (o.optString("countryName") + " " + o.optString("country") + " " +
-            o.optString("language")).lowercase(Locale.ROOT)
-        if (blob.isBlank()) return false
-        // Indonesia selalu diloloskan, apa pun isi field lainnya.
-        if (isIndoText(o.optString("countryName")) || isIndoText(o.optString("language"))) return false
-        return nonTargetCountries.any { blob.contains(it) }
+        val country = (o.optString("countryName") + " " + o.optString("country"))
+            .lowercase(Locale.ROOT).trim()
+        if (country.isBlank()) return false // tidak ada info negara = jangan buang
+        // Indonesia selalu diloloskan.
+        if (country.contains("indonesia") || country.contains("indonesi")) return false
+        return nonTargetCountries.any { country.contains(it) }
     }
 
     private suspend fun subtitleInfo(subject: JSONObject, token: String): SubInfo? {
