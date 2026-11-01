@@ -173,7 +173,11 @@ private fun UserAccessEditor(
             },
         )
     }
-    var untilMs by remember(user.uid) { mutableStateOf(user.activeUntil ?: inDays(30)) }
+    // Tipe eksplisit Long? karena opsi "Tanpa batas" mengisi null. Tanpa ini
+    // Kotlin menyimpulkan Long (non-null) dan `untilMs = null` gagal kompilasi.
+    var untilMs by remember(user.uid) {
+        mutableStateOf<Long?>(user.activeUntil ?: inDays(30))
+    }
 
     Column(
         modifier = Modifier

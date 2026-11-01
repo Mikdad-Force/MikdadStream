@@ -27,6 +27,15 @@ class NewContentWorker(
 
     override suspend fun doWork(): Result {
         val ctx = applicationContext
+        // WorkManager dapat menjalankan worker sebelum Application.onCreate
+        // selesai, sehingga AppGraph.prefs (lateinit) belum terisi dan akses
+        // langsung akan melempar UninitializedPropertyAccessException.
+        // AppGraph.init() idempoten (guard ::prefs.isInitialized), aman dipanggil.
+        val readyError = runCatching { AppGraph.init(ctx) }.exceptionOrNull()
+        if (readyError != null) {
+            android.util.Log.w(TAG, "AppGraph belum siap: ${readyError.javaClass.simpleName}")
+            return Result.retry()
+        }
         NewContentNotifier.ensureChannels(ctx)
         // Kalau izin belum ada / notifikasi dimatikan, tidak perlu memanggil API.
         if (!NewContentNotifier.canNotify(ctx)) return Result.success()
