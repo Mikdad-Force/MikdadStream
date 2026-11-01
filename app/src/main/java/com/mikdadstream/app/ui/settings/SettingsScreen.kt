@@ -673,12 +673,12 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
-                        text = "Log Subtitle",
+                        text = "Log Diagnosa",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onBackground,
                     )
                     Text(
-                        text = "Catatan track subtitle saat memutar film",
+                        text = "Catatan subtitle dan isi trending",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

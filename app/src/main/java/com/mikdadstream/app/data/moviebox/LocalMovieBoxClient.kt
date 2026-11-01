@@ -727,6 +727,16 @@ object LocalMovieBoxClient {
     private var indonesiaCache: Pair<Long, List<JSONObject>>? = null
 
     /** Upload/update resource terbaru epoch (detik), fallback date terbaru. */
+    /**
+     * Tahun rilis dari `releaseDate`/`year`, hanya bila masuk akal (1900..2100).
+     * Nilai "null"/"0"/kosong dari API diabaikan agar tidak menyesatkan log.
+     */
+    private fun releaseYearOf(o: JSONObject): String {
+        val raw = o.optString("releaseDate").take(4).ifBlank { o.optString("year").take(4) }
+        val n = raw.toIntOrNull() ?: return ""
+        return if (n in 1900..2100) raw else ""
+    }
+
     private fun subjectUpdateScore(o: JSONObject): Long {
         var best = 0L
         o.optJSONArray("resourceDetectors")?.let { arr ->
@@ -1049,6 +1059,24 @@ object LocalMovieBoxClient {
         // "banyak ditonton") karena keduanya merusak peringkat trending.
         if (cat == "trending") {
             val raw = trendingAll()
+            // DIAGNOSTIK: laporkan isi mentah trending agar bisa dipastikan
+            // apakah server benar-benar mengirim judul yang sedang tren.
+            // Tahun + skor update ditampilkan supaya judul lama langsung terlihat.
+            runCatching {
+                val preview = raw.take(15).mapIndexed { i, s ->
+                    val title = s.optString("title").ifBlank { s.optString("name") }
+                    "${i + 1}. $title (${releaseYearOf(s).ifBlank { "?" }})"
+                }
+                val thisYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                val aged = raw.count { s ->
+                    val y = releaseYearOf(s).toIntOrNull()
+                    y != null && y < thisYear - 3
+                }
+                com.mikdadstream.app.data.local.SubtitleLog.add(
+                    "TRENDING mentah ${raw.size} judul, " +
+                        "lebih tua dari 3 tahun=$aged | ${preview.joinToString("; ")}",
+                )
+            }
             // Hanya buang judul Hindi: bukan audiens target aplikasi ini.
             val use = raw.filterNot {
                 isHindiText(it.optString("title")) || isHindiText(it.optString("language"))
@@ -1060,6 +1088,9 @@ object LocalMovieBoxClient {
                 if (seen.add(m.id ?: "")) out.add(m)
             }
             Log.i(TAG, "categoryItems trending raw=${raw.size} out=${out.size}")
+            com.mikdadstream.app.data.local.SubtitleLog.add(
+                "TRENDING tampil ${out.size} judul",
+            )
             categoryCache[cat] = System.currentTimeMillis() to out
             return@withContext out
         }

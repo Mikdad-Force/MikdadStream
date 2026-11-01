@@ -696,10 +696,10 @@ fun SubtitleLogScreen(onBack: () -> Unit) {
     val lines by com.mikdadstream.app.data.local.SubtitleLog.lines.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    AccountScaffold(title = "Log Subtitle", onBack = onBack) {
+    AccountScaffold(title = "Log Diagnosa", onBack = onBack) {
         Text(
-            text = "Catatan ${lines.size} baris terakhir. Salin lalu kirimkan bila " +
-                "subtitle tidak muncul.",
+            text = "Catatan ${lines.size} baris terakhir (subtitle & isi trending). " +
+                "Salin lalu kirimkan bila ada yang tidak sesuai.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -741,7 +741,7 @@ fun SubtitleLogScreen(onBack: () -> Unit) {
                     as? android.content.ClipboardManager
                 cm?.setPrimaryClip(
                     android.content.ClipData.newPlainText(
-                        "Log Subtitle",
+                        "Log Diagnosa",
                         com.mikdadstream.app.data.local.SubtitleLog.asText(),
                     ),
                 )
