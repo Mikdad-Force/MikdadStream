@@ -413,7 +413,8 @@ fun AppNavGraph(isTv: Boolean = false) {
                     onProfileClick = { navController.navigateTop(Routes.SETTINGS) },
                     onSearchClick = { navController.navigateTop(Routes.SEARCH) },
                     onNotificationClick = { navController.navigate(Routes.NOTIFICATIONS) },
-                    onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source) },
+                    // Short TV: ketuk film langsung putar (tanpa berhenti di layar detail).
+                    onOpenItem = { item, modelId -> openDetail(modelId, item.safeId, item.source, autoplay = true) },
                     onContinue = { entry -> openDetail(entry.modelId, entry.contentId, null, autoplay = true) },
                     onSeeHistory = { navController.navigateTop(Routes.HISTORY) },
                 )
