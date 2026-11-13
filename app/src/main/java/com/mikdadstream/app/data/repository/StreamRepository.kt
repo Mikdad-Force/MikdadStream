@@ -3,6 +3,7 @@ package com.mikdadstream.app.data.repository
 import com.mikdadstream.app.data.local.HistoryDao
 import com.mikdadstream.app.data.local.SearchHistoryDao
 import com.mikdadstream.app.data.local.WatchlistDao
+import com.mikdadstream.app.data.dramabox.DramaboxClient
 import com.mikdadstream.app.data.moviebox.LocalMovieBoxClient
 import com.mikdadstream.app.data.moviebox.MovieboxResolver
 import com.mikdadstream.app.data.remote.AccountData
@@ -10,7 +11,9 @@ import com.mikdadstream.app.data.remote.ApiError
 import com.mikdadstream.app.data.remote.CategoriesData
 import com.mikdadstream.app.data.remote.DetailData
 import com.mikdadstream.app.data.remote.Envelope
+import com.mikdadstream.app.data.remote.EpisodeData
 import com.mikdadstream.app.data.remote.MediaItem
+import com.mikdadstream.app.data.remote.MediaStream
 import com.mikdadstream.app.data.remote.MikdadApi
 import com.mikdadstream.app.data.remote.ModelsEnvelope
 import com.mikdadstream.app.data.remote.SearchBody
@@ -99,7 +102,14 @@ class StreamRepository(
             contentType = "movie_tv",
             description = "Sumber video utama aplikasi",
         )
-        val models = listOf(localModel) + baseModels
+        val dramaboxModel = SourceModel(
+            id = "dramabox",
+            name = "DramaBox",
+            status = "active",
+            contentType = "movie_tv",
+            description = "Short TV vertikal dub Indo (episode awal gratis)",
+        )
+        val models = listOf(localModel, dramaboxModel) + baseModels
         val result = ModelsResult(models, envelope.searchAllMovie ?: true)
         nameIndex.clear()
         result.models.forEach { model ->
@@ -109,6 +119,8 @@ class StreamRepository(
         // Alias lama agar riwayat/pencarian "Moviebox Local" tetap dikenali.
         nameIndex[normalize("Moviebox Local")] = "moviebox-local"
         nameIndex[normalize("movieboxlocal")] = "moviebox-local"
+        nameIndex[normalize("DramaBox")] = "dramabox"
+        nameIndex[normalize("Drama Box")] = "dramabox"
         modelsCache = result
         _modelsState.value = result
         return result
@@ -133,6 +145,12 @@ class StreamRepository(
     // ---------- Kategori & daftar video ----------
 
     suspend fun categories(modelId: String): List<CategoryBundle> {
+        if (modelId.equals("dramabox", true)) {
+            return listOf(
+                CategoryBundle("dubindo", "Dub Indo"),
+                CategoryBundle("trending", "Trending"),
+            )
+        }
         if (modelId.equals("moviebox-local", true)) {
             return listOf(
                 CategoryBundle("trending", "Trending"),
@@ -192,6 +210,32 @@ class StreamRepository(
                 page = page,
                 hasMore = more,
             )
+        } else if (modelId.equals("dramabox", true)) {
+            val (books, more) = runCatching {
+                if (categoryId.equals("trending", true)) {
+                    DramaboxClient.trendingList(page)?.let { it to false }
+                } else {
+                    DramaboxClient.dubIndoList(page)
+                }
+            }.getOrNull() ?: (emptyList<DramaboxClient.DramaboxBook>() to false)
+            val media = books.map { b ->
+                MediaItem(
+                    id = b.bookId,
+                    title = b.bookName,
+                    cover = b.cover,
+                    type = "series",
+                    episodeCount = b.chapterCount.takeIf { it > 0 },
+                    source = "DramaBox",
+                    tag = b.tagV3s,
+                )
+            }
+            VideosData(
+                type = "movie_tv",
+                moduleName = "DramaBox",
+                items = media,
+                page = page,
+                hasMore = more,
+            )
         } else {
             unwrap(call { api.videos(apiModelId(modelId), categoryId, page) }, "Gagal memuat daftar video.")
         }
@@ -215,12 +259,56 @@ class StreamRepository(
         if (modelId?.equals("moviebox-local", true) == true) {
             return LocalMovieBoxClient.searchItems(query.trim(), page)
         }
+        if (modelId?.equals("dramabox", true) == true) {
+            return DramaboxClient.searchList(query.trim(), page)
+                ?.map { b ->
+                    MediaItem(
+                        id = b.bookId,
+                        title = b.bookName,
+                        cover = b.cover,
+                        type = "series",
+                        episodeCount = b.chapterCount.takeIf { it > 0 },
+                        source = "DramaBox",
+                        tag = b.tagV3s,
+                    )
+                } ?: emptyList()
+        }
         return search(query, page)
     }
 
     // ---------- Detail ----------
 
     suspend fun detail(modelId: String, id: String): DetailData {
+        if (modelId.equals("dramabox", true)) {
+            val book = DramaboxClient.detail(id)
+                ?: throw ApiError("Detail DramaBox tidak ditemukan (mungkin WAF/jaringan).")
+            val (chapters, _) = DramaboxClient.chapters(id)
+                ?: throw ApiError("DramaBox tidak bisa memuat daftar episode (mungkin WAF/jaringan).")
+            val eps = chapters.map { ch ->
+                EpisodeData(
+                    episodeId = "1_${ch.chapterIndex}",
+                    episodeNumber = ch.chapterIndex,
+                    isPremium = ch.isCharge,
+                    lockedReason = if (ch.isCharge) "Episode berbayar (VIP DramaBox)" else null,
+                    thumbnailUrl = ch.cover,
+                    durationSeconds = ch.duration.takeIf { it > 0 },
+                )
+            }.ifEmpty {
+                (1..book.chapterCount.coerceAtLeast(1)).map {
+                    EpisodeData(episodeId = "1_$it", episodeNumber = it)
+                }
+            }
+            android.util.Log.i("Dramabox", "detail id=$id title=${book.bookName} eps=${eps.size}")
+            return DetailData(
+                id = book.bookId,
+                title = book.bookName,
+                description = book.introduction,
+                modelId = "dramabox",
+                cover = book.cover,
+                episodes = eps,
+                genres = book.tagV3s,
+            )
+        }
         if (modelId.equals("moviebox-local", true)) {
             val d = LocalMovieBoxClient.subjectDetailData(id)
             android.util.Log.i("MovieboxLocal", "detail id=$id episodes=${d?.episodeList?.size}")
@@ -298,6 +386,31 @@ class StreamRepository(
     }
 
     private suspend fun fetchSource(modelId: String, episodeId: String, id: String): SourceData {
+        if (modelId.equals("dramabox", true)) {
+            val ep = episodeId.split("_").getOrNull(1)?.toIntOrNull() ?: 1
+            val (chapters, _) = runCatching { DramaboxClient.chapters(id) }.getOrNull()
+                ?: (emptyList<DramaboxClient.DramaboxChapter>() to 0)
+            val ch = chapters.firstOrNull { it.chapterIndex == ep }
+            val url = ch?.videoPath
+            val streams = if (ch != null && !ch.isCharge && !url.isNullOrBlank()) {
+                val format = if (url.contains(".m3u8", true)) "hls"
+                    else if (url.contains(".mpd", true)) "dash"
+                    else "mp4"
+                listOf(
+                    MediaStream(
+                        server = "DramaBox",
+                        format = format,
+                        quality = ch.videoQuality?.let { "${it}p" } ?: "Auto",
+                        url = url,
+                        headers = null,
+                    )
+                )
+            } else {
+                emptyList()
+            }
+            android.util.Log.i("Dramabox", "source id=$id ep=$ep charge=${ch?.isCharge} streams=${streams.size}")
+            return SourceData(streams = streams, subtitles = emptyList())
+        }
         if (modelId.equals("moviebox-local", true)) {
             val parts = episodeId.split("_")
             val se = parts.getOrNull(0)?.toIntOrNull() ?: 1
