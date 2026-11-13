@@ -303,17 +303,9 @@ fun HomeScreen(
                         )
                     }
                 }
-            } else if (!state.hasMore && state.items.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(
-                        text = s.endOfContent,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    )
-                }
             }
+            // Batas akhir konten sengaja tidak ditampilkan: daftar dimuat dari
+            // katalog dinamis dan berlanjut selama masih ada konten baru.
         }
     }
 }

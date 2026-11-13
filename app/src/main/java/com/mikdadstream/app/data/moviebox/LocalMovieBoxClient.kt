@@ -388,10 +388,12 @@ object LocalMovieBoxClient {
     }
 
     /** Beberapa halaman trending (API hanya 8 per halaman) lalu dedup per subjectId. */
-    private suspend fun trendingAll(maxPages: Int = 3): List<JSONObject> {
+    private suspend fun trendingAll(maxPages: Int = 10): List<JSONObject> {
         val out = LinkedHashMap<String, JSONObject>()
         for (page in 1..maxPages) {
-            extractList(trendingV2(page)).forEach { s ->
+            val pageItems = extractList(trendingV2(page))
+            if (pageItems.isEmpty()) break
+            pageItems.forEach { s ->
                 val id = subjectIdOf(s)
                 if (id.isNotBlank() && !out.containsKey(id)) out[id] = s
             }
@@ -630,10 +632,10 @@ object LocalMovieBoxClient {
             out
         }
 
-    suspend fun tabOperating(tabId: Int): JSONObject? = withContext(Dispatchers.IO) {
+    suspend fun tabOperating(tabId: Int, page: Int = 1): JSONObject? = withContext(Dispatchers.IO) {
         val token = boot() ?: return@withContext null
         val base = activeHostOrFirst()
-        callJson(base, "/wefeed-mobile-bff/tab-operating?host=api.inmoviebox.com&page=1&pageSize=24&tabId=$tabId", null, token, false)
+        callJson(base, "/wefeed-mobile-bff/tab-operating?host=api.inmoviebox.com&page=$page&pageSize=24&tabId=$tabId", null, token, false)
     }
 
     /** Ambil semua subject dari respons tab-operating (rows -> subjects), dedup per id. */
@@ -660,6 +662,8 @@ object LocalMovieBoxClient {
         return out.values.toList()
     }
 
+    private val CATALOG_TAB_PAGES = 5
+
     private var catalogCache: Pair<Long, List<JSONObject>>? = null
 
     /** Katalog gabungan: trending/v2 + rows tab-operating (tab 1 & 2), dedup per subjectId. */
@@ -679,20 +683,25 @@ object LocalMovieBoxClient {
         trendingAll().forEach(::add)
         android.util.Log.i(TAG, "catalogSubjects trending=${out.size}")
         for (tab in listOf(1, 2)) {
-            val root = tabOperating(tab) ?: continue
-            val items = root.optJSONObject("data")?.optJSONArray("items") ?: continue
-            var extra = 0
-            for (i in 0 until items.length()) {
-                val item = items.optJSONObject(i) ?: continue
-                val arr = item.optJSONArray("subjects") ?: continue
-                for (j in 0 until arr.length()) {
-                    val o = arr.optJSONObject(j) ?: continue
-                    val before = out.size
-                    add(o.optJSONObject("subject") ?: o)
-                    if (out.size > before) extra++
+            for (page in 1..CATALOG_TAB_PAGES) {
+                val root = tabOperating(tab, page) ?: continue
+                val items = root.optJSONObject("data")?.optJSONArray("items") ?: break
+                val before = out.size
+                var extra = 0
+                for (i in 0 until items.length()) {
+                    val item = items.optJSONObject(i) ?: continue
+                    val arr = item.optJSONArray("subjects") ?: continue
+                    for (j in 0 until arr.length()) {
+                        val o = arr.optJSONObject(j) ?: continue
+                        val prev = out.size
+                        add(o.optJSONObject("subject") ?: o)
+                        if (out.size > prev) extra++
+                    }
                 }
+                android.util.Log.i(TAG, "catalogSubjects tab=$tab page=$page added=$extra")
+                // Halaman tidak menambah apa pun -> tab sudah habis, berhenti.
+                if (out.size == before) break
             }
-            android.util.Log.i(TAG, "catalogSubjects tab=$tab added=$extra")
         }
         val list = out.values.toList()
         catalogCache = System.currentTimeMillis() to list
@@ -2039,15 +2048,27 @@ object LocalMovieBoxClient {
         }
     }.getOrNull()
 
+    /** Ekstrak musim/episode dari nama file/URL video Short TV (mis. "...-S1E2-480P.mp4"). */
+    private fun episodeFromUrl(url: String): Pair<Int, Int>? {
+        val m = Regex("(?i)S(\\d{1,2})E(\\d{1,4})").find(url) ?: return null
+        val s = m.groupValues[1].toIntOrNull() ?: return null
+        val e = m.groupValues[2].toIntOrNull() ?: return null
+        return s to e
+    }
+
     /**
      * Short TV (subjectType 7) memakai post UGC di H5, bukan play-info.
      * play-info hanya mengembalikan trailer macdn; post UGC berisi MP4 asli
-     * (bcdn.hakunaymatata.com/dramabox/...). Post biasanya hanya tersedia
-     * untuk episode yang benar-benar diunggah, jadi cocokkan dulu lewat
-     * Content-Disposition (contoh: "...-S1E2-480P.mp4") agar episode lain
-     * tidak memutar video episode yang salah.
+     * (bcdn.hakunaymatata.com/dramabox/...). Episode dicocokkan dari nama file
+     * di URL (mis. "...-S1E2-480P.mp4"); bila tidak ada di URL, baru lewat
+     * header Content-Disposition (request HEAD). Bila keduanya tidak tersedia,
+     * hanya episode 1 yang diterima (fallback aman: jangan memutar episode yang salah).
      */
     private fun h5VideoMatchesEpisode(url: String, se: Int, ep: Int): Boolean {
+        // Cocokkan dari URL sendiri dulu — tanpa request tambahan. Content-Disposition
+        // via HEAD sering tidak tersedia (CDN memblokir/403), sehingga episode > 1 dulu
+        // selalu gagal dipetakan.
+        episodeFromUrl(url)?.let { (s, e) -> return s == se && e == ep }
         val disposition = runCatching {
             http.newCall(
                 Request.Builder().url(url)
@@ -2076,12 +2097,15 @@ object LocalMovieBoxClient {
         val result = ArrayList<MediaStream>()
         val seenQuality = HashSet<String>()
         var page = 0
-        while (page < 5) {
+        // Drama pendek bisa >100 episode; 12 post per halaman. Pencarian berhenti
+        // lebih awal begitu episode ketemu (lihat `found`).
+        while (page < 15) {
             val root = callH5Json(
                 "/wefeed-h5-bff/post/list/subject?id=$subjectId&page=$page&perPage=12"
             ) ?: break
             val items = root.optJSONObject("data")?.optJSONArray("items") ?: break
             if (items.length() == 0) break
+            var found = false
             for (i in 0 until items.length()) {
                 val post = items.optJSONObject(i) ?: continue
                 val videos = post.optJSONObject("media")?.optJSONArray("video") ?: continue
@@ -2105,7 +2129,9 @@ object LocalMovieBoxClient {
                         )
                     )
                 }
+                if (result.isNotEmpty()) { found = true; break }
             }
+            if (found) break
             page++
         }
         return result.sortedByDescending {
