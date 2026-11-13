@@ -137,6 +137,7 @@ class UserRepository {
 
         val profile = runCatching { ref.get().await() }.getOrNull()
         val existing = profile?.exists() == true
+        var createdActiveUntil: Long? = null
         val payload = mutableMapOf<String, Any?>(
             "uid" to u.uid,
             "email" to u.email,
@@ -150,6 +151,12 @@ class UserRepository {
             payload["accountType"] = initial.key
             payload["premium"] = initial == AccountType.PREMIUM
             payload["createdAt"] = FieldValue.serverTimestamp()
+            // Akun baru mendapat masa aktif 1 bulan sejak login pertama.
+            // Developers tidak dibatasi agar tidak terkunci dari Admin Panel.
+            if (initial != AccountType.DEVELOPERS) {
+                createdActiveUntil = oneMonthFromNow()
+                payload["activeUntil"] = createdActiveUntil
+            }
         }
 
         val writeError = runCatching { ref.set(payload, SetOptions.merge()).await() }.exceptionOrNull()
@@ -162,7 +169,7 @@ class UserRepository {
 
         val storedType = profile?.getString("accountType")
         val premium = profile?.getBoolean("premium") ?: false
-        val state = stateFrom(u, storedType, premium, activeUntil = readActiveUntil(profile))
+        val state = stateFrom(u, storedType, premium, activeUntil = readActiveUntil(profile) ?: createdActiveUntil)
         _account.value = state
         return state
     }
@@ -298,6 +305,10 @@ class UserRepository {
 
     private fun isDeveloper(email: String?): Boolean =
         email != null && developerEmails.contains(email.lowercase())
+
+    /** Epoch ms satu bulan kalender dari sekarang. */
+    private fun oneMonthFromNow(): Long =
+        java.util.Calendar.getInstance().apply { add(java.util.Calendar.MONTH, 1) }.timeInMillis
 
     private fun fail(message: String) {
         Log.e(TAG, message)
